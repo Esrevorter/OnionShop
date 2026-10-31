@@ -13,18 +13,21 @@ egress are mandatory.)
 ## Phase 1: Foundation
 - [x] Initialize Go module (`go.mod`, `cmd/onionshop/main.go`) and directory structure
       (`internal/{server,store,cron}`, `web/templates`, `db/migrations`).
-- [ ] Write `docker-compose.yml` (Postgres, Redis with `maxmemory-policy noeviction` + persistence
-      OFF, nginx reverse proxy) — hardened revision exists; still needs: UNIX-socket app↔nginx
-      wiring, image pinning by **digest**, `cap_drop: [ALL]` on every service, redisdata volume
-      removal (RAM-only dataset).
-- [ ] Add `nginx/nginx.conf` to the repo (loopback-only listeners, TLS 1.3/AEAD-only, static
+- [x] Write `docker-compose.yml` (Postgres, Redis with `maxmemory-policy noeviction` + persistence
+      OFF, nginx reverse proxy) — hardened revision done 2026-11-01: UNIX-socket app↔nginx wiring
+      (shared `appsock` volume, no TCP hop), `cap_drop: [ALL]` + `no-new-privileges` + `read_only`
+      + tmpfs on every service, redisdata volume removed (RAM-only dataset), nginx publishes only
+      `127.0.0.1:8443`, BTCPay isolated on its own network. Remaining gap (deliberate follow-up):
+      images pinned by **digest** rather than minor tag.
+- [x] Add `nginx/nginx.conf` to the repo (loopback-only listener, TLS 1.3/AEAD-only, static
       `/static/*` read-only mount, forwarding-header stripping, security headers matching the Go
       middleware — SECURITY_AND_OPSEC.md §5.1) + self-signed .onion cert generation script with
-      SPKI-fingerprint output for pinning (§1).
+      SPKI-fingerprint output for pinning (§1) — see `scripts/gen-certs.sh`.
 - [ ] Write SQL migrations for the full schema (users/RBAC, products, orders, escrow,
       double-entry ledger with idempotency keys, disputes, audit log) via `golang-migrate`/`goose`.
 - [ ] Set up DB connection pool (`pgx`) and Redis client; add `sqlc.yaml`.
-- [ ] Add Makefile (`build/test/migrate/up/down`), `.gitignore`, `.editorconfig`.
+- [x] Add Makefile (`build/test/migrate/up/down` + `certs/install/compose-config` targets),
+      `.gitignore`, `.editorconfig`.
 
 ## Phase 2: Core Server & Security
 - [ ] Setup `chi` router and basic HTTP server (UNIX socket `/run/onionshop/app.sock` or
@@ -104,15 +107,22 @@ egress are mandatory.)
       kernel sysctl hardening; Postgres/WAL and Tor `HiddenServiceDir` on the encrypted volume only.
 - [ ] nftables default-deny INPUT/FORWARD/OUTPUT with process-scoped egress allowlist (tor user
       only; app/DB containers get none); DNS-leak canary checks; dropped-packet logs RAM-only.
+      Repo template ready: `deploy/nftables.conf` (review for your NIC/tor-user setup before load).
 - [ ] systemd sandboxes per service (`ProtectSystem=strict`, `PrivateTmp`, `NoNewPrivileges`,
       seccomp/AppArmor); tmpfs (`noexec,nosuid,nodev`) for `/tmp`, CAPTCHA PNGs, PGP import
-      buffers, QR renders, secret env files.
+      buffers, QR renders, secret env files. Repo templates ready: `systemd/onionshop-app.service`,
+      `systemd/onionshop-nginx.service` (bare-metal path; compose path enforces equivalents).
 - [ ] Dropbear over a private admin onion (key-only Ed25519, AEAD ciphers, no compression,
       15-min idle kill, RAM-only auth logs); OpenSSH uninstalled.
-- [ ] nginx config in-repo + self-signed .onion cert with SPKI fingerprint published in PGP-signed
-      announcements and `pgp.txt`; images pinned by digest.
+- [x] nginx config in-repo + self-signed .onion cert with SPKI fingerprint published in PGP-signed
+      announcements and `pgp.txt` — `nginx/nginx.conf` + `scripts/gen-certs.sh` (prints the SPKI
+      pin; warns about pin breakage on regeneration). Still open: images pinned by digest.
 - [ ] Backup pipeline: `age`-encrypted dumps staged in tmpfs and shredded; quarterly off-site
       restore drills verifying ledger invariants; panic-wipe script tested (trigger restricted to
-      admin channel/console only — never web-reachable).
+      admin channel/console only — never web-reachable). Scripts exist (`scripts/backup.sh`,
+      `scripts/panic-wipe.sh` guarded by `--i-understand-this-is-irreversible` + hostname check);
+      **drills still due** before any real value is held in escrow.
 - [ ] Warrant canary automation: PGP-signed `canary.txt` refresh cadence + post-incident rotation
       runbook (TLS key, session key, API tokens).
+- [ ] Guided installer for less-experienced operators: `install/install.sh` + `INSTALL.md` shipped;
+      needs field-testing on a clean hardened host and per-distro OS-prep notes.
