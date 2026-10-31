@@ -66,3 +66,67 @@ vendor earnings account, platform fee account, refund account). Balances are der
 (`SUM`) or maintained in a materialized summary updated inside the same transaction. Every
 external event (payment confirmation, withdrawal payout) carries a unique idempotency key
 enforced by a `UNIQUE` constraint.
+
+Wallets page shows per-currency **available balance** and **in-escrow total**, plus deposit /
+withdraw flows (withdrawals are requests approved by an admin — see SECURITY_AND_OPSEC.md §3).
+
+## 7. Support Ticketing
+User-facing helpdesk, reachable from the header ("Support Ticket") and a Help page.
+- **Ticket model:** `tickets(id, user_id, category, order_ref NULL, subject, status,
+  priority, created_at, updated_at)`; status: `open → answered → user_replied → resolved →
+  closed`. Comments: `ticket_messages(id, ticket_id, author_id, body, is_staff, created_at)`.
+- **Categories:** general, order/escrow problem, vendor report (e.g., phishing/scam
+  accounts), payment/deposit issue, bug bounty, account recovery (lost PGP/PIN).
+- **Staff queue:** mods/admins see unassigned tickets filtered by role, claim them, reply,
+  resolve/closed with mandatory reason; every staff action writes the audit log.
+- **Escalation:** a ticket attached to an order can be escalated into a formal dispute
+  (state machine §4); resolving a dispute auto-resolves its linked ticket.
+- **Notifications:** new staff replies appear as site messages (§8) and bump the unread
+  badge; no email is ever sent (data minimization).
+- **Anti-abuse:** rate limit ticket creation per `user_id`; new accounts get a lower daily
+  cap; honeypot field on the create form.
+
+## 8. Private Messaging
+Direct user↔user messaging (buyer↔seller pre-sale, user↔staff), rendered server-side only.
+- **Model:** `threads(id, participant_a, participant_b, order_ref NULL)`,
+  `messages(id, thread_id, sender_id, body, read_at, created_at)`. Unread count is shown as
+  a nav badge (`Messages <count>`).
+- **Anti-phishing CAPTCHA (per-message):** every message form must solve a fresh, one-time
+  visual challenge served from a locally-generated image set (`img-src 'self'` only — never
+  external CAPTCHA services). The challenge answer is bound to the session + thread and
+  expires after ~5 minutes. Rationale: phishers clone markets and impersonate vendors/buyers
+  at scale; a cheap human-friction step throttles automated mass-messaging without JS.
+  A hidden honeypot field supplements it. Rate limits still apply per `user_id` (§1 of
+  SECURITY_AND_OPSEC.md).
+- **Content rules:** plain text only (auto-escaped by `html/template`); URLs posted by other
+  users are rendered as inert text, not links, to blunt phishing; users can report a message,
+  which opens a `category = vendor report / abuse` support ticket carrying the message link.
+- **Attachments:** none (no file upload surface). Images referenced only via market-hosted
+  product images.
+- **Moderation:** staff may read threads involved in disputes/tickets (audited access —
+  every staff view writes the audit log).
+
+## 9. Accounts, Profiles & Community Features
+- **Vendor storefronts:** public profile pages (`/u/<handle>`) with rating, sales count, ETA
+  badge, product listing link, and "message vendor" button. Vendor ratings live on completed
+  orders (one review per order line, editable window, no JS — plain forms).
+- **Top Vendors leaderboard:** homepage widget ranking vendors by rolling-window sales minus
+  disputes/chargebacks; computed by a cron query into a snapshot table (cheap to render).
+- **Account tiers:** Basic vs upgraded (verified/trusted) accounts — upgrade requires either
+  vendor approval flow or a paid/trust threshold; tier gates features (e.g., higher rate
+  limits, raffle entry, private mirror request). Stored as RBAC/flag on the user row.
+- **Personal phrase:** each user sets a secret phrase shown on login/account pages so they
+  can sanity-check they are on the genuine site (pairs with the anti-phishing CAPTCHA —
+  see SECURITY_AND_OPSEC.md §4).
+- **Login history:** last N logins (timestamp UTC + which mirror/host the request arrived
+  on — never client IPs) displayed in account settings; anomalies prompt support contact.
+- **PGP tool:** a self-service page where users paste armored text and the server performs
+  pure-Go public-key encrypt/verify (key import validation, fingerprint display). No private
+  keys, ever.
+- **News/announcements board:** admin-authored posts (maintenance, DDoS status, feature
+  notes) stored in Postgres, rendered on home; supports "under maintenance" banner mode.
+- **Raffles (optional, Phase 8):** entries purchased from wallet balance; draws executed by
+  cron with audited RNG (`crypto/rand`), prizes credited through the ledger like any other
+  movement.
+- **Help center:** static FAQ + policy pages (phishing education, harm reduction, bug bounty,
+  market verify instructions, canary, published PGP key fingerprint).

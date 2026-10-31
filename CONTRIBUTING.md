@@ -15,6 +15,12 @@ These rules mirror AGENTS.md and apply to human contributors as well.
 6. DB access via `pgx`/`sqlc` (never GORM); all queries take a `context.Context`; ledger writes
    happen inside explicit Postgres transactions. Passwords: Argon2id with stored parameters.
 7. Server stores only PGP **public** keys; never log PII, key material, or ciphertext.
+8. CAPTCHAs are locally generated images (`img-src 'self'`) with single-use, session-bound
+   tokens — never external services (hCaptcha/reCAPTCHA/Turnstile are CDNs). Honeypot fields
+   supplement registration, ticket, and message forms. See AGENTS.md §3.
+9. Support tickets & private messages follow ARCHITECTURE.md §7–8: message bodies render as
+   escaped plain text, user-posted URLs stay inert (never auto-linked), staff actions on
+   tickets/threads are audit-logged.
 
 ## Dev workflow
 ```bash
