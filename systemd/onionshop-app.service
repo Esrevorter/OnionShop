@@ -1,0 +1,55 @@
+# Bare-metal (non-Docker) deployment unit — hardened per SECURITY_AND_OPSEC.md.
+# Install: cp to /etc/systemd/system/, then:
+#   systemctl daemon-reload && enable --now onionshop-app
+[Unit]
+Description=OnionShop application server
+After=network.target postgresql.service redis-server.service
+Wants=postgresql.service redis-server.service
+
+[Service]
+Type=simple
+User=onionshop
+Group=nginxsock
+ExecStart=/usr/local/bin/onionshop
+Environment=ONIONSHOP_SOCKET=/run/onionshop/app.sock
+EnvironmentFile=-/etc/onionshop/env
+Restart=always
+RestartSec=5
+
+# --- Volatile runtime dirs (tmpfs): socket + logs never touch disk ---
+RuntimeDirectory=onionshop
+RuntimeDirectoryMode=0750
+LogsDirectory=onionshop
+LogsDirectoryMode=0750
+
+# --- Filesystem isolation ---
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+RestrictNamespaces=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+MemoryDenyWriteExecute=yes
+LockPersonality=yes
+NoNewPrivileges=yes
+CapabilityBoundingSet=
+AmbientCapabilities=
+SystemCallFilter=@system-service
+SystemCallErrorNumber=EPERM
+SystemCallArchitectures=native
+# --- Resource containment ---
+LimitNOFILE=65536
+TasksMax=256
+MemoryHigh=1G
+MemoryMax=1500M
+CPUQuota=200%
+IOWeight=50
+
+[Install]
+WantedBy=multi-user.target

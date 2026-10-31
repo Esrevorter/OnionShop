@@ -1,0 +1,24 @@
+# OnionShop Tor hidden-service configuration (drop-in: copy to
+# /etc/tor/torrc.d/onionshop.conf or append to /etc/tor/torrc).
+# Assumes the nginx TLS endpoint on 127.0.0.1:8443 (SECURITY_AND_OPSEC.md).
+
+# Run as the dedicated, unprivileged 'tor' user with sandboxing ON.
+Sandbox 1
+KeepalivePeriod 60
+NewCircuitPeriod 30
+MaxCircuitDirtiness 600
+
+# Hidden service: v3 only. Keys live in the tor datadir (on the LUKS volume);
+# NEVER copy them off-host, and destroy them first in any panic procedure.
+HiddenServiceDir /var/lib/tor/onionshop
+HiddenServiceVersion 3
+HiddenServicePort 80 127.0.0.1:8443      # .onion:80 -> local HTTPS; clients pin SPKI
+# If you also run a plain-HTTP fallback during migration ONLY (discouraged):
+# HiddenServicePort 8080 127.0.0.1:8080
+
+# Do not advertise or accept exit traffic; this box serves one onion and nothing else.
+ORPort 0
+ExitRelay 0
+SocksPort 0
+ControlPort 0
+AvoidDiskWrites 1
