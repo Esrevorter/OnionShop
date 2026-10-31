@@ -1,0 +1,36 @@
+# Development stack for OnionShop. Production additionally runs a Tor hidden service
+# pointing at 127.0.0.1:8080; the app itself never binds a public interface.
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: onionshop
+      POSTGRES_PASSWORD: onionshop_dev_only   # dev only; production reads from env/secret
+      POSTGRES_DB: onionshop
+    ports:
+      - "127.0.0.1:5432:5432"                # publish on localhost only
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U onionshop -d onionshop"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    # Sessions live here; noeviction guarantees they are never silently dropped.
+    command: ["redis-server", "--appendonly", "yes", "--maxmemory", "256mb", "--maxmemory-policy", "noeviction", "--bind", "0.0.0.0"]
+    ports:
+      - "127.0.0.1:6379:6379"
+    volumes:
+      - redisdata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+volumes:
+  pgdata:
+  redisdata:
