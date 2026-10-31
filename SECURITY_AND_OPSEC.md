@@ -6,6 +6,7 @@
   - **Caveat:** anonymous attackers can mint fresh sessions to reset session-keyed limits. Wherever possible, key limits to the authenticated `user_id`; for pre-auth endpoints (login, registration, CAPTCHA), layer cheap friction first (image CAPTCHA + honeypot + global throughput cap — see AGENTS.md §3) so session-minting stays uneconomical.
 - **Time Synchronization:** Do not implement custom NTP logic. Rely on the host OS. Do not leak timezones in HTTP headers.
 - **Header Hygiene:** Strip/genericize the `Server:` header, never expose stack traces in error pages (render a generic template), and never register `pprof` or `expvar` routes. Serve uniform static assets (one CSS file, one font set, one image style) so per-page fingerprinting yields nothing.
+- **Https:** The Go web server must be configured to serve HTTPS using a valid TLS certificate (preferably via Let's Encrypt for the .onion domain) to guarantee server authentication and defense-in-depth, even though Tor provides transport encryption.
 
 ## 2. Data Minimization & Privacy
 - **No Analytics:** Do not implement Google Analytics, Plausible, or any tracking scripts.
