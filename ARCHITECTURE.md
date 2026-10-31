@@ -2,17 +2,35 @@
 
 ## 1. Request Flow
 1. User (Tor Browser) -> Tor Network -> Tor Daemon (v3 Hidden Service).
-2. Tor Daemon -> forwards to `127.0.0.1:8080` (Go Web Server).
-3. Go Web Server -> renders HTML via `html/template` -> sends back through Tor.
+2. Tor Daemon -> forwards to `127.0.0.1:8080` / `127.0.0.1:8443` (**nginx reverse proxy** —
+   TLS termination, header stripping, static files, slow-client buffering; see
+   SECURITY_AND_OPSEC.md §5.1). The Go app is never directly reachable from outside localhost,
+   and nginx is the only thing Tor talks to.
+3. nginx -> proxies to the Go web server over a **UNIX socket** (`app.sock`) — no TCP hop
+   between proxy and app.
+4. Go Web Server -> renders HTML via `html/template` -> sends back through nginx -> Tor.
 
 ## 2. Component Interaction
-- **Go Backend:** Handles routing (`chi`), business logic, and rendering.
-- **PostgreSQL:** Stores persistent data (Users, Products, Orders, Ledger).
+- **nginx:** front-facing reverse proxy on loopback only (8080 HTTP → redirect, 8443 TLS with a
+  self-signed .onion cert, SPKI-pinned — SECURITY_AND_OPSEC.md §1/§5.1). Serves `/static/*`
+  read-only; strips inbound forwarding headers; emits security headers in agreement with the
+  Go middleware.
+- **Go Backend:** Handles routing (`chi`), business logic, and rendering. Listens ONLY on a
+  UNIX socket (or `127.0.0.1`) inside its sandboxed container; binds no public interface.
+- **PostgreSQL:** Stores persistent data (Users, Products, Orders, Ledger). Data + WAL live on
+  the LUKS-encrypted volume — never tmpfs (crash = loss); only sockets/runfiles are tmpfs.
 - **Redis:** Stores ephemeral data (Rate Limit counters, Shopping Carts). Sessions are stored
   via `scs` in Redis with a Postgres fallback table so an eviction/restart cannot log everyone
   out or, worse, resurrect stale carts. Redis must run with `maxmemory-policy noeviction` for
   session keys (carts/rate-limits may use `volatile-lru` in a separate logical DB if needed).
-- **BTCPay Server:** Runs as a separate service on the same host.
+  Persistence is OFF (`save ""` + `appendonly no`) — the dataset is intentionally RAM-only, so
+  the `redisdata` volume holds nothing sensitive.
+- **BTCPay Server:** Runs as a separate service on the same host, on its own egress network
+  (blockstream via Tor where feasible); the internal network (`internal: true`) keeps every
+  other container default-deny on egress.
+- **Dropbear SSH (host-level):** admin access rides a private onion service
+  (`HiddenServicePort 22 127.0.0.1:2222`), key-only Ed25519 auth — replaces OpenSSH entirely
+  (SECURITY_AND_OPSEC.md §5.4). Not part of the compose stack; runs on the hardened host.
 
 ### BTCPay payment notifications (no webhooks!)
 **Webhooks are impossible here.** A hidden service is reachable only via the Tor network;
@@ -28,15 +46,22 @@ server, and exposing a public callback URL would deanonymize the deployment. Ins
   source of truth regardless.
 
 ## 3. Security Headers
-Applied by middleware on every response. **No HSTS**: it is meaningless (and dangerous) without
-TLS, and this deployment terminates at plain HTTP inside the Tor circuit.
-- `Content-Security-Policy: default-src 'self'; script-src 'none'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; form-action 'self'; frame-ancestors 'none'; base-uri 'none'`
-  (`style-src 'unsafe-inline'` is required because templates ship small inline styles; if we
-  move all CSS to static files, tighten to `style-src 'self'`.)
+Applied by middleware on every response **and** re-asserted at the nginx layer (both layers must
+agree — belt-and-suspenders; see SECURITY_AND_OPSEC.md §5.1). Traffic reaches users over HTTPS on
+the onion via a self-signed, SPKI-pinned cert terminated at nginx (SECURITY_AND_OPSEC.md §1).
+**No browser-facing HSTS**: browsers treat self-signed + HSTS as a permanent lockout footgun;
+SPKI pinning in announcements/pgp.txt is our authenticity mechanism instead. A pinned client
+(CLI/desktop), if ever shipped, enforces SPKI pinning and HSTS itself.
+- `Content-Security-Policy: default-src 'self'; script-src 'none'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; form-action 'self'; frame-ancestors 'none'; base-uri 'none'; upgrade-insecure-requests`
+  (`script-src 'none'` and `base-uri 'none'` are mandatory — there is no JS anywhere;
+  `style-src 'unsafe-inline'` is required because templates ship small inline styles; if we
+  move all CSS to static files, tighten to `style-src 'self'`; `upgrade-insecure-requests`
+  pairs with the HTTPS rollout.)
 - `X-Content-Type-Options: nosniff`
 - `X-Frame-Options: DENY`
 - `Referrer-Policy: no-referrer`
-- Strip the `Server:` header (or set a generic value); never register `pprof`/`expvar`.
+- Strip the `Server:` header (or set a generic value); never register `pprof`/`expvar`. No OCSP
+  stapling (leaks to CAs).
 
 ## 4. Escrow State Machine
 - `awaiting_payment` -> (payment confirmed via BTCPay poll) -> `in_escrow`

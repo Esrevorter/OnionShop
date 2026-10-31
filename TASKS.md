@@ -4,25 +4,38 @@ Status legend: `[x]` done and committed; `[ ]` not started.
 (Previous revision incorrectly marked Phase 1 item 1 as done — no Go module existed in the
 repository. Corrected 2026-10-31; documentation contradictions flagged during that review
 were also fixed: Django-style CSRF syntax, `Secure` cookie requirement, HSTS, and BTCPay
-webhooks. See AGENTS.md §3–4, ARCHITECTURE.md §2–3, SECURITY_AND_OPSEC.md §3.)
+webhooks. Superseded 2026-11-01 by the hardened OpSec baseline (SECURITY_AND_OPSEC.md):
+nginx reverse proxy + self-signed SPKI-pinned TLS on the onion is now the design, so cookies
+DO carry `Secure` and CSP includes `upgrade-insecure-requests`; browser-facing HSTS remains
+prohibited. OpenSSH is replaced by Dropbear over a private onion; tmpfs/LUKS2/default-deny
+egress are mandatory.)
 
 ## Phase 1: Foundation
 - [x] Initialize Go module (`go.mod`, `cmd/onionshop/main.go`) and directory structure
       (`internal/{server,store,cron}`, `web/templates`, `db/migrations`).
-- [ ] Write `docker-compose.yml` (Postgres, Redis with `maxmemory-policy noeviction`).
+- [ ] Write `docker-compose.yml` (Postgres, Redis with `maxmemory-policy noeviction` + persistence
+      OFF, nginx reverse proxy) — hardened revision exists; still needs: UNIX-socket app↔nginx
+      wiring, image pinning by **digest**, `cap_drop: [ALL]` on every service, redisdata volume
+      removal (RAM-only dataset).
+- [ ] Add `nginx/nginx.conf` to the repo (loopback-only listeners, TLS 1.3/AEAD-only, static
+      `/static/*` read-only mount, forwarding-header stripping, security headers matching the Go
+      middleware — SECURITY_AND_OPSEC.md §5.1) + self-signed .onion cert generation script with
+      SPKI-fingerprint output for pinning (§1).
 - [ ] Write SQL migrations for the full schema (users/RBAC, products, orders, escrow,
       double-entry ledger with idempotency keys, disputes, audit log) via `golang-migrate`/`goose`.
 - [ ] Set up DB connection pool (`pgx`) and Redis client; add `sqlc.yaml`.
 - [ ] Add Makefile (`build/test/migrate/up/down`), `.gitignore`, `.editorconfig`.
 
 ## Phase 2: Core Server & Security
-- [ ] Setup `chi` router and basic HTTP server (bind `127.0.0.1:8080` only).
+- [ ] Setup `chi` router and basic HTTP server (UNIX socket `/run/onionshop/app.sock` or
+      `127.0.0.1:8080` only — never a public bind; existing localhost guard in `main.go` stays).
 - [ ] Implement Security Headers middleware per ARCHITECTURE.md §3
-      (CSP, `X-Content-Type-Options`, `X-Frame-Options`, `Referrer-Policy`; **no HSTS** —
-      meaningless without TLS on a .onion origin).
+      (CSP incl. `upgrade-insecure-requests`, `X-Content-Type-Options`, `X-Frame-Options`,
+      `Referrer-Policy`; **no browser-facing HSTS** — self-signed + HSTS is a lockout footgun;
+      headers re-asserted at nginx too).
 - [ ] Implement Session management (`scs`): Redis store + Postgres fallback, ≥128-bit IDs from
       `crypto/rand`, rotation on login/privilege change, idle + absolute expiry, cookies
-      `HttpOnly` + `SameSite=Strict` (no `Secure` flag — see AGENTS.md §4).
+      `HttpOnly` + `Secure` + `SameSite=Strict` (HTTPS now terminates at nginx — see AGENTS.md §4).
 - [ ] Implement CSRF protection middleware (double-submit token rendered as
       `<input type="hidden" name="csrf_token" value="{{.CsrfToken}}">`).
 - [ ] Implement Redis-based Rate Limiting middleware (key by `user_id` when authenticated;
@@ -85,3 +98,21 @@ webhooks. See AGENTS.md §3–4, ARCHITECTURE.md §2–3, SECURITY_AND_OPSEC.md 
 - [ ] Template tests asserting every POST form carries a `csrf_token` input (message/ticket
       forms additionally assert CAPTCHA + honeypot fields).
 - [ ] `CONTRIBUTING.md` restating AGENTS.md rules for human contributors.
+
+## Infrastructure Hardening (SECURITY_AND_OPSEC.md §5 — host-level, tracked here so it stays honest)
+- [ ] Provision host: LUKS2 (argon2id) root + data volumes, separate keyslots, swap off/encrypted,
+      kernel sysctl hardening; Postgres/WAL and Tor `HiddenServiceDir` on the encrypted volume only.
+- [ ] nftables default-deny INPUT/FORWARD/OUTPUT with process-scoped egress allowlist (tor user
+      only; app/DB containers get none); DNS-leak canary checks; dropped-packet logs RAM-only.
+- [ ] systemd sandboxes per service (`ProtectSystem=strict`, `PrivateTmp`, `NoNewPrivileges`,
+      seccomp/AppArmor); tmpfs (`noexec,nosuid,nodev`) for `/tmp`, CAPTCHA PNGs, PGP import
+      buffers, QR renders, secret env files.
+- [ ] Dropbear over a private admin onion (key-only Ed25519, AEAD ciphers, no compression,
+      15-min idle kill, RAM-only auth logs); OpenSSH uninstalled.
+- [ ] nginx config in-repo + self-signed .onion cert with SPKI fingerprint published in PGP-signed
+      announcements and `pgp.txt`; images pinned by digest.
+- [ ] Backup pipeline: `age`-encrypted dumps staged in tmpfs and shredded; quarterly off-site
+      restore drills verifying ledger invariants; panic-wipe script tested (trigger restricted to
+      admin channel/console only — never web-reachable).
+- [ ] Warrant canary automation: PGP-signed `canary.txt` refresh cadence + post-incident rotation
+      runbook (TLS key, session key, API tokens).

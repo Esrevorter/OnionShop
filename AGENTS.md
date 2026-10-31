@@ -40,11 +40,12 @@
 ## 4. Security & Tor OpSec
 - Never use `fmt.Println` or `log.Printf` to log sensitive user data, passwords, or PGP keys.
 - Always validate and sanitize inputs on the server side.
-- **Cookie flags:** Set `HttpOnly` and `SameSite=Strict` on every cookie.
-  Do **NOT** set `Secure` on cookies for the .onion deployment: the site is served over plain
-  HTTP inside the Tor circuit (Tor provides transport encryption end-to-end), and browsers
-  reject the `Secure` attribute on non-HTTPS origins, which would silently break sessions.
-  If HTTPS is ever added (e.g., self-signed or HSTS-preloaded setup), flip `Secure` on then.
+- **Cookie flags:** Set `HttpOnly`, `Secure`, and `SameSite=Strict` on every cookie. The onion
+  serves HTTPS terminated at nginx with a self-signed, SPKI-pinned certificate
+  (SECURITY_AND_OPSEC.md §1), so the `Secure` flag is required — it guarantees cookies never
+  travel over the plain-HTTP redirect port even if a user types a bare `http://` URL. Do **not**
+  emit browser-facing HSTS (self-signed + HSTS is a permanent lockout footgun); authenticity is
+  established by SPKI-fingerprint pinning in PGP-signed announcements instead.
 - Session IDs: generate with ≥128 bits of entropy from `crypto/rand`, rotate the session on
   login and on privilege change, and enforce both idle and absolute expiry.
 - Password hashing: `argon2id` with a per-user random salt; baseline parameters
@@ -52,3 +53,6 @@
   be upgraded over time. Hash nonexistent users too (dummy verify) to equalize login timing.
 - PGP: the server stores only **public** keys. Decryption of shipping addresses happens
   client-side (vendor's own machine); private key material must never touch the server.
+- **Local sockets only:** the app listens on a UNIX socket (or loopback TCP) behind nginx; never
+  bind any public interface, and never reintroduce OpenSSH on clearnet — remote admin rides the
+  Dropbear-over-private-onion channel (SECURITY_AND_OPSEC.md §5.4).

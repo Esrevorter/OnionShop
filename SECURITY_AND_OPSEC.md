@@ -8,7 +8,9 @@
 > encryption) are hardening, not the primary line of defense.
 
 ## 1. Tor Hidden Service Specifics
-- **Localhost Binding:** The Go web server MUST bind ONLY to `127.0.0.1:PORT`. Never bind to `0.0.0.0`.
+- **Localhost Binding:** The Go web server MUST bind ONLY to a UNIX socket (`/run/onionshop/app.sock`)
+  or `127.0.0.1:PORT`. Never bind to `0.0.0.0`. nginx (the reverse proxy, §5.1) is the only listener
+  the Tor daemon talks to, also loopback-only.
   The only process allowed to accept from outside localhost is the Tor daemon itself, and even it
   listens only on loopback interfaces reachable through its own socket.
 - **Tor Daemon Hardening (`torrc`):**
