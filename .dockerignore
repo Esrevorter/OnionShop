@@ -1,0 +1,18 @@
+# Never ship local secrets or volatile state into any image layer.
+.env
+.env.*
+.secrets/
+.git/
+.gitignore
+nginx/ssl/*.key
+nginx/ssl/*.crt
+onionshop
+bin/
+*.log
+install/
+deploy/
+systemd/
+example.html
+*_test.go
+Dockerfile
+.dockerignore
