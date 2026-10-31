@@ -26,6 +26,16 @@
   ```
   Never write `{% csrf_token %}`; that is Django template syntax and does not exist in `html/template`.
 - Use CSS `:checked` or `<details>/<summary>` for any UI interactivity (dropdowns, accordions).
+- **CAPTCHA without JavaScript:** challenges are server-rendered — a locally generated image
+  (`/captcha/<token>.png`, served from `img-src 'self'`) plus a form answer; tokens are
+  single-use, bound to the session, and expire in minutes. Never embed external CAPTCHA
+  services (hCaptcha/reCAPTCHA/Turnstile) — they are CDNs and deanonymizing. Honeypot text
+  inputs (`name="sta"`, hidden via CSS only) accompany registration, support-ticket, and
+  message forms as cheap secondary friction.
+- **Messaging & ticketing forms:** every message/ticket-reply `POST` carries CSRF token +
+  CAPTCHA + honeypot; message bodies render as escaped plain text; user-posted URLs must be
+  output as inert text (never auto-linked) to resist phishing lures. Unread-count badges are
+  computed server-side per page render (no polling, no JS).
 
 ## 4. Security & Tor OpSec
 - Never use `fmt.Println` or `log.Printf` to log sensitive user data, passwords, or PGP keys.

@@ -9,9 +9,9 @@ No JavaScript, no CDNs, no IP logging — server-rendered Go HTML over a localho
 ## Documentation
 | File | Contents |
 |---|---|
-| [AGENTS.md](AGENTS.md) | Hard rules for AI agents & contributors (no JS, template/CSRF syntax, cookie flags, Argon2id params) |
-| [ARCHITECTURE.md](ARCHITECTURE.md) | Request flow, components, BTCPay polling (no webhooks), security headers, escrow state machine, ledger design |
-| [SECURITY_AND_OPSEC.md](SECURITY_AND_OPSEC.md) | Tor-specific OpSec, data minimization, payment/escrow integrity, audit trail |
+| [AGENTS.md](AGENTS.md) | Hard rules for AI agents & contributors (no JS, template/CSRF syntax, cookie flags, Argon2id params, CAPTCHA rules) |
+| [ARCHITECTURE.md](ARCHITECTURE.md) | Request flow, components, BTCPay polling (no webhooks), security headers, escrow state machine, ledger, support ticketing, messaging, profiles/community features |
+| [SECURITY_AND_OPSEC.md](SECURITY_AND_OPSEC.md) | Tor-specific OpSec, data minimization, payment/escrow integrity, audit trail, anti-phishing measures |
 | [TASKS.md](TASKS.md) | Phased roadmap with current status |
 
 ## Tech Stack
