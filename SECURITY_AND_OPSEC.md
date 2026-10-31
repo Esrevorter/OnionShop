@@ -40,3 +40,38 @@ verify authenticity and slow automated phishing campaigns. See ARCHITECTURE.md Â
   report/phishing); staff can suspend accounts; suspensions are audit-logged with reason.
 - **Optional DDoS friction (documented, not default):** proof-of-work gates or image CAPTCHA
   on login during attacks. Keep any PoW logic tiny and auditable; never require JS.
+
+## 5. Infrastructure & Network Hardening
+
+- **Strict Firewall Rules (Default DROP):** Configure `nftables` or `iptables` to block ALL inbound and outbound traffic by default. Only allow:
+  - Inbound: Localhost connections to the Go app port (from Tor daemon).
+  - Outbound: Strictly necessary connections (e.g., to the BTCPay Server API if hosted externally, or specific NTP pools). **Block all DNS resolution** if possible to prevent DNS leaks; use hardcoded IPs for external APIs.
+- **OS & Service Isolation:** 
+  - Run the OS with a minimal footprint (e.g., Debian Minimal or Alpine). 
+  - Run each service as a separate, unprivileged user: `tor` (for Tor daemon), `postgres` (for DB), `redis` (for cache), and `onionmarket` (for the Go binary). 
+  - The Go binary must **never** run as `root`.
+- **SSH Hardening:** If remote access is absolutely necessary, disable password authentication entirely. Use Ed25519 SSH keys, change the default SSH port, and restrict access via firewall to a specific, trusted clearnet IP (not via the `.onion` service).
+- **Disk Encryption:** The server's root filesystem and database volumes must be encrypted at rest (e.g., LUKS) to protect data in the event of physical or hypervisor-level seizure.
+
+## 6. Application & Secrets Management
+
+- **Zero Hardcoded Secrets:** Database credentials, BTCPay API keys, and session secrets must **never** be committed to Git. Use environment variables or a secure secrets manager. The `.env` file must be in `.gitignore`.
+- **Dependency Hygiene:** Regularly run `govulncheck ./...` to scan for known vulnerabilities in Go dependencies. Pin all dependency versions in `go.mod`; do not use floating `latest` tags.
+- **Strict Content Security Policy (CSP):** The server must emit a strict CSP header on every response: 
+  `Content-Security-Policy: default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; form-action 'self'; frame-ancestors 'none'; base-uri 'self';`
+- **Database Least Privilege:** The Go application must connect to PostgreSQL using a dedicated database user that only has `SELECT`, `INSERT`, `UPDATE`, and `DELETE` permissions on specific tables. It must **not** have `SUPERUSER`, `DROP`, or `TRUNCATE` privileges.
+
+## 7. Financial OpSec & Escrow Hardening
+
+- **Withdrawal Delays:** Enforce a mandatory, non-bypassable delay (e.g., 24â€“48 hours) on all vendor withdrawal requests. This provides a critical window for admins to freeze the account and halt the payout if a vendor account is compromised or flagged for fraudulent activity.
+- **Address Whitelisting:** Vendors must pre-register and PGP-verify their withdrawal BTC addresses. Withdrawals can only be sent to these pre-approved addresses. Any change to a withdrawal address requires a 7-day security hold and admin approval.
+- **Hot/Cold Wallet Separation:** The BTCPay Server instance should only hold a minimal "hot wallet" balance required for daily operational refunds. The majority of the platform's escrowed funds should be periodically swept to a secure, multi-signature cold storage wallet not connected to the server.
+
+## 8. Incident Response & Resilience
+
+- **Warrant Canary:** Maintain a frequently updated, PGP-signed `canary.txt` file in the repository and on the site. If the server is compromised or served with a subpoena, the canary will not be updated, silently warning users without the operator being legally compelled to lie.
+- **Panic Wipe Script:** Maintain a secure, easily executable script (e.g., triggered by a specific, obscure file creation or a dedicated admin endpoint protected by multiple factors) that immediately:
+  1. Kills the Go application and database.
+  2. Overwrites sensitive configuration files and encryption keys with random data.
+  3. Unmounts and cryptographically shreds the LUKS volume (if feasible).
+- **Backup Encryption:** All database backups must be encrypted (e.g., using `age` or `gpg`) before being stored off-site. The decryption keys must never reside on the same server as the backups.
