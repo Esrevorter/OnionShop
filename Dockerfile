@@ -26,7 +26,7 @@ USER 1000:101
 # Read-only rootfs: everything writable is a tmpfs declared in compose
 # (/tmp, /run/onionshop). Logs go to stdout; the logging driver keeps them on tmpfs.
 ENV ONIONSHOP_SOCKET=/run/onionshop/app.sock
-EXPOSE 8080
+# No EXPOSE: the app publishes nothing; it listens only on the UNIX socket above.
 HEALTHCHECK --interval=30s --timeout=5s --retries=3 \
-  CMD wget -q --spider http://127.0.0.1:8080/healthz || exit 1
+  CMD printf 'GET /healthz HTTP/1.0\r\n\r\n' | nc -U /run/onionshop/app.sock | grep -q ok || exit 1
 ENTRYPOINT ["/usr/local/bin/onionshop"]
