@@ -16,10 +16,29 @@
 - Use semantic HTML5.
 - Use standard HTML forms (`method="POST"`) for all state-changing actions.
 - Use URL query parameters (`?page=2&sort=price`) for filtering and pagination.
-- Include `{% csrf_token %}` (or equivalent Go CSRF token) in every POST form.
+- Include a CSRF hidden input in every POST form using Go template syntax —
+  `{{/* html/template, NOT Django syntax */}}`:
+  ```html
+  <form method="POST" action="/cart/add">
+    <input type="hidden" name="csrf_token" value="{{.CsrfToken}}">
+    ...
+  </form>
+  ```
+  Never write `{% csrf_token %}`; that is Django template syntax and does not exist in `html/template`.
 - Use CSS `:checked` or `<details>/<summary>` for any UI interactivity (dropdowns, accordions).
 
 ## 4. Security & Tor OpSec
 - Never use `fmt.Println` or `log.Printf` to log sensitive user data, passwords, or PGP keys.
 - Always validate and sanitize inputs on the server side.
-- Ensure all cookies are set with `Secure`, `HttpOnly`, and `SameSite=Strict` flags.
+- **Cookie flags:** Set `HttpOnly` and `SameSite=Strict` on every cookie.
+  Do **NOT** set `Secure` on cookies for the .onion deployment: the site is served over plain
+  HTTP inside the Tor circuit (Tor provides transport encryption end-to-end), and browsers
+  reject the `Secure` attribute on non-HTTPS origins, which would silently break sessions.
+  If HTTPS is ever added (e.g., self-signed or HSTS-preloaded setup), flip `Secure` on then.
+- Session IDs: generate with ≥128 bits of entropy from `crypto/rand`, rotate the session on
+  login and on privilege change, and enforce both idle and absolute expiry.
+- Password hashing: `argon2id` with a per-user random salt; baseline parameters
+  `time=3, memory=64MB, threads=4, keyLen=32`. Store parameters alongside the hash so they can
+  be upgraded over time. Hash nonexistent users too (dummy verify) to equalize login timing.
+- PGP: the server stores only **public** keys. Decryption of shipping addresses happens
+  client-side (vendor's own machine); private key material must never touch the server.
