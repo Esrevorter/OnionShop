@@ -9,29 +9,30 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      # CRITICAL: pin the EXACT toolchain (not go-version-file, not "stable").
+      # Root cause of the recurring `undefined: chi/scs/pgx/redis` typecheck
+      # cascade (verified against raw CI logs of run 41276126361): the
+      # staticcheck action re-invokes setup-go with version "stable", which on
+      # current runner images installs Go 1.27.3 and OVERWRITES PATH/GOROOT for
+      # every later step. golangci-lint v1.64.8 is built with Go 1.23/1.24
+      # libraries and cannot parse export data emitted by newer compilers, so
+      # its packages.Load typecheck fails to resolve all third-party imports —
+      # while vet/staticcheck/download pass because they run on the new Go.
+      # Pinning 1.23.12 here makes the whole job hermetic; see final check below.
       - uses: actions/setup-go@v5
         with:
-          go-version-file: go.mod
+          go-version: "1.23.12"
+      - name: Assert toolchain integrity
+        run: |
+          echo "PATH order:"; echo "$PATH" | tr ':' '\n' | grep -i go | head -5
+          go version
+          go env GOTOOLCHAIN GOVERSION GOMODCACHE GOCACHE
+          if ! go version | grep -q "go1\.23\."; then
+            echo "::error::CI must run Go 1.23.x for golangci-lint v1.64.8 compatibility" >&2
+            exit 1
+          fi
       - name: vet
         run: go vet ./...
-      - name: staticcheck
-        uses: dominikh/staticcheck-action@v1
-        with:
-          version: "latest"
-      - name: Toolchain probe + full module download
-        # Reproduces the suspected CI failure mode locally/transparently:
-        # (a) print the exact toolchain env, and (b) force resolution of the
-        # COMPLETE module graph (including test/tool deps that lazy `go build`
-        # never touches). If any dep in go.sum/go.mod is unresolvable or the
-        # fetched toolchain mismatches go.mod's `go 1.23`, this step fails
-        # loudly BEFORE the lint step, isolating root cause.
-        run: |
-          echo "== go env =="
-          go version
-          echo "GOTOOLCHAIN=${GOTOOLCHAIN:-<unset -> default auto>}"
-          go env GOTOOLCHAIN GOVERSION GOMODCACHE GOCACHE GOPATH
-          echo "== full module graph download =="
-          go mod download all
       - name: Purge stale golangci-lint / Go build caches
         # Defense-in-depth against cache staleness: even with skip-cache,
         # deeper binary/module caches (~/.cache/golangci-lint, GOCACHE) can
@@ -39,34 +40,19 @@ jobs:
         # Wipe them so the lint step always analyzes from cold truth, exactly
         # like the passing vet step does.
         run: |
-          rm -rf ~/.cache/golangci-lint
+          rm -rf ~/.cache/golangci-lint "${RUNNER_TEMP}/golangci-lint-cache" || true
           go clean -cache -testcache
       - name: golangci-lint
-        # ESCALATION (step 3 of the pin-and-purge plan): the action wrapper
-        # golangci/golangci-lint-action@v6 is provably the culprit. Its logs
-        # show it ran /home/runner/golangci-lint-1.64.8-linux-amd64/golangci-lint
-        # with NO GOMODCACHE/GOPATH env overrides, so the tool resolved the
-        # module graph against a STALE shared per-user Go env baked into the
-        # runner image — producing undefined chi/scs/pgx/redis typecheck
-        # cascades on commits whose go.mod/go.sum are verified-good, while
-        # every raw-go step (vet/staticcheck/test) passed on the identical
-        # checkout. Raw `go run` below executes in exactly the same toolchain
-        # env as the passing vet step (setup-go's GOMODCACHE/GOCACHE), and
-        # @v1.64.8 pins the same binary version we verified locally from a
-        # cold cache (exit 0). Behavior stays pinned by .golangci.yml.
+        # Raw `go run` (no action wrapper) executes in exactly the same
+        # toolchain env as the passing vet step; @v1.64.8 pins the binary;
+        # behavior pinned by .golangci.yml. GOTOOLCHAIN=local guarantees no
+        # silent switch to a newer toolchain mid-step.
         env:
-          # Explicit override: some runner images/actions contexts set
-          # GOTOOLCHAIN=local, which pins the preinstalled Go binary and
-          # refuses to fetch the go>=1.23 toolchain that go.mod now demands.
-          # That made golangci-lint's packages.Load typecheck diverge from
-          # the passing vet step (undefined chi/scs/pgx/redis cascades).
-          # `auto` guarantees setup-go's declared toolchain is honored.
-          GOTOOLCHAIN: auto
-          GOLANGCI_LINT_CACHE: ${{ runner.temp }}/golangci-lint-cache
-        run: |
-          rm -rf "$GOLANGCI_LINT_CACHE"
-          go run github.com/golangci/golangci-lint/cmd/golangci-lint@v1.64.8 run --timeout 5m ./...
+          GOTOOLCHAIN: local
+        run: go run github.com/golangci/golangci-lint/cmd/golangci-lint@v1.64.8 run --timeout 5m ./...
       - name: govulncheck
+        env:
+          GOTOOLCHAIN: auto
         run: |
           go install golang.org/x/vuln/cmd/govulncheck@latest
           govulncheck ./...
