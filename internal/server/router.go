@@ -66,6 +66,18 @@ type Deps struct {
 	Limiters  map[string]*RateLimiter
 	BucketFor func(r *http.Request, userID string) string
 	StartedAt time.Time
+	// Auth optionally mounts the Phase 3 login/register/logout surface. Nil
+	// means "no database wired" (degraded/dev mode): the routes simply do not
+	// exist and every other middleware guarantee still holds.
+	Auth *AuthSetup
+}
+
+// AuthSetup carries everything attachAuth needs, constructed by main.go only
+// when a Postgres pool is available.
+type AuthSetup struct {
+	Store AuthStore
+	DB    DBProvider
+	Cfg   AuthConfig
 }
 
 // App owns the router and its lifecycle.
@@ -75,6 +87,7 @@ type App struct {
 	router chi.Router
 	srv    *http.Server
 	sm     *scs.SessionManager
+	auth   *authHandlers
 }
 
 // New wires middleware in the mandated order and returns a ready-to-Serve App.
@@ -125,6 +138,9 @@ func New(cfg Config, deps Deps, sessionStore scs.Store) (*App, error) {
 	r.Use(CSRFProtect(deps.Sm))
 
 	r.Get("/healthz", a.handleHealth)
+	if deps.Auth != nil {
+		a.attachAuth(deps.Auth.Store, deps.Auth.DB, deps.Auth.Cfg)
+	}
 	r.NotFound(a.handleNotFound)
 
 	a.router = r

@@ -27,6 +27,7 @@ import (
 
 	"github.com/example/onionshop/internal/server"
 	"github.com/example/onionshop/internal/store"
+	gstore "github.com/example/onionshop/internal/store/gen"
 )
 
 const defaultAddr = "127.0.0.1:8080"
@@ -121,6 +122,17 @@ func main() {
 		log.Printf("redis unavailable (degraded mode): %v", err)
 	}
 
+	// Phase 3 auth surface: mounted only when Postgres is reachable. Without a
+	// DB the login/register routes simply do not exist (404/redirect per the
+	// anonymous policy) — degraded mode never pretends authentication works.
+	if pool != nil {
+		deps.Auth = &server.AuthSetup{
+			Store: gstore.New(),
+			DB:    poolProvider{pool},
+			Cfg:   server.AuthConfig{}, // safe defaults (see AuthConfig.withDefaults)
+		}
+	}
+
 	// Session backend selection: Redis fast path + Postgres durable mirror
 	// when either is configured; in-memory only when neither is available
 	// (dev/test — sessions cannot survive restarts, so production compose
@@ -162,4 +174,16 @@ func envOr(key, fallback string) string {
 		return v
 	}
 	return fallback
+}
+
+// poolProvider adapts *pgxpool.Pool to server.DBProvider. The pool itself is
+// the DBTX; nil pool (degraded mode) yields a nil executor so handlers answer
+// 503 rather than panicking.
+type poolProvider struct{ p *pgxpool.Pool }
+
+func (pp poolProvider) DB() gstore.DBTX {
+	if pp.p == nil {
+		return nil
+	}
+	return pp.p
 }

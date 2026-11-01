@@ -142,7 +142,7 @@ func RotateAndLogin(ctx context.Context, sm *scs.SessionManager, userID, role, t
 		return errors.New("server: login requires a user id")
 	}
 	if err := sm.RenewToken(ctx); err != nil {
-		_ = sm.DestroySession(ctx) // fail closed: never leave a partial login
+		_ = sm.Destroy(ctx) // fail closed: never leave a partial login
 		return fmt.Errorf("%w: %v", ErrInternalSession, err)
 	}
 	sm.Put(ctx, userIDKey, userID)
@@ -154,7 +154,7 @@ func RotateAndLogin(ctx context.Context, sm *scs.SessionManager, userID, role, t
 // Logout destroys the session outright (server-side store rows included),
 // which is stronger than merely clearing the identity keys.
 func Logout(ctx context.Context, sm *scs.SessionManager) error {
-	return sm.DestroySession(ctx)
+	return sm.Destroy(ctx)
 }
 
 // CurrentRole returns the session-stamped role ("" when anonymous).
