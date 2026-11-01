@@ -88,9 +88,9 @@ docker compose build
 docker compose up -d
 log "waiting for app health..."
 for i in $(seq 1 30); do
-  # app serves over the UNIX socket only; check it from inside the container
+  # app serves over loopback TCP inside its container; check it from inside
   if docker compose exec -T app sh -c \
-       "printf 'GET /healthz HTTP/1.0\r\n\r\n' | nc -U /run/onionshop/app.sock | grep -q ok" 2>/dev/null; then break; fi
+       "wget --quiet --tries=1 -O /dev/null http://127.0.0.1:8080/healthz" 2>/dev/null; then break; fi
   sleep 2
   [[ $i -eq 30 ]] && die "app never became healthy — check: docker compose logs app"
 done
