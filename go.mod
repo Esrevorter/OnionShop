@@ -2,7 +2,11 @@ module github.com/example/onionshop
 
 // The codebase uses generics and modern stdlib APIs; go 1.19 was stale and
 // caused CI type-check failures resolving third-party packages.
-go 1.22
+// Bumped to 1.23: golangci-lint v1.64.8 is built with Go ≥1.23, and a lower
+// language version in go.mod made its module-graph resolution diverge from
+// the passing vet/test steps on CI (stale typecheck cascades). setup-go reads
+// this file via go-version-file, so runners now fetch Go 1.23.x automatically.
+go 1.23
 
 require (
 	github.com/alexedwards/scs/v2 v2.8.0

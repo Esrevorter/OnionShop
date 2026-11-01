@@ -3,7 +3,7 @@
 # Build context is the repo root; docker-compose.yml references `dockerfile: Dockerfile`.
 
 # ---- Build stage (pinned toolchain matching go.mod) ----
-FROM golang:1.22-alpine AS build
+FROM golang:1.23-alpine AS build
 WORKDIR /src
 # Copy the module manifest first so dependency download is layer-cached.
 COPY go.mod go.sum ./
