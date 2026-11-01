@@ -11,8 +11,6 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/redis/go-redis/v9"
-
-	"github.com/example/onionshop/internal/store"
 )
 
 // Config carries everything main.go resolved from flags/env. Kept tiny and
@@ -45,7 +43,6 @@ func (c Config) Validate() error {
 // Deps are the wired subsystems. Phase 3+ handlers receive *App and pull their
 // own dependencies off it — this is what keeps handler signatures uniform.
 type Deps struct {
-	Store     *store.FallbackStore // scs.CtxStore implementation
 	Pool      interface{ Close() } // pgx pool handle kept for shutdown symmetry
 	RDB       *redis.Client
 	Sm        *scs.SessionManager
@@ -64,6 +61,9 @@ type App struct {
 }
 
 // New wires middleware in the mandated order and returns a ready-to-Serve App.
+// sessionStore is the scs backend (store.FallbackStore in production: Redis
+// fast path + Postgres durable mirror; an in-memory store in dev). It is
+// required — there is no silent default, per AGENTS.md §3.
 //
 // Middleware order (outermost first) — deliberate, do not reshuffle:
 //  1. StripForwardedHeaders  — kill client-supplied forwarding lies before anything reads them
@@ -75,22 +75,18 @@ type App struct {
 //  7. RateLimit              — identity-aware sliding windows (reads session/user keys)
 //  8. CSRFProtect            — validate state-changing requests after throttling
 //  9. routes                 — Phase 3 handlers attach here
-func New(cfg Config, deps Deps) (*App, error) {
+func New(cfg Config, deps Deps, sessionStore scs.Store) (*App, error) {
 	if err := cfg.Validate(); err != nil {
 		return nil, err
 	}
-	if deps.Store == nil {
+	if sessionStore == nil {
 		return nil, errors.New("server: missing session store")
 	}
 
 	sc := DefaultSessionConfig()
-	if cfg.SecureCookies {
-		sc.SecureCookies = true
-	} else {
-		sc.SecureCookies = false
-	}
+	sc.SecureCookies = cfg.SecureCookies
 	if deps.Sm == nil {
-		deps.Sm = NewSessions(deps.Store, sc)
+		deps.Sm = NewSessions(sessionStore, sc)
 	}
 
 	a := &App{cfg: cfg, deps: deps, sm: deps.Sm}
