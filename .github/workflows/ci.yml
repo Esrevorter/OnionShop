@@ -20,8 +20,15 @@ jobs:
           version: "latest"
       - name: golangci-lint
         uses: golangci/golangci-lint-action@v6
+        # skip-cache: the action's incremental result cache can serve STALE
+        # typecheck findings from a previous (broken go.mod) state even after
+        # the module manifest is repaired — e.g. CI reported undefined
+        # chi/scs/pgx/redis on a commit whose go.mod was already fixed, while
+        # every non-cached step (vet/staticcheck) passed. Disable until we can
+        # trust cache keys across dependency-graph repairs.
         with:
           version: latest
+          skip-cache: true
       - name: govulncheck
         run: |
           go install golang.org/x/vuln/cmd/govulncheck@latest
