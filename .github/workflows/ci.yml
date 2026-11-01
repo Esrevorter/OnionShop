@@ -9,22 +9,20 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      # CRITICAL: pin the EXACT toolchain (not go-version-file, not "stable").
-      # Root cause of the recurring `undefined: chi/scs/pgx/redis` typecheck
-      # cascade (verified against raw CI logs of run 41276126361): the
-      # staticcheck action re-invokes setup-go with version "stable", which on
-      # current runner images installs Go 1.27.3 and OVERWRITES PATH/GOROOT for
-      # every later step. golangci-lint v1.64.8 is built with Go 1.23/1.24
-      # libraries and cannot parse export data emitted by newer compilers, so
-      # its packages.Load typecheck fails to resolve all third-party imports —
-      # while vet/staticcheck/download pass because they run on the new Go.
-      # Pinning 1.23.12 here makes the whole job hermetic; see final check below.
+      # Lint toolchain pin (root cause of the recurring undefined
+      # chi/scs/pgx/redis typecheck cascade — proven from raw CI logs):
+      # golangci-lint v1.64.8 is built with Go 1.23/1.24 libraries and cannot
+      # parse export data produced by newer compilers (Go 1.25+). Previously
+      # the staticcheck action silently re-ran setup-go with "stable",
+      # replacing PATH/GOROOT with Go 1.27.3 for every later step, so only the
+      # lint step's packages.Load typecheck broke while vet/test passed.
+      # This job therefore runs the whole pipeline on the pinned patched
+      # toolchain below; no other step may overwrite it.
       - uses: actions/setup-go@v5
         with:
           go-version: "1.23.12"
       - name: Assert toolchain integrity
         run: |
-          echo "PATH order:"; echo "$PATH" | tr ':' '\n' | grep -i go | head -5
           go version
           go env GOTOOLCHAIN GOVERSION GOMODCACHE GOCACHE
           if ! go version | grep -q "go1\.23\."; then
@@ -45,19 +43,31 @@ jobs:
       - name: golangci-lint
         # Raw `go run` (no action wrapper) executes in exactly the same
         # toolchain env as the passing vet step; @v1.64.8 pins the binary;
-        # behavior pinned by .golangci.yml. GOTOOLCHAIN=local guarantees no
-        # silent switch to a newer toolchain mid-step.
+        # behavior pinned by .golangci.yml. GOTOOLCHAIN=local forbids any
+        # mid-step switch to a newer toolchain that would break export-data
+        # parsing again.
         env:
           GOTOOLCHAIN: local
         run: go run github.com/golangci/golangci-lint/cmd/golangci-lint@v1.64.8 run --timeout 5m ./...
+      - name: test
+        run: go test ./...
+
+  # Vulnerability scanning runs on the CURRENT supported Go release, not the
+  # lint-pinned 1.23.12: govulncheck's stdlib analysis reports vulnerabilities
+  # present in the *build* toolchain, and Go 1.23 is EOL upstream (fixed only
+  # in 1.26.x lines). Scanning at latest gives actionable results; production
+  # images should be rebuilt on the same current release (see Dockerfile note).
+  vuln:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: stable
       - name: govulncheck
-        env:
-          GOTOOLCHAIN: auto
         run: |
           go install golang.org/x/vuln/cmd/govulncheck@latest
           govulncheck ./...
-      - name: test
-        run: go test ./...
 
   sqlc:
     runs-on: ubuntu-latest
