@@ -76,7 +76,10 @@ func TestCaptchaWrongAnswer(t *testing.T) {
 	c, _ := newTestCaptcha(t)
 	ctx := context.Background()
 	ch, _ := c.Issue(ctx, "s", "", "message")
-	sum := promptSum(t, ch.Prompt)
+	sum, err := strconv.Atoi(promptSum(t, ch.Prompt))
+	if err != nil {
+		t.Fatalf("promptSum returned non-numeric answer: %v", err)
+	}
 	wrong := sum + 1
 	if err := c.Verify(ctx, ch.Token, ch.ID, strconv.Itoa(wrong), "s", ""); !errors.Is(err, ErrCaptchaInvalid) {
 		t.Fatalf("wrong answer accepted: %v", err)

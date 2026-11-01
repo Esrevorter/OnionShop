@@ -45,7 +45,11 @@ egress are mandatory.)
       session-keyed limits only behind CAPTCHA/honeypot friction — see SECURITY_AND_OPSEC.md §1).
 
 ## Phase 3: Auth & RBAC
-- [ ] User Registration & Login (Argon2id, params stored per-hash, dummy verify for unknown users).
+- [x] User Registration & Login — password + CAPTCHA service layer done 2026-11-01:
+      Argon2id hashing with self-describing per-hash param records (`internal/server/password.go`),
+      constant-time dummy verify for unknown users, username/password validators;
+      single-use HMAC-bound image CAPTCHA with Redis+memory mirror and deterministic
+      stdlib PNG renderer (`internal/server/captcha.go`). Handlers/templates still pending.
 - [ ] RBAC Middleware (Customer, Vendor, Mod, Admin) incl. account tiers (Basic/Upgraded).
 - [ ] HTML Templates for Auth (with image CAPTCHA & Honeypot — see AGENTS.md §3).
 - [ ] PGP public-key upload/validation + self-service PGP tool page (public keys only;
