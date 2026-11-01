@@ -108,7 +108,7 @@ func main() {
 	if p, err := store.OpenDBFromEnv(ctx); err == nil {
 		pool = p
 		deps.Pool = pool
-		defer pool.Close()
+		defer pool.Close() // pgxpool.Pool.Close() returns no value
 	} else {
 		log.Printf("postgres unavailable (degraded mode): %v", err)
 	}
@@ -116,7 +116,7 @@ func main() {
 	if c, err := store.OpenRedisFromEnv(ctx); err == nil {
 		rdb = c
 		deps.RDB = rdb
-		defer rdb.Close()
+		defer func() { _ = rdb.Close() }() // shutdown-time close; error is not actionable
 	} else {
 		log.Printf("redis unavailable (degraded mode): %v", err)
 	}

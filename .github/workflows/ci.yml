@@ -18,16 +18,28 @@ jobs:
         uses: dominikh/staticcheck-action@v1
         with:
           version: "latest"
+      - name: Purge stale golangci-lint / Go build caches
+        # Defense-in-depth against cache staleness: even with skip-cache,
+        # deeper binary/module caches (~/.cache/golangci-lint, GOCACHE) can
+        # serve stale typecheck findings from a previous broken-go.mod state.
+        # Wipe them so the lint step always analyzes from cold truth, exactly
+        # like the passing vet step does.
+        run: |
+          rm -rf ~/.cache/golangci-lint
+          go clean -cache -testcache
       - name: golangci-lint
         uses: golangci/golangci-lint-action@v6
+        # Pinned to v1.64.8 — the exact binary version observed in CI logs —
+        # so lint behavior never drifts with upstream "latest" releases.
+        # Behavior is additionally pinned by .golangci.yml at repo root
+        # (run.tests: true, explicit default linter set).
         # skip-cache: the action's incremental result cache can serve STALE
         # typecheck findings from a previous (broken go.mod) state even after
         # the module manifest is repaired — e.g. CI reported undefined
         # chi/scs/pgx/redis on a commit whose go.mod was already fixed, while
-        # every non-cached step (vet/staticcheck) passed. Disable until we can
-        # trust cache keys across dependency-graph repairs.
+        # every non-cached step (vet/staticcheck) passed.
         with:
-          version: latest
+          version: v1.64.8
           skip-cache: true
       - name: govulncheck
         run: |

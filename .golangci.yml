@@ -1,0 +1,32 @@
+# Pinned lint contract for CI (golangci-lint v1.64.8 — see .github/workflows/ci.yml).
+#
+# Rationale: the action previously ran with version: latest, so lint behavior
+# drifted with every upstream release and results were not reproducible across
+# runs. This file pins the *behavior* deterministically against the pinned
+# binary version: explicit standard linters (matching golangci-lint's default
+# set at v1.64) and tests included, independent of whatever "latest" enables.
+run:
+  # Lint test files too (default true — stated explicitly so an upstream
+  # default flip can never silently reduce coverage).
+  tests: true
+  # Keep timeout generous for cold module caches on runners.
+  timeout: 5m
+
+linters:
+  # NOT enable-all: stay on the deterministic default set plus unused, which
+  # already caught the dead-code regressions in cmd/onionshop/main.go.
+  disable-all: true
+  enable:
+    - errcheck
+    - gosimple
+    - govet
+    - ineffassign
+    - staticcheck
+    - unused
+
+issues:
+  # Show everything; do not hide findings behind default exclude patterns,
+  # so CI failures are fully visible and reproducible.
+  exclude-use-default: false
+  max-issues-per-linter: 0
+  max-same-issues: 0
