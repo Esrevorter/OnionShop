@@ -18,6 +18,20 @@ jobs:
         uses: dominikh/staticcheck-action@v1
         with:
           version: "latest"
+      - name: Toolchain probe + full module download
+        # Reproduces the suspected CI failure mode locally/transparently:
+        # (a) print the exact toolchain env, and (b) force resolution of the
+        # COMPLETE module graph (including test/tool deps that lazy `go build`
+        # never touches). If any dep in go.sum/go.mod is unresolvable or the
+        # fetched toolchain mismatches go.mod's `go 1.23`, this step fails
+        # loudly BEFORE the lint step, isolating root cause.
+        run: |
+          echo "== go env =="
+          go version
+          echo "GOTOOLCHAIN=${GOTOOLCHAIN:-<unset -> default auto>}"
+          go env GOTOOLCHAIN GOVERSION GOMODCACHE GOCACHE GOPATH
+          echo "== full module graph download =="
+          go mod download all
       - name: Purge stale golangci-lint / Go build caches
         # Defense-in-depth against cache staleness: even with skip-cache,
         # deeper binary/module caches (~/.cache/golangci-lint, GOCACHE) can
@@ -41,6 +55,13 @@ jobs:
         # @v1.64.8 pins the same binary version we verified locally from a
         # cold cache (exit 0). Behavior stays pinned by .golangci.yml.
         env:
+          # Explicit override: some runner images/actions contexts set
+          # GOTOOLCHAIN=local, which pins the preinstalled Go binary and
+          # refuses to fetch the go>=1.23 toolchain that go.mod now demands.
+          # That made golangci-lint's packages.Load typecheck diverge from
+          # the passing vet step (undefined chi/scs/pgx/redis cascades).
+          # `auto` guarantees setup-go's declared toolchain is honored.
+          GOTOOLCHAIN: auto
           GOLANGCI_LINT_CACHE: ${{ runner.temp }}/golangci-lint-cache
         run: |
           rm -rf "$GOLANGCI_LINT_CACHE"
