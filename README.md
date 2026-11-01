@@ -28,6 +28,8 @@ admin access over Dropbear-through-a-private-onion.
   separate private onion to Dropbear
 
 ## Repository Layout
+*(Planned layout — `internal/{server,store}` and `web/templates` are created as Phases 2–3 land;
+today the repo holds the Phase-1 skeleton: entrypoint, migrations, deploy tooling.)*
 ```
 cmd/onionshop/       entrypoint (HTTP server + background poller/cron)
 internal/server/     chi router, middleware (security headers, CSRF, sessions, rate limit)

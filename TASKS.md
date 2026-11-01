@@ -12,7 +12,9 @@ egress are mandatory.)
 
 ## Phase 1: Foundation
 - [x] Initialize Go module (`go.mod`, `cmd/onionshop/main.go`) and directory structure
-      (`internal/{server,store,cron}`, `web/templates`, `db/migrations`).
+      (`internal/{server,store}`, `web/templates`, `db/migrations`).
+      Note 2026-11-01: only `db/migrations/` + `web/static/` exist as real dirs today; the
+      `internal/*` and `web/templates` dirs are created when Phase 2/3 code lands.
 - [x] Write `docker-compose.yml` (Postgres, Redis with `maxmemory-policy noeviction` + persistence
       OFF, nginx reverse proxy) — hardened revision done 2026-11-01: UNIX-socket app↔nginx wiring
       (shared `appsock` volume, no TCP hop), `cap_drop: [ALL]` + `no-new-privileges` + `read_only`
