@@ -1,7 +1,7 @@
 -- db/schema.sql — canonical schema for sqlc (sqlc.yaml: schema: "db/schema.sql").
 --
 -- This is the Postgres state after applying every migration in db/migrations/
--- (0001–0005), flattened so sqlc's built-in parser can resolve all queries.
+-- (0001–0006), flattened so sqlc's built-in parser can resolve all queries.
 -- The live schema is still managed by golang-migrate (make migrate); keep this
 -- file in sync whenever a new migration lands. Notably, migration 0005 rewrites
 -- sessions.id to TEXT and sessions.data to BYTEA and adds sessions.updated_at;
@@ -23,9 +23,24 @@ CREATE TABLE users (
     pgp_public_key  TEXT,                       -- armored PUBLIC key only; private keys never stored
     status          TEXT NOT NULL DEFAULT 'active'
                     CHECK (status IN ('pending','active','suspended','banned')),
+    -- migration 0006 (Phase 3): account tiers + anti-phishing personal phrase
+    tier            TEXT NOT NULL DEFAULT 'basic'
+                    CHECK (tier IN ('basic','upgraded')),
+    personal_phrase TEXT,
     created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at      TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+
+-- Login history (migration 0006). Deliberately stores NO IP addresses:
+-- only the Host header served at login time (clone-spotting aid) + outcome.
+CREATE TABLE login_history (
+    id         BIGSERIAL PRIMARY KEY,
+    user_id    UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    success    BOOLEAN NOT NULL,
+    host_used  TEXT NOT NULL DEFAULT '',
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX login_history_user_idx ON login_history (user_id, created_at DESC);
 
 -- Sessions fallback table (primary store is Redis; see ARCHITECTURE.md §2).
 -- Column types reflect migration 0005 applied on top of 0001:

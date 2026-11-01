@@ -125,6 +125,52 @@ func CurrentUserID(ctx context.Context, sm *scs.SessionManager) string {
 	return sm.GetString(ctx, userIDKey)
 }
 
+// roleKey holds the DB-authoritative role copied into the session at login so
+// RequireRole can gate requests without a database round-trip per hop. It is
+// only ever written by RotateAndLogin (immediately after rotation), never from
+// user input — a stolen/fixated session cannot self-escalate via cookie data.
+const roleKey = "user.role"
+
+// RotateAndLogin establishes an authenticated session: it first runs the
+// mandated rotation (new CSPRNG token, data preserved, absolute clock intact),
+// then stamps identity, role and tier. Callers MUST treat any returned error
+// as a failed login: on error the session is destroyed so no
+// half-authenticated state survives (AGENTS.md §4, SECURITY_AND_OPSEC.md §1).
+// Pass empty strings to re-stamp nothing on a pure rotation.
+func RotateAndLogin(ctx context.Context, sm *scs.SessionManager, userID, role, tier string) error {
+	if userID == "" {
+		return errors.New("server: login requires a user id")
+	}
+	if err := sm.RenewToken(ctx); err != nil {
+		_ = sm.DestroySession(ctx) // fail closed: never leave a partial login
+		return fmt.Errorf("%w: %v", ErrInternalSession, err)
+	}
+	sm.Put(ctx, userIDKey, userID)
+	sm.Put(ctx, roleKey, role)
+	sm.Put(ctx, tierKey, tier)
+	return nil
+}
+
+// Logout destroys the session outright (server-side store rows included),
+// which is stronger than merely clearing the identity keys.
+func Logout(ctx context.Context, sm *scs.SessionManager) error {
+	return sm.DestroySession(ctx)
+}
+
+// CurrentRole returns the session-stamped role ("" when anonymous).
+func CurrentRole(ctx context.Context, sm *scs.SessionManager) string {
+	return sm.GetString(ctx, roleKey)
+}
+
+// tierKey holds the session-stamped account tier, written alongside the role
+// at login (same trust rules as roleKey).
+const tierKey = "user.tier"
+
+// CurrentTier returns the session-stamped tier ("" when anonymous).
+func CurrentTier(ctx context.Context, sm *scs.SessionManager) string {
+	return sm.GetString(ctx, tierKey)
+}
+
 // NewRandomToken returns n cryptographically-random bytes (default 32 => 256
 // bits) base64url-encoded. Used for CSRF and later CAPTCHA tokens.
 func NewRandomToken(n int) (string, error) {
