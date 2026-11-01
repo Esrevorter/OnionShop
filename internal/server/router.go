@@ -18,8 +18,9 @@ import (
 // Config carries everything main.go resolved from flags/env. Kept tiny and
 // explicit: no functional options, per AGENTS.md §3 ("constructor + setters").
 type Config struct {
-	// Addr is the listener address. Must be loopback or a unix:// URL; anything
-	// else is refused at construction (AGENTS.md §1, SECURITY_AND_OPSEC.md §4).
+	// Addr is the TCP listener address. It must be loopback; anything else is
+	// refused at construction (AGENTS.md §1, SECURITY_AND_OPSEC.md §4). Sourced
+	// from -addr / ONIONSHOP_ADDR.
 	Addr string
 	// SecureCookies mirrors ONIONSHOP_SECURE_COOKIES (false only for local dev).
 	SecureCookies bool
@@ -34,12 +35,10 @@ func (c Config) Validate() error {
 		return errors.New("server: empty listen address")
 	}
 	switch {
-	case strings.HasPrefix(c.Addr, "unix://"):
-		return nil
 	case strings.HasPrefix(c.Addr, "127.0.0.1:"), strings.HasPrefix(c.Addr, "[::1]:"):
 		return nil
 	default:
-		return errors.New("server: refusing to bind " + c.Addr + " (loopback or unix:// only)")
+		return errors.New("server: refusing to bind " + c.Addr + " (loopback TCP only)")
 	}
 }
 
@@ -134,19 +133,12 @@ func (a *App) Router() chi.Router { return a.router }
 // Handler returns the composed http.Handler (used by httptest suites).
 func (a *App) Handler() http.Handler { return a.router }
 
-// Serve runs the HTTP server until ctx is cancelled, then drains gracefully.
+// Serve runs the HTTP server over TCP until ctx is cancelled, then drains
+// gracefully. OnionShop serves TCP only (loopback-enforced via Config.Validate);
+// CI and Docker assume a plain -addr/ONIONSHOP_ADDR TCP listener.
 func (a *App) Serve(ctx context.Context) error {
 	errCh := make(chan error, 1)
 	go func() {
-		if a.cfg.Network() == "unix" {
-			ln, err := newUnixListener(a.cfg.Addr)
-			if err != nil {
-				errCh <- err
-				return
-			}
-			errCh <- a.srv.Serve(ln)
-			return
-		}
 		errCh <- a.srv.ListenAndServe()
 	}()
 
@@ -161,14 +153,6 @@ func (a *App) Serve(ctx context.Context) error {
 		defer cancel()
 		return a.srv.Shutdown(shutdownCtx)
 	}
-}
-
-// Network reports the listener kind derived from the address.
-func (c Config) Network() string {
-	if strings.HasPrefix(c.Addr, "unix://") {
-		return "unix"
-	}
-	return "tcp"
 }
 
 // bucketForRequest maps path prefixes onto limiter buckets. The caller may

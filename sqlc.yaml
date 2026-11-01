@@ -2,7 +2,9 @@ version: "2"
 sql:
   - engine: "postgresql"
     queries: "db/query"
-    schema: "db/migrations"
+    # db/schema.sql mirrors db/migrations/ (0001-0005) flattened for sqlc's
+    # parser; keep it in sync when new migrations land.
+    schema: "db/schema.sql"
     gen:
       go:
         package: "store"
