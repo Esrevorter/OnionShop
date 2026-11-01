@@ -28,19 +28,23 @@ jobs:
           rm -rf ~/.cache/golangci-lint
           go clean -cache -testcache
       - name: golangci-lint
-        uses: golangci/golangci-lint-action@v6
-        # Pinned to v1.64.8 — the exact binary version observed in CI logs —
-        # so lint behavior never drifts with upstream "latest" releases.
-        # Behavior is additionally pinned by .golangci.yml at repo root
-        # (run.tests: true, explicit default linter set).
-        # skip-cache: the action's incremental result cache can serve STALE
-        # typecheck findings from a previous (broken go.mod) state even after
-        # the module manifest is repaired — e.g. CI reported undefined
-        # chi/scs/pgx/redis on a commit whose go.mod was already fixed, while
-        # every non-cached step (vet/staticcheck) passed.
-        with:
-          version: v1.64.8
-          skip-cache: true
+        # ESCALATION (step 3 of the pin-and-purge plan): the action wrapper
+        # golangci/golangci-lint-action@v6 is provably the culprit. Its logs
+        # show it ran /home/runner/golangci-lint-1.64.8-linux-amd64/golangci-lint
+        # with NO GOMODCACHE/GOPATH env overrides, so the tool resolved the
+        # module graph against a STALE shared per-user Go env baked into the
+        # runner image — producing undefined chi/scs/pgx/redis typecheck
+        # cascades on commits whose go.mod/go.sum are verified-good, while
+        # every raw-go step (vet/staticcheck/test) passed on the identical
+        # checkout. Raw `go run` below executes in exactly the same toolchain
+        # env as the passing vet step (setup-go's GOMODCACHE/GOCACHE), and
+        # @v1.64.8 pins the same binary version we verified locally from a
+        # cold cache (exit 0). Behavior stays pinned by .golangci.yml.
+        env:
+          GOLANGCI_LINT_CACHE: ${{ runner.temp }}/golangci-lint-cache
+        run: |
+          rm -rf "$GOLANGCI_LINT_CACHE"
+          go run github.com/golangci/golangci-lint/cmd/golangci-lint@v1.64.8 run --timeout 5m ./...
       - name: govulncheck
         run: |
           go install golang.org/x/vuln/cmd/govulncheck@latest
