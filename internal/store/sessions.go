@@ -12,13 +12,44 @@ import (
 	"github.com/redis/go-redis/v9"
 )
 
-// Session table layout used by the scs Postgres fallback store. The existing
-// db/migrations/0001 `sessions` table predates scs (bytea token + JSONB blob +
-// absolute_stop); rather than break it, migration 0005 adds the `expiry`
-// column scs needs plus a partial unique index so only live rows are
-// constrained, and widens `id` to TEXT (scs tokens are base64 strings).
+// Table/column contract with db/migrations/0001_core_schema.up.sql +
+// db/migrations/0005_sessions_scs.{up,down}.sql. The legacy 0001 table stores
+// the token as BYTEA and the payload as JSONB; scs needs a text token and an
+// opaque gob blob, so 0005 rewrites those two columns and adds `updated_at`.
+//
+// Expiry semantics (deliberately simplified vs. the original draft, which
+// invented an `expiry` column that 0005 never created — every query would have
+// failed with "column expiry does not exist"):
+//   - expires_at    = scs idle expiry, rewritten on every commit;
+//   - absolute_stop = hard lifetime cap, set once at creation and clamped with
+//     LEAST() so an idle refresh can never extend a session's life.
+//
+// A row is live only when BOTH are in the future.
 const (
-	scsExpiryCol = "expiry" // TIMESTAMPTZ added by 0005; drives scs expiry semantics
+	sessionSelectSQL = `SELECT data FROM sessions
+ WHERE id = $1 AND expires_at > now() AND absolute_stop > now()`
+
+	sessionCommitSQL = `INSERT INTO sessions (id, data, expires_at, absolute_stop, updated_at)
+ VALUES ($1, $2, $3, $4, now())
+ ON CONFLICT (id) DO UPDATE
+     SET data          = EXCLUDED.data,
+         expires_at    = EXCLUDED.expires_at,
+         absolute_stop = LEAST(sessions.absolute_stop, EXCLUDED.absolute_stop),
+         updated_at    = now()`
+
+	sessionDeleteSQL = `DELETE FROM sessions WHERE id = $1`
+
+	sessionCleanupSQL = `DELETE FROM sessions WHERE expires_at < now()`
+
+	sessionCountSQL = `SELECT count(*) FROM sessions
+ WHERE user_id IS NOT NULL AND expires_at > now() AND absolute_stop > now()`
+
+	sessionTouchableSQL = `SELECT id, data, expires_at, absolute_stop FROM sessions
+ WHERE expires_at > now() AND absolute_stop > now()
+ ORDER BY updated_at DESC NULLS LAST
+ LIMIT $1`
+
+	sessionSetUserSQL = `UPDATE sessions SET user_id = $2, updated_at = now() WHERE id = $1`
 )
 
 // ErrStoreUnavailable marks failures coming from a dead backing store; callers
@@ -41,10 +72,7 @@ func NewSessionFallback(pool *pgxpool.Pool) *SessionFallback {
 // an error (scs treats err as a system failure only).
 func (f *SessionFallback) FindCtx(ctx context.Context, token string) ([]byte, bool, error) {
 	var data []byte
-	err := f.pool.QueryRow(ctx,
-		`SELECT data FROM sessions
-		  WHERE id = $1 AND expires_at > now() AND current_timestamp < `+scsExpiryCol,
-		token).Scan(&data)
+	err := f.pool.QueryRow(ctx, sessionSelectSQL, token).Scan(&data)
 	switch {
 	case errors.Is(err, pgx.ErrNoRows):
 		return nil, false, nil
@@ -57,15 +85,7 @@ func (f *SessionFallback) FindCtx(ctx context.Context, token string) ([]byte, bo
 // Commit upserts the session row. absolute_stop keeps the original hard
 // deadline on first write; subsequent refreshes only move the idle expiry.
 func (f *SessionFallback) CommitCtx(ctx context.Context, token string, data []byte, expiry time.Time) error {
-	_, err := f.pool.Exec(ctx,
-		`INSERT INTO sessions (id, data, expires_at, `+scsExpiryCol+`, absolute_stop)
-		 VALUES ($1, $2, $3, $4, $4)
-		ON CONFLICT (id) DO UPDATE
-		    SET data = EXCLUDED.data,
-		        expires_at = EXCLUDED.expires_at,
-		        `+scsExpiryCol+` = EXCLUDED.`+scsExpiryCol+`,
-		        absolute_stop = LEAST(sessions.absolute_stop, EXCLUDED.absolute_stop)`,
-		token, data, expiry, expiry)
+	_, err := f.pool.Exec(ctx, sessionCommitSQL, token, data, expiry, expiry)
 	if err != nil {
 		return fmt.Errorf("%w: %v", ErrStoreUnavailable, err)
 	}
@@ -74,7 +94,7 @@ func (f *SessionFallback) CommitCtx(ctx context.Context, token string, data []by
 
 // Delete removes the session row (logout / kill).
 func (f *SessionFallback) DeleteCtx(ctx context.Context, token string) error {
-	_, err := f.pool.Exec(ctx, `DELETE FROM sessions WHERE id = $1`, token)
+	_, err := f.pool.Exec(ctx, sessionDeleteSQL, token)
 	if err != nil {
 		return fmt.Errorf("%w: %v", ErrStoreUnavailable, err)
 	}
@@ -83,7 +103,7 @@ func (f *SessionFallback) DeleteCtx(ctx context.Context, token string) error {
 
 // Cleanup drops expired rows; wired into the maintenance cron.
 func (f *SessionFallback) Cleanup(ctx context.Context) error {
-	_, err := f.pool.Exec(ctx, `DELETE FROM sessions WHERE expires_at < now()`)
+	_, err := f.pool.Exec(ctx, sessionCleanupSQL)
 	if err != nil {
 		return fmt.Errorf("%w: %v", ErrStoreUnavailable, err)
 	}
@@ -94,8 +114,7 @@ func (f *SessionFallback) Cleanup(ctx context.Context) error {
 // (used by the staff dashboard; no PII leaves this function).
 func (f *SessionFallback) ActiveUserCount(ctx context.Context) (int64, error) {
 	var n int64
-	err := f.pool.QueryRow(ctx,
-		`SELECT count(*) FROM sessions WHERE user_id IS NOT NULL AND expires_at > now()`).Scan(&n)
+	err := f.pool.QueryRow(ctx, sessionCountSQL).Scan(&n)
 	if err != nil {
 		return 0, fmt.Errorf("%w: %v", ErrStoreUnavailable, err)
 	}
@@ -137,10 +156,50 @@ func (s *FallbackStore) Delete(token string) error {
 	return s.DeleteCtx(context.Background(), token)
 }
 
+// AllCtx returns every live session payload, keyed by token, so scs managers
+// with an IterableCtxStore can support Iterate (used later by the "kill all
+// sessions for user" admin action). Redis is not iterable here (no SCAN-based
+// guarantee under noeviction), so this reads the durable Postgres copy — which
+// is authoritative because Commit writes Postgres first.
+func (s *FallbackStore) AllCtx(ctx context.Context) (map[string][]byte, error) {
+	if s.fallback == nil {
+		return map[string][]byte{}, nil
+	}
+	rows, err := s.fallback.pool.Query(ctx, sessionTouchableSQL, 5000)
+	if err != nil {
+		return nil, fmt.Errorf("%w: %v", ErrStoreUnavailable, err)
+	}
+	defer rows.Close()
+	out := make(map[string][]byte)
+	for rows.Next() {
+		var (
+			token         string
+			data          []byte
+			expires, stop time.Time
+		)
+		if err := rows.Scan(&token, &data, &expires, &stop); err != nil {
+			return nil, fmt.Errorf("%w: scan: %v", ErrStoreUnavailable, err)
+		}
+		if time.Until(expires) <= 0 || time.Until(stop) <= 0 {
+			continue
+		}
+		out[token] = data
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("%w: %v", ErrStoreUnavailable, err)
+	}
+	return out, nil
+}
+
+// All is the context-free variant of AllCtx.
+func (s *FallbackStore) All() (map[string][]byte, error) {
+	return s.AllCtx(context.Background())
+}
+
 // compile-time proof that both stores satisfy scs' context-aware interface.
 var (
-	_ scs.CtxStore = (*SessionFallback)(nil)
-	_ scs.CtxStore = (*FallbackStore)(nil)
+	_ scs.CtxStore         = (*SessionFallback)(nil)
+	_ scs.IterableCtxStore = (*FallbackStore)(nil)
 )
 
 // FallbackStore tries Redis first (fast path) and always mirrors commits to
@@ -253,9 +312,7 @@ func (s *FallbackStore) TouchAll(ctx context.Context, limit int) (int, error) {
 	if limit <= 0 || limit > 5000 {
 		limit = 1000
 	}
-	rows, err := s.fallback.pool.Query(ctx,
-		`SELECT id, data, LEAST(expires_at, `+scsExpiryCol+`) FROM sessions
-		  WHERE expires_at > now() ORDER BY updated_at DESC NULLS LAST LIMIT $1`, limit)
+	rows, err := s.fallback.pool.Query(ctx, sessionTouchableSQL, limit)
 	if err != nil {
 		return 0, fmt.Errorf("%w: %v", ErrStoreUnavailable, err)
 	}
@@ -264,14 +321,17 @@ func (s *FallbackStore) TouchAll(ctx context.Context, limit int) (int, error) {
 	n := 0
 	for rows.Next() {
 		var (
-			token   string
-			data    []byte
-			expires time.Time
+			token         string
+			data          []byte
+			expires, stop time.Time
 		)
-		if err := rows.Scan(&token, &data, &expires); err != nil {
+		if err := rows.Scan(&token, &data, &expires, &stop); err != nil {
 			return n, fmt.Errorf("%w: scan: %v", ErrStoreUnavailable, err)
 		}
 		ttl := time.Until(expires)
+		if abs := time.Until(stop); abs < ttl {
+			ttl = abs // never warm a row past its hard lifetime cap
+		}
 		if ttl <= 0 {
 			continue
 		}
@@ -284,4 +344,15 @@ func (s *FallbackStore) TouchAll(ctx context.Context, limit int) (int, error) {
 		return n, fmt.Errorf("%w: %v", ErrStoreUnavailable, err)
 	}
 	return n, nil
+}
+
+// LinkUser associates a live session with an authenticated user id (called on
+// login, after rotation). It mirrors the Redis-side switch of rate-limit keys
+// from session-scoped to user-scoped and is what makes ActiveUserCount honest.
+func (f *SessionFallback) LinkUser(ctx context.Context, token, userID string) error {
+	_, err := f.pool.Exec(ctx, sessionSetUserSQL, token, userID)
+	if err != nil {
+		return fmt.Errorf("%w: %v", ErrStoreUnavailable, err)
+	}
+	return nil
 }
