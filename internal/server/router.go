@@ -138,12 +138,16 @@ func New(cfg Config, deps Deps, sessionStore scs.Store) (*App, error) {
 	r.Use(CSRFProtect(deps.Sm))
 
 	r.Get("/healthz", a.handleHealth)
-	if deps.Auth != nil {
-		a.attachAuth(deps.Auth.Store, deps.Auth.DB, deps.Auth.Cfg)
-	}
 	r.NotFound(a.handleNotFound)
 
 	a.router = r
+
+	// Phase 3 auth routes mount AFTER a.router is assigned: attachAuth
+	// registers on the chi tree directly, and doing it before assignment
+	// dereferenced a nil router at boot (the old SIGSEGV).
+	if deps.Auth != nil {
+		a.attachAuth(deps.Auth.Store, deps.Auth.DB, deps.Auth.Cfg)
+	}
 	a.srv = &http.Server{
 		Addr:         cfg.Addr,
 		Handler:      r,

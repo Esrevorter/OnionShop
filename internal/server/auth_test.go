@@ -39,8 +39,8 @@ func testUUID(seed byte) pgtype.UUID {
 
 func newTestApp(t *testing.T, st AuthStore, db DBProvider) *App {
 	t.Helper()
-	app, err := New(Config{Addr: "127.0.0.1:0", SecureCookies: false},
-		Deps{Auth: &AuthSetup{Store: st, DB: db}}, scs.NewMemoryStore())
+	app, err := New(Config{Addr: "127.0.0.1:8080", SecureCookies: false},
+		Deps{Auth: &AuthSetup{Store: st, DB: db}}, scs.New().Store)
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
@@ -170,8 +170,20 @@ type noopExec struct{}
 func (noopExec) Exec(context.Context, string, ...interface{}) (pgconn.CommandTag, error) {
 	return pgconn.NewCommandTag(""), nil
 }
-func (noopExec) Query(context.Context, string, ...interface{}) (pgx.Rows, error) { return nil, nil }
-func (noopExec) QueryRow(context.Context, string, ...interface{}) pgx.Row        { return nil }
+func (noopExec) Query(context.Context, string, ...interface{}) (pgx.Rows, error) {
+	return nil, errors.New("server: raw SQL disabled in fake executor (tests must go through the store)")
+}
+func (noopExec) QueryRow(context.Context, string, ...interface{}) pgx.Row {
+	return errRow{}
+}
+
+// errRow is a pgx.Row that always fails Scan with ErrNoRows, mirroring "no
+// such user" from a real query without a live database.
+type errRow struct{}
+
+func (errRow) Scan(...interface{}) error { return pgx.ErrNoRows }
+
+var _ pgx.Row = errRow{}
 
 // ---------- client that carries cookies + CSRF like a real browser ----------
 
@@ -388,7 +400,7 @@ func TestSessionIdentityStampedAfterLogin(t *testing.T) {
 	hash, _ := HashPassword("marco-passphrase-x", fullFastParams())
 	fs.byName["marco"] = store.User{ID: testUUID(7), Username: "marco", PasswordHash: hash, Role: RoleVendor, Status: "active", Tier: TierUpgraded}
 	sm := scs.New()
-	app, err := New(Config{Addr: "127.0.0.1:0"}, Deps{Sm: sm, Auth: &AuthSetup{Store: fs, DB: fakeDB{}}}, scs.NewMemoryStore())
+	app, err := New(Config{Addr: "127.0.0.1:8080"}, Deps{Sm: sm, Auth: &AuthSetup{Store: fs, DB: fakeDB{}}}, scs.New().Store)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -434,7 +446,7 @@ t.Fatal(err)
 }
 fs.byName["gater"] = store.User{ID: testUUID(5), Username: "gater", PasswordHash: hash, Role: userRole, Status: "active", Tier: userTier}
 sm := scs.New()
-app, err := New(Config{Addr: "127.0.0.1:0"}, Deps{Sm: sm, Auth: &AuthSetup{Store: fs, DB: fakeDB{}}}, scs.NewMemoryStore())
+app, err := New(Config{Addr: "127.0.0.1:8080"}, Deps{Sm: sm, Auth: &AuthSetup{Store: fs, DB: fakeDB{}}}, scs.New().Store)
 if err != nil {
 t.Fatal(err)
 }
@@ -464,7 +476,7 @@ rbacGateTest(t, func(sm *scs.SessionManager) func(http.Handler) http.Handler { r
 
 func TestAnonymousBlockedByGates(t *testing.T) {
 sm := scs.New()
-app, err := New(Config{Addr: "127.0.0.1:0"}, Deps{Sm: sm}, scs.NewMemoryStore())
+app, err := New(Config{Addr: "127.0.0.1:8080"}, Deps{Sm: sm}, scs.New().Store)
 if err != nil {
 t.Fatal(err)
 }
