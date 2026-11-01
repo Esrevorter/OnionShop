@@ -3,30 +3,36 @@
 # Build context is the repo root; docker-compose.yml references `dockerfile: Dockerfile`.
 
 # ---- Build stage (pinned toolchain matching go.mod) ----
-FROM golang:1.19-alpine AS build
+FROM golang:1.22-alpine AS build
 WORKDIR /src
-# Module has no external dependencies today; copy sources only.
-COPY go.mod ./
+# Copy the module manifest first so dependency download is layer-cached.
+COPY go.mod go.sum ./
+RUN go mod download
 COPY cmd/ ./cmd/
+COPY internal/ ./internal/
 COPY db/ ./db/
+COPY web/ ./web/
 # Static, stripped build. CGO off => pure Go, no libc surprises at runtime.
 RUN CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags="-s -w" -o /out/onionshop ./cmd/onionshop
 
 # ---- Runtime stage ----
 FROM alpine:3.19
-# UID 1000 = app user; GID 101 matches the nginx container's 'nginx' group so
-# both can reach the shared UNIX socket (mode 0770, owner app:nginx).
-RUN addgroup -g 101 -S appsock \
- && adduser  -u 1000 -S -G appsock app \
- && mkdir -p /run/onionshop \
- && chown -R app:appsock /run/onionshop \
- && chmod 750 /run/onionshop
+RUN adduser -u 1000 -S app
 COPY --from=build /out/onionshop /usr/local/bin/onionshop
-USER 1000:101
-# Read-only rootfs: everything writable is a tmpfs declared in compose
-# (/tmp, /run/onionshop). Logs go to stdout; the logging driver keeps them on tmpfs.
-ENV ONIONSHOP_SOCKET=/run/onionshop/app.sock
-# No EXPOSE: the app publishes nothing; it listens only on the UNIX socket above.
+USER 1000:1000
+# Read-only rootfs: everything writable is a tmpfs declared in compose (/tmp).
+# Logs go to stdout; the logging driver keeps them on RAM.
+#
+# Bind policy: the binary enforces localhost-only unless ONIONSHOP_NET_NEVER=1
+# declares a contained network namespace with no off-box route (docker-compose
+# sets both vars there). The image default stays strict loopback so a bare
+# `docker run` WITHOUT the marker still cannot expose the app on eth0: the
+# process refuses to start rather than silently binding publicly.
+ENV ONIONSHOP_ADDR=127.0.0.1:8080
+EXPOSE 8080
 HEALTHCHECK --interval=30s --timeout=5s --retries=3 \
-  CMD printf 'GET /healthz HTTP/1.0\r\n\r\n' | nc -U /run/onionshop/app.sock | grep -q ok || exit 1
+  CMD wget --quiet --tries=1 -O /dev/null http://127.0.0.1:8080/healthz || exit 1
 ENTRYPOINT ["/usr/local/bin/onionshop"]
+# No fixed -addr here: honor $ONIONSHOP_ADDR (compose overrides it together
+# with ONIONSHOP_NET_NEVER for the contained-namespace bind).
+CMD []

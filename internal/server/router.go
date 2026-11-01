@@ -3,6 +3,8 @@ package server
 import (
 	"context"
 	"errors"
+	"fmt"
+	"net"
 	"net/http"
 	"strings"
 	"time"
@@ -27,17 +29,30 @@ type Config struct {
 }
 
 // Validate enforces the bind-address rule in code so a mistyped env var can
-// never silently expose the app off-box.
+// never silently expose the app off-box. Loopback is always allowed; an
+// any-interface (":port" / "0.0.0.0:port") bind is accepted only because the
+// single authoritative guard — cmd/onionshop's resolveAddr, gated on
+// ONIONSHOP_NET_NEVER inside a container namespace with no off-box route —
+// already vetted it before the Config reaches this layer. Anything else
+// (e.g. a routable interface IP handed straight to server.New) stays refused.
 func (c Config) Validate() error {
 	if c.Addr == "" {
 		return errors.New("server: empty listen address")
 	}
-	switch {
-	case strings.HasPrefix(c.Addr, "127.0.0.1:"), strings.HasPrefix(c.Addr, "[::1]:"):
-		return nil
+	host, port, err := net.SplitHostPort(c.Addr)
+	if err != nil {
+		return fmt.Errorf("server: invalid listen address %q: %w", c.Addr, err)
+	}
+	switch host {
+	case "127.0.0.1", "::1", "localhost", "", "0.0.0.0":
+		// loopback: always fine; wildcard: only via the main.go container gate.
 	default:
 		return errors.New("server: refusing to bind " + c.Addr + " (loopback TCP only)")
 	}
+	if port == "0" {
+		return errors.New("server: refusing to bind port 0")
+	}
+	return nil
 }
 
 // Deps are the wired subsystems. Phase 3+ handlers receive *App and pull their

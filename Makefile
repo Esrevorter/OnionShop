@@ -14,8 +14,8 @@ compose-config: ## validate docker-compose.yml after edits
 build: ## build the Go binary locally
 	go build -o bin/onionshop ./cmd/onionshop
 
-run: ## run locally against a UNIX socket in /tmp (dev only)
-	ONIONSHOP_SECURE_COOKIES=false go run ./cmd/onionshop -unix-socket /tmp/onionshop-dev.sock
+run: ## run locally against loopback TCP (dev only)
+	ONIONSHOP_SECURE_COOKIES=false go run ./cmd/onionshop -addr 127.0.0.1:8080
 
 test:
 	go test ./...

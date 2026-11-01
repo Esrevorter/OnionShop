@@ -9,14 +9,16 @@ Wants=postgresql.service redis-server.service
 [Service]
 Type=simple
 User=onionshop
-Group=nginxsock
-ExecStart=/usr/local/bin/onionshop
-Environment=ONIONSHOP_SOCKET=/run/onionshop/app.sock
+Group=onionshop
+ExecStart=/usr/local/bin/onionshop -addr 127.0.0.1:8080
+Environment=ONIONSHOP_ADDR=127.0.0.1:8080
+# NOTE: ONIONSHOP_NET_NEVER is intentionally NOT set here — bare-metal stays
+# strict localhost-only (the contained-bind allowance is compose-only).
 EnvironmentFile=-/etc/onionshop/env
 Restart=always
 RestartSec=5
 
-# --- Volatile runtime dirs (tmpfs): socket + logs never touch disk ---
+# --- Volatile runtime dirs (tmpfs): logs never touch disk ---
 RuntimeDirectory=onionshop
 RuntimeDirectoryMode=0750
 LogsDirectory=onionshop
