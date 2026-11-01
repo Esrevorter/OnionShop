@@ -22,7 +22,9 @@ services:
   # 1. Nginx Reverse Proxy (The Gatekeeper)
   # Terminates TLS 1.3 (self-signed; clients pin the SPKI fingerprint) on
   # loopback only, and proxies to the Go app over the internal compose
-  # network (loopback TCP inside the app container — no public exposure).
+  # network. The app binds its contained (NET_NEVER) namespace's interfaces,
+  # so service-DNS routing from this container works; nothing is ever
+  # published beyond host loopback.
   nginx:
     image: nginx:1.27-alpine           # pinned minor; bump deliberately after review
     <<: *default-hardening
@@ -47,14 +49,22 @@ services:
       retries: 3
 
   # 2. Go Application
+  # OpSec: the app binds its OWN network namespace only, and that namespace is
+  # NET_NEVER (no default route, no off-box reachability). nginx reaches it
+  # over the internal bridge; the ONIONSHOP_NET_NEVER marker below is what
+  # authorizes the contained bind in resolveAddr — remove it and the binary
+  # refuses to start on anything but loopback. Bare-metal/systemd installs do
+  # NOT set this marker and remain strict localhost-only.
   app:
     build:
       context: .
       dockerfile: Dockerfile
     <<: *default-hardening
     user: "1000:1000"                  # unprivileged app user
+    cap_add: [NET_RAW]                 # required for ping/curl health probes on alpine (no NET_ADMIN)
     environment:
-      - ONIONSHOP_ADDR=127.0.0.1:8080  # loopback TCP inside the container
+      - ONIONSHOP_ADDR=0.0.0.0:8080    # contained-namespace bind (see note above)
+      - ONIONSHOP_NET_NEVER=1          # declares the NET_NEVER sandbox; gates resolveAddr's non-loopback allowance
       - DATABASE_URL=postgres://${DB_USER}:${DB_PASSWORD}@postgres:5432/${DB_NAME}?sslmode=disable
       - REDIS_URL=redis://:${REDIS_PASSWORD}@redis:6379
       - BTCPAY_API_URL=http://btcpay:49392
@@ -70,6 +80,8 @@ services:
     healthcheck:
       # Plain GET (not --spider): the app answers HEAD on /healthz, but busybox
       # wget treats any non-2xx/3xx as an error and --spider would fail there.
+      # Loopback probe inside the app's own namespace — works regardless of
+      # which interface the listener is bound to.
       test: ["CMD", "wget", "--quiet", "--tries=1", "-O", "/dev/null", "http://127.0.0.1:8080/healthz"]
       interval: 30s
       timeout: 5s

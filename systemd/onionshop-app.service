@@ -12,6 +12,8 @@ User=onionshop
 Group=onionshop
 ExecStart=/usr/local/bin/onionshop -addr 127.0.0.1:8080
 Environment=ONIONSHOP_ADDR=127.0.0.1:8080
+# NOTE: ONIONSHOP_NET_NEVER is intentionally NOT set here — bare-metal stays
+# strict localhost-only (the contained-bind allowance is compose-only).
 EnvironmentFile=-/etc/onionshop/env
 Restart=always
 RestartSec=5
