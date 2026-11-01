@@ -1,11 +1,12 @@
 module github.com/example/onionshop
 
-// The codebase uses generics and modern stdlib APIs; go 1.19 was stale and
-// caused CI type-check failures resolving third-party packages.
-// Bumped to 1.23: golangci-lint v1.64.8 is built with Go ≥1.23, and a lower
-// language version in go.mod made its module-graph resolution diverge from
-// the passing vet/test steps on CI (stale typecheck cascades). setup-go reads
-// this file via go-version-file, so runners now fetch Go 1.23.x automatically.
+// Language/toolchain floor. History: 1.19 broke golangci-lint module-graph
+// resolution; 1.23 aligned it with the pinned linter's build toolchain. It now
+// sits at 1.25.0 because pgx v5.9.x requires go >= 1.25.0 — `go mod tidy`
+// enforces that floor transitively. CI pins the runner to an exact matching
+// toolchain (see .github/workflows/ci.yml): golangci-lint v1.64.8 chokes on
+// export data produced by Go >= 1.25/1.27-era compilers when the pin drifts,
+// so the runner version must track this directive deliberately, never "latest".
 go 1.25.0
 
 require (

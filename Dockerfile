@@ -3,7 +3,7 @@
 # Build context is the repo root; docker-compose.yml references `dockerfile: Dockerfile`.
 
 # ---- Build stage (pinned toolchain matching go.mod) ----
-FROM golang:1.23-alpine AS build
+FROM golang:1.25-alpine AS build
 WORKDIR /src
 # Copy the module manifest first so dependency download is layer-cached.
 COPY go.mod go.sum ./
@@ -17,6 +17,8 @@ RUN CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags="-s -w" -o /out/onionsh
 
 # ---- Runtime stage ----
 FROM alpine:3.19
+# wget comes from busybox already; curl-free on purpose (smaller attack
+# surface, one fewer CVE-prone parser in the image). adduser for non-root.
 RUN adduser -u 1000 -S app
 COPY --from=build /out/onionshop /usr/local/bin/onionshop
 USER 1000:1000
