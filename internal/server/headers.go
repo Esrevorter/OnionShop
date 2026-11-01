@@ -6,7 +6,10 @@
 //   - no JavaScript anywhere: CSP keeps `script-src 'none'`;
 //   - never log or key anything on the client IP (all traffic is 127.0.0.1);
 //   - no browser-facing HSTS: authenticity rides SPKI pinning, not HSTS;
-//   - bind only to the UNIX socket / loopback (enforced in cmd/onionshop).
+//   - bind only to TCP loopback — or, inside a provably contained network
+//     namespace (ONIONSHOP_NET_NEVER=1), the namespace wildcard — never a
+//     routable interface (enforced by resolveAddr in cmd/onionshop and
+//     re-checked by Config.Validate here).
 package server
 
 import "net/http"

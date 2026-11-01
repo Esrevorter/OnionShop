@@ -18,9 +18,11 @@ import (
 // Config carries everything main.go resolved from flags/env. Kept tiny and
 // explicit: no functional options, per AGENTS.md §3 ("constructor + setters").
 type Config struct {
-	// Addr is the TCP listener address. It must be loopback; anything else is
-	// refused at construction (AGENTS.md §1, SECURITY_AND_OPSEC.md §4). Sourced
-	// from -addr / ONIONSHOP_ADDR.
+	// Addr is the TCP listener address: loopback on bare metal, or the
+	// contained-namespace wildcard when cmd/onionshop's resolveAddr gate
+	// (ONIONSHOP_NET_NEVER=1) vetted it first. Routable interface IPs and
+	// port 0 are refused at construction (AGENTS.md §1, SECURITY_AND_OPSEC.md
+	// §4). Sourced from -addr / ONIONSHOP_ADDR.
 	Addr string
 	// SecureCookies mirrors ONIONSHOP_SECURE_COOKIES (false only for local dev).
 	SecureCookies bool
