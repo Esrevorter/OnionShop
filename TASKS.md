@@ -23,9 +23,14 @@ egress are mandatory.)
       `/static/*` read-only mount, forwarding-header stripping, security headers matching the Go
       middleware — SECURITY_AND_OPSEC.md §5.1) + self-signed .onion cert generation script with
       SPKI-fingerprint output for pinning (§1) — see `scripts/gen-certs.sh`.
-- [ ] Write SQL migrations for the full schema (users/RBAC, products, orders, escrow,
+- [x] Write SQL migrations for the full schema (users/RBAC, products, orders, escrow,
       double-entry ledger with idempotency keys, disputes, audit log) via `golang-migrate`/`goose`.
+      Done 2026-11-01: `db/migrations/0001–0004` cover users/sessions/vendors/categories/products,
+      orders/order_items/payment_events/disputes(+messages), accounts/ledger_entries(append-only
+      trigger)/withdrawals/audit_log, tickets/ticket_messages/threads/messages. **Gap**: RBAC is a
+      `role` column on `users`, not a separate role/permission table — revisit if tiers grow.
 - [ ] Set up DB connection pool (`pgx`) and Redis client; add `sqlc.yaml`.
+      (Not started: `go.mod` has no pgx/go-redis deps yet; store layer lives in `internal/server`.)
 - [x] Add Makefile (`build/test/migrate/up/down` + `certs/install/compose-config` targets),
       `.gitignore`, `.editorconfig`.
 
