@@ -2,14 +2,11 @@ package server
 
 import (
 	"context"
-	"crypto/rand"
 	"crypto/sha256"
 	"crypto/subtle"
-	"encoding/base64"
 	"errors"
 	"fmt"
 	"html/template"
-	"io"
 	"log"
 	"net/http"
 	"path/filepath"
@@ -65,7 +62,7 @@ type AuthStore interface {
 	AuthCreateUser(ctx context.Context, username, passwordHash, status string) (*UserRecord, error)
 	AuthUpdatePasswordHash(ctx context.Context, id pgtype.UUID, passwordHash string) error
 	AuthSetPersonalPhrase(ctx context.Context, id pgtype.UUID, phrase string) error
-	AuthRecordLogin(ctx context.Context, userID pgtype.UUID, at time.Time) error
+	AuthRecordLogin(ctx context.Context, userID pgtype.UUID, at time.Time, host string) error
 }
 
 // ErrNoSuchUser is the sentinel for unknown usernames; handlers treat it like
@@ -88,7 +85,7 @@ RETURNING id, username, password_hash, role, status, created_at`
 
 	qAuthSetPhrase = `UPDATE public.users SET personal_phrase = $2, updated_at = now() WHERE id = $1`
 
-	qAuthRecordLogin = `INSERT INTO public.login_history (user_id, occurred_at) VALUES ($1, $2)`
+	qAuthRecordLogin = `INSERT INTO public.login_history (user_id, occurred_at, host_header) VALUES ($1, $2, $3)`
 )
 
 // PGAuthStore adapts *pgxpool.Pool to AuthStore.
@@ -140,8 +137,8 @@ func (s *PGAuthStore) AuthSetPersonalPhrase(ctx context.Context, id pgtype.UUID,
 	return nil
 }
 
-func (s *PGAuthStore) AuthRecordLogin(ctx context.Context, userID pgtype.UUID, at time.Time) error {
-	if _, err := s.pool.Exec(ctx, qAuthRecordLogin, userID, at.UTC()); err != nil {
+func (s *PGAuthStore) AuthRecordLogin(ctx context.Context, userID pgtype.UUID, at time.Time, host string) error {
+	if _, err := s.pool.Exec(ctx, qAuthRecordLogin, userID, at.UTC(), host); err != nil {
 		return fmt.Errorf("store: record login: %w", err)
 	}
 	return nil
@@ -152,11 +149,16 @@ func (s *PGAuthStore) AuthRecordLogin(ctx context.Context, userID pgtype.UUID, a
 // RegisterAuthRoutes mounts the Phase 3 auth surface on the app router. Call
 // it AFTER New() so the middleware stack (sessions → CSRF → rate limit) is
 // already in place. Nil guards keep dev boots honest instead of panicking
-// mid-request.
-func (a *App) RegisterAuthRoutes(auth AuthStore, captcha *CaptchaService) {
+// mid-request. templateDir is parsed eagerly: a boot with unparseable or
+// missing templates fails loudly here rather than answering every page
+// request with a generic 500 later.
+func (a *App) RegisterAuthRoutes(auth AuthStore, captcha *CaptchaService, templateDir string) error {
+	if err := a.buildTemplates(templateDir); err != nil {
+		return err
+	}
 	if auth == nil || captcha == nil {
 		log.Print("server: auth routes not registered (missing store or captcha service)")
-		return
+		return nil
 	}
 	a.auth = auth
 	a.captcha = captcha
@@ -173,6 +175,7 @@ func (a *App) RegisterAuthRoutes(auth AuthStore, captcha *CaptchaService) {
 	accountMW := a.RequireRole("customer", "vendor", "mod", "admin")
 	r.Method(http.MethodGet, "/account", accountMW(http.HandlerFunc(a.handleAccount)))
 	r.Method(http.MethodPost, "/account/phrase", accountMW(http.HandlerFunc(a.handlePhraseSubmit)))
+	return nil
 }
 
 // handleHome is the minimal Phase 3 landing page; the catalog replaces it in
@@ -424,7 +427,7 @@ func (a *App) handleLoginSubmit(w http.ResponseWriter, r *http.Request) {
 	a.sm.Put(ctx, roleKey, user.Role)
 	a.sm.Put(ctx, createdKey, time.Now().UTC().Unix()) // absolute clock restarts at auth
 
-	if err := a.auth.AuthRecordLogin(ctx, user.ID, time.Now().UTC()); err != nil {
+	if err := a.auth.AuthRecordLogin(ctx, user.ID, time.Now().UTC(), r.Host); err != nil {
 		// Login history is defense-in-depth, not a gate: never block a good
 		// login over a bookkeeping failure, but do say something in the log.
 		log.Printf("auth: login history write failed (non-fatal): %v", sanitizedErr(err))
@@ -638,15 +641,5 @@ func (a *App) render(w http.ResponseWriter, name string, code int, data AuthData
 	}
 }
 
-// randomPhrase is unused today but reserved for phrase-suggestion UI.
-func randomPhrase() (string, error) {
-	b := make([]byte, 12)
-	if _, err := rand.Read(b); err != nil {
-		return "", err
-	}
-	return base64.RawURLEncoding.EncodeToString(b), nil
-}
-
-var _ = io.Discard // reserved: template parse helpers read files through os, see New()
-var _ chi.Router   // reserved: route mounting stays chi-typed (AGENTS.md §2)
-var _ = scs.New    // reserved: session manager constructor reference
+var _ chi.Router // reserved: route mounting stays chi-typed (AGENTS.md §2)
+var _ = scs.New  // reserved: session manager constructor reference
