@@ -1,0 +1,21 @@
+{{/*
+Shared POST-form skeleton. AGENTS.md §3 mandates every state-changing form
+carry, in this exact order:
+  1. hidden csrf_token   (double-submit; name fixed by sessions.go)
+  2. hidden captcha_token + visible puzzle image/answer (captcha.go)
+  3. honeypot field "sta" — CSS-hidden (.hp), autofill-resistant attributes,
+     and it must stay EMPTY for a human submission.
+*/}}
+{{define "friction"}}
+<input type="hidden" name="csrf_token" value="{{.CsrfToken}}">
+<input type="hidden" name="captcha_id" value="{{.Captcha.ID}}">
+<input type="hidden" name="captcha_token" value="{{.Captcha.Token}}">
+<label>CAPTCHA: {{.Captcha.Prompt}}
+<img class="captcha-img" src="/captcha/{{.Captcha.ID}}.png" alt="captcha puzzle">
+<input type="text" name="captcha_answer" autocomplete="off" maxlength="4" required></label>
+{{if .HoneypotHidden}}
+<div class="hp" aria-hidden="true">
+<label>leave blank <input type="text" name="sta" tabindex="-1" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"></label>
+</div>
+{{end}}
+{{end}}

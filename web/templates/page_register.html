@@ -1,0 +1,18 @@
+{{template "layout" .}}
+
+{{define "title"}}Register &middot; OnionShop{{end}}
+
+{{define "body"}}
+<h1>Create account</h1>
+<form method="post" action="/register" autocomplete="off">
+{{template "friction" .}}
+<label>Username (3-32 chars: lowercase letters, digits, underscore)
+<input type="text" name="username" minlength="3" maxlength="32" required></label>
+<label>Password (at least 10 characters)
+<input type="password" name="password" minlength="10" maxlength="128" required></label>
+<label>Confirm password
+<input type="password" name="password_confirm" minlength="10" maxlength="128" required></label>
+<p><button type="submit">Register</button></p>
+</form>
+<p><a href="/login">Already have an account?</a></p>
+{{end}}
