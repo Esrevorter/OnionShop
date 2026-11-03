@@ -293,10 +293,43 @@ func (a *App) sessionTokenForRequest(r *http.Request) string {
 		}
 		return ck.Value
 	}
+	// Cookie-less request: whatever identifier THIS request has already
+	// committed (or will commit verbatim — Commit never re-mints an existing
+	// token) is the one the following POST carries in its cookie. Prefer it
+	// over a stale stash from an earlier hop; fall back to the stash only when
+	// nothing exists yet (the classic first-GET case recordPendingToken fixes).
 	if tok := a.sm.Token(ctx); tok != "" {
 		return tok
 	}
 	return pending
+}
+
+// rotateToFreshToken commits a brand-new session identifier for THIS response
+// and returns it. The caller must mint any challenge bound to the session
+// token AFTER this call, so issue-time and verify-time anchors are identical.
+//
+// Why this exists: scs' lazy-commit semantics make the raw cookie an unstable
+// anchor whenever the handler chain rotates the identifier mid-request
+// (Destroy + RenewToken in AbsoluteExpiry, RotateOnAuth after login). The
+// rotation only reaches the client as a Set-Cookie header at response flush,
+// but requireFriction on the following POST reads sm.Token(ctx) — which is
+// still "" until the next request's LoadAndSave populates it from the cookie.
+// An empty ctx token makes sessionTokenForRequest fall back to the stale raw
+// cookie, so every post-rotation form silently fails its CAPTCHA binding MAC
+// while the pre-login (pending-token) path keeps working. Re-stashing the
+// committed token under pendingTokenKey at every rotation point gives all
+// three resolution sources one consistent answer across the GET→POST pair.
+//
+// The stash is self-healing: requireFriction Pop's it on successful verify,
+// recordPendingToken skips it whenever an identifier already exists, and the
+// login success path overwrites the session wholesale via rotation below.
+func (a *App) rotateToFreshToken(ctx context.Context) error {
+	token, _, err := a.sm.Commit(ctx)
+	if err != nil {
+		return err
+	}
+	a.sm.Put(ctx, pendingTokenKey, token)
+	return nil
 }
 
 // recordPendingToken stashes the token that scs is about to commit for this
@@ -313,6 +346,17 @@ func (a *App) sessionTokenForRequest(r *http.Request) string {
 // Failures here are non-fatal: losing the stash only means the next form post
 // re-solves a fresh challenge, never a security downgrade.
 func (a *App) recordPendingToken(ctx context.Context) {
+	if pending := a.sm.GetString(ctx, pendingTokenKey); pending != "" {
+		// A rotation point (logout, login, expiry reset) already committed this
+		// response's identifier; challenges minted now must bind to exactly it.
+		// Re-commit so the store holds the final data under that token even if
+		// nothing else in the request marks the session Modified (Commit is
+		// idempotent for the identifier — it never re-mints an existing one).
+		if _, _, err := a.sm.Commit(ctx); err != nil {
+			log.Printf("auth: pending session token recommit failed (non-fatal): %v", sanitizedErr(err))
+		}
+		return
+	}
 	if a.sm.Token(ctx) != "" {
 		return // an identifier already exists (cookie present or committed)
 	}
@@ -509,11 +553,19 @@ func (a *App) handleLoginSubmit(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Session rotation on authentication (AGENTS.md §4): the pre-login token
-	// (and anything a fixation attacker seeded into it) dies here.
+	// (and anything a fixation attacker seeded into it) dies here. Stash the
+	// fresh identifier immediately: scs' lazy-commit only writes the new token
+	// at response flush, so without this every later handler in this request
+	// (and the redirect target's challenge binding) would anchor to a value
+	// nothing can reproduce — the exact rotated-session mismatch that
+	// sessionTokenForRequest documents. The stash rides along in the committed
+	// session and self-heals: requireFriction Pop's it after one successful
+	// verify, and recordPendingToken re-commits while it lives.
 	if err := RotateOnAuth(ctx, a.sm); err != nil {
 		writeGenericError(w)
 		return
 	}
+	a.sm.Put(ctx, pendingTokenKey, a.sm.Token(ctx))
 	a.sm.Put(ctx, userIDKey, uuidString(user.ID))
 	a.sm.Put(ctx, usernameKey, user.Username)
 	a.sm.Put(ctx, roleKey, user.Role)
@@ -534,7 +586,14 @@ func (a *App) handleLogout(w http.ResponseWriter, r *http.Request) {
 		writeGenericError(w)
 		return
 	}
-	if err := a.sm.RenewToken(ctx); err != nil {
+	// scs' RenewToken only flips status to Modified — the fresh identifier is
+	// committed lazily at response flush, AFTER this handler has already
+	// rendered. Minting the login-page challenge against that timeline leaves
+	// it bound to a token the next request cannot reproduce (the POST carries
+	// the new cookie, but requireFriction's ctx token is still "" until
+	// LoadAndSave populates it). Commit the rotated session NOW and stash the
+	// resulting identifier so issue-time and verify-time anchors agree.
+	if err := a.rotateToFreshToken(ctx); err != nil {
 		writeGenericError(w)
 		return
 	}
