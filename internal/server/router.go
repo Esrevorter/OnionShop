@@ -70,17 +70,32 @@ type Deps struct {
 
 // App owns the router and its lifecycle.
 type App struct {
-	cfg    Config
-	deps   Deps
-	router chi.Router
-	srv    *http.Server
-	sm     *scs.SessionManager
+	cfg       Config
+	deps      Deps
+	router    chi.Router
+	srv       *http.Server
+	sm        *scs.SessionManager
+	auth      AuthStore         // set by RegisterAuthRoutes (nil-safe: routes skip)
+	captcha   *CaptchaService   // set by RegisterAuthRoutes (nil-safe: routes skip)
+	templates map[string]*template.Template
 }
 
 // New wires middleware in the mandated order and returns a ready-to-Serve App.
+// It is exactly newApp with rate limiting attached — production behavior,
+// unchanged by the test-composition refactor below.
+//
 // sessionStore is the scs backend (store.FallbackStore in production: Redis
 // fast path + Postgres durable mirror; an in-memory store in dev). It is
 // required — there is no silent default, per AGENTS.md §3.
+func New(cfg Config, deps Deps, sessionStore scs.Store) (*App, error) {
+	return newApp(cfg, deps, sessionStore, true)
+}
+
+// newApp composes the middleware stack. withRateLimit=false yields the same
+// chain minus the RateLimit hop — this is the ONLY sanctioned way to skip it,
+// and callers outside *_test.go must never set it (see
+// routerWithoutRateLimitForTest in testing_helpers_test.go, which wraps the
+// false path for the httptest suites).
 //
 // Middleware order (outermost first) — deliberate, do not reshuffle:
 //  1. StripForwardedHeaders  — kill client-supplied forwarding lies before anything reads them
@@ -89,10 +104,10 @@ type App struct {
 //  4. sessions.LoadAndSave   — establishes the session context used by everything below
 //  5. AbsoluteExpiry         — enforce hard lifetime cap on top of scs idle timeout
 //  6. CSRFLoad               — mint the double-submit token if absent
-//  7. RateLimit              — identity-aware sliding windows (reads session/user keys)
+//  7. RateLimit              — identity-aware sliding windows (reads session/user keys) [optional]
 //  8. CSRFProtect            — validate state-changing requests after throttling
 //  9. routes                 — Phase 3 handlers attach here
-func New(cfg Config, deps Deps, sessionStore scs.Store) (*App, error) {
+func newApp(cfg Config, deps Deps, sessionStore scs.Store, withRateLimit bool) (*App, error) {
 	if err := cfg.Validate(); err != nil {
 		return nil, err
 	}
@@ -115,13 +130,15 @@ func New(cfg Config, deps Deps, sessionStore scs.Store) (*App, error) {
 	r.Use(deps.Sm.LoadAndSave)
 	r.Use(AbsoluteExpiry(deps.Sm, sc.AbsoluteTimeout))
 	r.Use(CSRFLoad(deps.Sm))
-	r.Use(RateLimit(LimiterConfig{
-		RDB:       deps.RDB,
-		Buckets:   DefaultBuckets(),
-		UserID:    func(req *http.Request) string { return CurrentUserID(req.Context(), deps.Sm) },
-		SessionID: func(req *http.Request) string { return deps.Sm.Token(req.Context()) },
-		BucketFor: bucketForRequest(deps.BucketFor),
-	}))
+	if withRateLimit {
+		r.Use(RateLimit(LimiterConfig{
+			RDB:       deps.RDB,
+			Buckets:   DefaultBuckets(),
+			UserID:    func(req *http.Request) string { return CurrentUserID(req.Context(), deps.Sm) },
+			SessionID: func(req *http.Request) string { return deps.Sm.Token(req.Context()) },
+			BucketFor: bucketForRequest(deps.BucketFor),
+		}))
+	}
 	r.Use(CSRFProtect(deps.Sm))
 
 	r.Get("/healthz", a.handleHealth)
