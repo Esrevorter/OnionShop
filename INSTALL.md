@@ -36,11 +36,9 @@ installer creates it at mode 600 and never overwrites values already in it.
 ```bash
 git clone <your-verified-source> onionshop && cd onionshop
 git log --oneline -1                 # verify provenance against signed announcements
-cp .env.example .env
-chmod 600 .env
-vi .env                              # set DB_NAME/DB_USER placeholders at minimum;
-                                     # secrets can be left as <> — installer generates them
-make install                         # == sudo ./install/install.sh
+make install                         # == sudo ./install/install.sh — creates .env (mode 600),
+                                     #    generating any missing secrets; edit DB_USER/DB_NAME
+                                     #    in .env first if the defaults don't fit your Postgres
 ```
 
 What `install.sh` does, phase by phase (all idempotent — existing values are never overwritten):

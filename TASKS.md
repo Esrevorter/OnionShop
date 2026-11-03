@@ -23,26 +23,42 @@ egress are mandatory.)
       `/static/*` read-only mount, forwarding-header stripping, security headers matching the Go
       middleware — SECURITY_AND_OPSEC.md §5.1) + self-signed .onion cert generation script with
       SPKI-fingerprint output for pinning (§1) — see `scripts/gen-certs.sh`.
-- [ ] Write SQL migrations for the full schema (users/RBAC, products, orders, escrow,
-      double-entry ledger with idempotency keys, disputes, audit log) via `golang-migrate`/`goose`.
-- [ ] Set up DB connection pool (`pgx`) and Redis client; add `sqlc.yaml`.
+- [x] Write SQL migrations for the full schema (users/RBAC, products, orders, escrow,
+      double-entry ledger with idempotency keys, disputes+audit, sessions, auth phase-3) —
+      done 2026-11-03: `db/migrations/0001..0006` (up/down pairs) under **golang-migrate**
+      (`goose` was considered and dropped; Makefile `migrate`/`migrate-down` targets use the
+      `migrate` CLI). Queries in `db/query/` verified by the CI `sqlc` job against `db/schema.sql`.
+- [x] Set up DB connection pool (`pgx`) and Redis client; add `sqlc.yaml` — done 2026-11-03:
+      `internal/store/` owns the pgxpool + go-redis clients (`FromEnv`, granular `ONIONSHOP_DB_*`
+      fallbacks) and the durable scs sessions-fallback store; `sqlc.yaml` drives query generation
+      into `internal/store/gen/` (gitignored), verified by the CI `sqlc` job.
 - [x] Add Makefile (`build/test/migrate/up/down` + `certs/install/compose-config` targets),
       `.gitignore`, `.editorconfig`.
 
 ## Phase 2: Core Server & Security
-- [ ] Setup `chi` router and basic HTTP server (UNIX socket `/run/onionshop/app.sock` or
-      `127.0.0.1:8080` only — never a public bind; existing localhost guard in `main.go` stays).
-- [ ] Implement Security Headers middleware per ARCHITECTURE.md §3
-      (CSP incl. `upgrade-insecure-requests`, `X-Content-Type-Options`, `X-Frame-Options`,
-      `Referrer-Policy`; **no browser-facing HSTS** — self-signed + HSTS is a lockout footgun;
-      headers re-asserted at nginx too).
-- [ ] Implement Session management (`scs`): Redis store + Postgres fallback, ≥128-bit IDs from
-      `crypto/rand`, rotation on login/privilege change, idle + absolute expiry, cookies
-      `HttpOnly` + `Secure` + `SameSite=Strict` (HTTPS now terminates at nginx — see AGENTS.md §4).
-- [ ] Implement CSRF protection middleware (double-submit token rendered as
-      `<input type="hidden" name="csrf_token" value="{{.CsrfToken}}">`).
-- [ ] Implement Redis-based Rate Limiting middleware (key by `user_id` when authenticated;
-      session-keyed limits only behind CAPTCHA/honeypot friction — see SECURITY_AND_OPSEC.md §1).
+- [x] Setup `chi` router and basic HTTP server — done 2026-11-03: `internal/server/router.go`
+      (`App`/`Config`/`Deps`, recover middleware, `/healthz`) binds **only** a UNIX socket
+      (`/run/onionshop/app.sock`, default) or loopback TCP (dev `-addr`); the localhost guard in
+      `cmd/onionshop/main.go` rejects any non-loopback bind unless the compose-only contained-
+      sandbox markers (`ONIONSHOP_NET_NEVER` + `ONIONSHOP_ADDR`) are both set.
+- [x] Implement Security Headers middleware per ARCHITECTURE.md §3 — done 2026-11-03:
+      `internal/server/headers.go` emits CSP (incl. `upgrade-insecure-requests`, `script-src 'none'`),
+      `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`, `Referrer-Policy: no-referrer`;
+      **no browser-facing HSTS** (self-signed + HSTS is a lockout footgun); `StripForwardedHeaders`
+      drops client-supplied forwarding headers; headers re-asserted at nginx (`nginx/nginx.conf`).
+- [x] Implement Session management (`scs`) — done 2026-11-03: `internal/server/sessions.go` +
+      `internal/store/sessions.go`: Redis-backed store with durable Postgres fallback
+      (`FallbackStore`), ≥128-bit tokens from `crypto/rand`, rotation on login/privilege change
+      (`RotateOnAuth`), idle + absolute expiry (`AbsoluteExpiry`), cookies `HttpOnly` + `Secure`
+      (`ONIONSHOP_SECURE_COOKIES=false` for local dev only) + `SameSite=Strict`.
+- [x] Implement CSRF protection middleware — done 2026-11-03: double-submit token in the session
+      (`CSRFLoad`/`CSRFProtect`), rendered as `<input type="hidden" name="csrf_token"
+      value="{{.CsrfToken}}">` in every auth form; safe methods pass through, mismatches get a
+      generic error page.
+- [x] Implement Redis-based Rate Limiting middleware — done 2026-11-03: `internal/server/ratelimit.go`
+      (token buckets in Redis with in-memory mirror, hashed keys — no raw identities), keyed by
+      `user_id` when authenticated; session/IP-free anonymous limits apply only behind the
+      CAPTCHA/honeypot friction path (SECURITY_AND_OPSEC.md §1).
 
 ## Phase 3: Auth & RBAC
 - [x] User Registration & Login — password + CAPTCHA service layer done 2026-11-01:
@@ -114,12 +130,18 @@ egress are mandatory.)
 - [ ] Raffle system (ledger-backed entries, audited `crypto/rand` draws) — only if demand.
 
 ## Cross-Cutting / CI (start alongside Phase 1)
-- [ ] CI pipeline: `go vet`, `golangci-lint`, `govulncheck`, `staticcheck`, `go test ./...`.
+- [x] CI pipeline — done 2026-11-03: `.github/workflows/ci.yml` runs `go vet`, `golangci-lint`
+      (pinned v1.64.8, Go 1.25.x toolchain pinned + integrity assert), `go test ./...`, a
+      `govulncheck` job (informational until the base image bump), and an `sqlc generate` job;
+      `staticcheck` remains in `make lint`.
 - [ ] Unit tests for escrow state-machine transitions first (highest-risk pure logic), then
-      ticket status transitions and CAPTCHA token single-use/expiry.
+      ticket status transitions and CAPTCHA token single-use/expiry — CAPTCHA single-use/expiry
+      **done 2026-11-03** (`captcha_test.go`); escrow/ticket transition tests still open (their
+      services are stubs until Phases 6–7).
 - [ ] Template tests asserting every POST form carries a `csrf_token` input (message/ticket
-      forms additionally assert CAPTCHA + honeypot fields).
-- [ ] `CONTRIBUTING.md` restating AGENTS.md rules for human contributors.
+      forms additionally assert CAPTCHA + honeypot fields) — auth-form friction is covered today
+      inside `auth_handlers_test.go`; a dedicated repo-wide template sweep is still open.
+- [x] `CONTRIBUTING.md` restating AGENTS.md rules for human contributors — done 2026-10-31.
 
 ## Infrastructure Hardening (SECURITY_AND_OPSEC.md §5 — host-level, tracked here so it stays honest)
 - [ ] Provision host: LUKS2 (argon2id) root + data volumes, separate keyslots, swap off/encrypted,

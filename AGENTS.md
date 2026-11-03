@@ -6,10 +6,11 @@
 - **NO IP TRACKING:** Never log, store, or use the client IP address. All traffic comes from `127.0.0.1` via Tor.
 
 ## 2. Go & Backend Standards
-- **Toolchain: target Go 1.19+ (the build environment here runs 1.19).** Do NOT use
-  Go ≥1.22 `http.ServeMux` features — method-prefixed patterns like `"GET /healthz"` and
-  `r.PathValue()` compile fine but silently never match on 1.19 (they 404 at runtime).
-  Use the `chi` router for routing, or plain path patterns + explicit `r.Method` checks.
+- **Toolchain: go.mod requires Go 1.25; CI pins 1.25.x** (golangci-lint v1.64.8 can only parse
+  export data from a matching compiler — see `.github/workflows/ci.yml`). Routing stays on
+  `chi`: even though modern stdlib `http.ServeMux` supports method-prefixed patterns
+  (`"GET /healthz"`) and `r.PathValue()`, this project routes via `chi` patterns + explicit
+  `r.Method`/middleware checks. Do not reintroduce stdlib-only routing assumptions.
 - Use `html/template` for all rendering (never `text/template`) to ensure automatic XSS escaping.
 - Use `golang.org/x/crypto/argon2` for password hashing.
 - Use `jackc/pgx` or `sqlc` for database interactions. Do not use GORM.
