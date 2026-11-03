@@ -12,6 +12,7 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -166,8 +167,12 @@ func (a *App) RegisterAuthRoutes(auth AuthStore, captcha *CaptchaService) {
 	r.Get("/login", a.handleLoginForm)
 	r.Post("/login", a.handleLoginSubmit)
 	r.Post("/logout", a.handleLogout)
-	r.Get("/account", a.RequireRole("customer", "vendor", "mod", "admin")(a.handleAccount))
-	r.Post("/account/phrase", a.RequireRole("customer", "vendor", "mod", "admin")(a.handlePhraseSubmit))
+	// RequireRole is middleware: func(http.Handler) http.Handler. chi's
+	// Get/Post take an http.HandlerFunc, so the gated handler goes through
+	// Method (which accepts a full http.Handler).
+	accountMW := a.RequireRole("customer", "vendor", "mod", "admin")
+	r.Method(http.MethodGet, "/account", accountMW(http.HandlerFunc(a.handleAccount)))
+	r.Method(http.MethodPost, "/account/phrase", accountMW(http.HandlerFunc(a.handlePhraseSubmit)))
 }
 
 // handleHome is the minimal Phase 3 landing page; the catalog replaces it in
@@ -176,6 +181,29 @@ func (a *App) handleHome(w http.ResponseWriter, r *http.Request) {
 	data := a.baseData(r)
 	data.Flash = ""
 	a.render(w, "home", http.StatusOK, data)
+}
+
+// handleCaptchaImage serves one issued puzzle as PNG from server-side state
+// (never client-supplied). Unknown/expired ids answer with a fresh render of
+// the same deterministic image path — actually: a plain 404, because a
+// different-looking error image would confirm to a scraper which ids were
+// real. The id comes from an HMAC-derived namespace, so guessing one is
+// infeasible anyway; this just avoids leaking existence across expiry.
+func (a *App) handleCaptchaImage(w http.ResponseWriter, r *http.Request) {
+	if a.captcha == nil {
+		writeGenericError(w)
+		return
+	}
+	id := chi.URLParam(r, "id")
+	ch, ok := a.captcha.Challenge(r.Context(), id)
+	if !ok || len(ch.Image) == 0 {
+		http.NotFound(w, r)
+		return
+	}
+	w.Header().Set("Content-Type", "image/png")
+	w.Header().Set("Cache-Control", "no-store")
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write(ch.Image)
 }
 
 // ---- form friction helpers -------------------------------------------------
@@ -377,7 +405,7 @@ func (a *App) handleLoginSubmit(w http.ResponseWriter, r *http.Request) {
 
 	// Transparent parameter upgrade: re-hash at current baseline once the
 	// stored record lags behind (records carry their own params by design).
-	if p, perr := decodeArgon(user.PasswordHash); perr == nil && NeedsUpgrade(p) {
+	if p, _, perr := decodeArgon(user.PasswordHash); perr == nil && NeedsUpgrade(p) {
 		if nh, _, herr := HashPassword(password); herr == nil {
 			if uerr := a.auth.AuthUpdatePasswordHash(ctx, user.ID, nh); uerr != nil {
 				log.Printf("auth: password param upgrade failed (non-fatal): %v", sanitizedErr(uerr))
@@ -391,10 +419,10 @@ func (a *App) handleLoginSubmit(w http.ResponseWriter, r *http.Request) {
 		writeGenericError(w)
 		return
 	}
-	a.sm.PutString(ctx, userIDKey, uuidString(user.ID))
-	a.sm.PutString(ctx, usernameKey, user.Username)
-	a.sm.PutString(ctx, roleKey, user.Role)
-	a.sm.PutInt64(ctx, createdKey, time.Now().UTC().Unix()) // absolute clock restarts at auth
+	a.sm.Put(ctx, userIDKey, uuidString(user.ID))
+	a.sm.Put(ctx, usernameKey, user.Username)
+	a.sm.Put(ctx, roleKey, user.Role)
+	a.sm.Put(ctx, createdKey, time.Now().UTC().Unix()) // absolute clock restarts at auth
 
 	if err := a.auth.AuthRecordLogin(ctx, user.ID, time.Now().UTC()); err != nil {
 		// Login history is defense-in-depth, not a gate: never block a good
@@ -484,7 +512,7 @@ func (a *App) handlePhraseSubmit(w http.ResponseWriter, r *http.Request) {
 		fail("could not save the phrase, please try again")
 		return
 	}
-	a.sm.PutString(ctx, phraseKey, phrase)
+	a.sm.Put(ctx, phraseKey, phrase)
 	data.PersonalPhrase = phrase
 	data.Flash = "Personal phrase updated."
 	a.render(w, "account", http.StatusOK, data)
@@ -517,10 +545,11 @@ func uuidString(u pgtype.UUID) string {
 
 // parseUUID decodes the canonical text form back into a pgtype.UUID
 // (ok=false for anything malformed — sessions claiming an unparseable id are
-// treated as broken, never trusted).
+// treated as broken, never trusted). pgtype.UUID implements sql.Scanner, so
+// Scan does the hex/hyphen validation for us.
 func parseUUID(s string) (pgtype.UUID, bool) {
 	var u pgtype.UUID
-	if err := u.ScanText([]byte(s)); err != nil || !u.Valid {
+	if err := u.Scan([]byte(s)); err != nil || !u.Valid {
 		return pgtype.UUID{}, false
 	}
 	return u, true

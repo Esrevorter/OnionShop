@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"html/template"
 	"net"
 	"net/http"
 	"strings"
@@ -142,6 +143,12 @@ func newApp(cfg Config, deps Deps, sessionStore scs.Store, withRateLimit bool) (
 	r.Use(CSRFProtect(deps.Sm))
 
 	r.Get("/healthz", a.handleHealth)
+	// CAPTCHA images ride the same router as the forms that embed them.
+	// Anonymous by design: the challenge state is bound server-side to the
+	// session token + single-use answer token (captcha.go), so merely fetching
+	// the PNG leaks nothing usable. The extension keeps nginx's generic
+	// static-location rules from ever swallowing this path.
+	r.Get("/captcha/{id}.png", a.handleCaptchaImage)
 	r.NotFound(a.handleNotFound)
 
 	a.router = r

@@ -1,0 +1,24 @@
+{{template "layout" .}}
+
+{{define "title"}}Account &middot; OnionShop{{end}}
+
+{{define "body"}}
+<h1>Your account</h1>
+<p>Your anti-phishing phrase is shown on every page of this site while you are
+signed in. If it is missing or wrong, leave immediately &mdash; the page is not ours.</p>
+<form method="post" action="/account/phrase" autocomplete="off">
+<input type="hidden" name="csrf_token" value="{{.CsrfToken}}">
+{{if .HoneypotHidden}}
+<div class="hp" aria-hidden="true">
+<label>leave blank <input type="text" name="sta" tabindex="-1" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"></label>
+</div>
+{{end}}
+<label>Personal phrase (4-64 characters)
+<input type="text" name="personal_phrase" minlength="4" maxlength="64" value="{{.PersonalPhrase}}" required></label>
+<p><button type="submit">Save phrase</button></p>
+</form>
+<form method="post" action="/logout">
+<input type="hidden" name="csrf_token" value="{{.CsrfToken}}">
+<p><button type="submit">Log out</button></p>
+</form>
+{{end}}
