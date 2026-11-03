@@ -10,6 +10,8 @@ package main
 
 import (
 	"context"
+	"crypto/rand"
+	"crypto/sha256"
 	"errors"
 	"flag"
 	"fmt"
@@ -30,6 +32,31 @@ import (
 )
 
 const defaultAddr = "127.0.0.1:8080"
+
+// Env vars for the Phase 3 auth surface. SESSION_HASH_KEY is the deployment's
+// general-purpose secret (docker-compose.yml, install/install.sh); we derive a
+// domain-separated CAPTCHA HMAC key from it rather than demanding a second
+// operator-managed secret. ONIONSHOP_TEMPLATE_DIR overrides the template
+// location for unusual layouts; the shipped image carries web/templates next
+// to the binary's working directory.
+const (
+	envSessionHashKey = "SESSION_HASH_KEY"
+	envTemplateDir    = "ONIONSHOP_TEMPLATE_DIR"
+	defaultTemplates  = "web/templates"
+)
+
+// captchaKeyFromSessionHash derives the CAPTCHA HMAC key from the deployment
+// session secret via SHA-256 (domain separation: rotating SESSION_HASH_KEY to
+// invalidate sessions also invalidates outstanding CAPTCHA challenges, which
+// is exactly the desired blast radius). ok=false when no secret is configured.
+func captchaKeyFromSessionHash(v string) ([]byte, bool) {
+	v = strings.TrimSpace(v)
+	if v == "" {
+		return nil, false
+	}
+	sum := sha256.Sum256([]byte("onionshop:captcha:" + v))
+	return sum[:], true
+}
 
 // netNeverEnv is the opt-in marker set by docker-compose (and any other
 // sandbox that provably removes off-box reachability from this process's
@@ -140,6 +167,36 @@ func main() {
 	}, deps, sessionStore)
 	if err != nil {
 		log.Fatalf("server setup failed: %v", err)
+	}
+
+	// Phase 3 auth surface. Templates are mandatory (a boot with unparseable
+	// or missing pages fails loudly here); the store and CAPTCHA service are
+	// gated on the same best-effort infrastructure as above — without them
+	// RegisterAuthRoutes logs the degradation and the app keeps serving
+	// /healthz in degraded mode rather than panicking mid-request.
+	templateDir := envOr(envTemplateDir, defaultTemplates)
+	var authStore server.AuthStore
+	if pool != nil {
+		authStore = server.NewPGAuthStore(pool)
+	}
+	captchaSecret, haveCaptchaKey := captchaKeyFromSessionHash(os.Getenv(envSessionHashKey))
+	if !haveCaptchaKey {
+		// Dev-only fallback: challenges then live solely for this process
+		// lifetime (random key per boot). Production compose/install always
+		// sets SESSION_HASH_KEY; loud log, never a silent weakening.
+		log.Print("SESSION_HASH_KEY unset: generating ephemeral CAPTCHA secret (dev only)")
+		b := make([]byte, 32)
+		if _, err := rand.Read(b); err != nil {
+			log.Fatalf("captcha secret generation failed: %v", err)
+		}
+		captchaSecret = b // 32 raw bytes; NewCaptchaService enforces the >=16-byte floor
+	}
+	captchaSvc, err := server.NewCaptchaService(rdb, captchaSecret)
+	if err != nil {
+		log.Fatalf("captcha service setup failed: %v", err)
+	}
+	if err := app.RegisterAuthRoutes(authStore, captchaSvc, templateDir); err != nil {
+		log.Fatalf("auth route registration failed: %v", err)
 	}
 
 	go func() {

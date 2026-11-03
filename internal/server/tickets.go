@@ -37,13 +37,13 @@ const (
 type TicketEvent string
 
 const (
-	TEventStaffAnswers   TicketEvent = "staff_answers"   // requires claim/reason -> audit
-	TEventUserReplies    TicketEvent = "user_replies"
-	TEventStaffResolves  TicketEvent = "staff_resolves"  // mandatory reason
-	TEventUserConfirms   TicketEvent = "user_confirms"   // user accepts resolution
-	TEventUserCloses     TicketEvent = "user_closes"     // user withdraws
-	TEventStaffCloses    TicketEvent = "staff_closes"    // spam/abuse path, mandatory reason
-	TEventExpiryCloses   TicketEvent = "expiry_closes"   // cron: resolved untouched for N days
+	TEventStaffAnswers  TicketEvent = "staff_answers" // requires claim/reason -> audit
+	TEventUserReplies   TicketEvent = "user_replies"
+	TEventStaffResolves TicketEvent = "staff_resolves" // mandatory reason
+	TEventUserConfirms  TicketEvent = "user_confirms"  // user accepts resolution
+	TEventUserCloses    TicketEvent = "user_closes"    // user withdraws
+	TEventStaffCloses   TicketEvent = "staff_closes"   // spam/abuse path, mandatory reason
+	TEventExpiryCloses  TicketEvent = "expiry_closes"  // cron: resolved untouched for N days
 )
 
 // ErrTicketIllegalTransition marks refused moves. Handlers render a generic
