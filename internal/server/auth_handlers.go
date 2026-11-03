@@ -34,7 +34,7 @@ import (
 // any browser-agnostic bot fills it in and gets silently rejected.
 const honeypotField = "sta"
 
-// AuthData renders the login/register templates.
+// AuthData renders the login/register/account/pgp templates.
 type AuthData struct {
 	CsrfToken      string
 	Captcha        *CaptchaChallenge
@@ -42,6 +42,8 @@ type AuthData struct {
 	Error          string
 	Flash          string
 	PersonalPhrase string // anti-phishing phrase shown ONLY after login (§9)
+	PGPPublicKey   string // armored PUBLIC key only (Phase 3 PGP); never private material
+	PGPFingerprint string // display fingerprint of PGPPublicKey ("" when absent)
 }
 
 // UserRecord is one row from public.users. PasswordHash never leaves this
@@ -64,6 +66,12 @@ type AuthStore interface {
 	AuthUpdatePasswordHash(ctx context.Context, id pgtype.UUID, passwordHash string) error
 	AuthSetPersonalPhrase(ctx context.Context, id pgtype.UUID, phrase string) error
 	AuthRecordLogin(ctx context.Context, userID pgtype.UUID, at time.Time, host string) error
+	// Phase 3 PGP: armored PUBLIC keys only. Implementations must never accept
+	// or store private material — validation happens before these are called
+	// (pgp.go), and the DB column contract is identical (migration 0001).
+	AuthGetPGPKey(ctx context.Context, id pgtype.UUID) (string, error)
+	AuthSetPGPKey(ctx context.Context, id pgtype.UUID, armoredPublicKey string) error
+	AuthClearPGPKey(ctx context.Context, id pgtype.UUID) error
 }
 
 // ErrNoSuchUser is the sentinel for unknown usernames; handlers treat it like
@@ -87,6 +95,15 @@ RETURNING id, username, password_hash, role, status, created_at`
 	qAuthSetPhrase = `UPDATE public.users SET personal_phrase = $2, updated_at = now() WHERE id = $1`
 
 	qAuthRecordLogin = `INSERT INTO public.login_history (user_id, occurred_at, host_header) VALUES ($1, $2, $3)`
+
+	// Phase 3 PGP (pgp.go): armored PUBLIC key only; private keys are rejected
+	// by validation long before these run. Mirrors UpdateUserPGPKey /
+	// ClearUserPGPKey in db/query/users.sql — keep both in sync.
+	qAuthGetPGPKey = `SELECT COALESCE(pgp_public_key, '') FROM public.users WHERE id = $1`
+
+	qAuthSetPGPKey = `UPDATE public.users SET pgp_public_key = $2, updated_at = now() WHERE id = $1`
+
+	qAuthClearPGPKey = `UPDATE public.users SET pgp_public_key = NULL, updated_at = now() WHERE id = $1`
 )
 
 // PGAuthStore adapts *pgxpool.Pool to AuthStore.
@@ -145,6 +162,31 @@ func (s *PGAuthStore) AuthRecordLogin(ctx context.Context, userID pgtype.UUID, a
 	return nil
 }
 
+func (s *PGAuthStore) AuthGetPGPKey(ctx context.Context, id pgtype.UUID) (string, error) {
+	var key string
+	if err := s.pool.QueryRow(ctx, qAuthGetPGPKey, id).Scan(&key); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return "", ErrNoSuchUser
+		}
+		return "", fmt.Errorf("store: get pgp key: %w", err)
+	}
+	return key, nil
+}
+
+func (s *PGAuthStore) AuthSetPGPKey(ctx context.Context, id pgtype.UUID, armoredPublicKey string) error {
+	if _, err := s.pool.Exec(ctx, qAuthSetPGPKey, id, armoredPublicKey); err != nil {
+		return fmt.Errorf("store: set pgp key: %w", err)
+	}
+	return nil
+}
+
+func (s *PGAuthStore) AuthClearPGPKey(ctx context.Context, id pgtype.UUID) error {
+	if _, err := s.pool.Exec(ctx, qAuthClearPGPKey, id); err != nil {
+		return fmt.Errorf("store: clear pgp key: %w", err)
+	}
+	return nil
+}
+
 // ---- wiring ---------------------------------------------------------------
 
 // RegisterAuthRoutes mounts the Phase 3 auth surface on the app router. Call
@@ -176,6 +218,11 @@ func (a *App) RegisterAuthRoutes(auth AuthStore, captcha *CaptchaService, templa
 	accountMW := a.RequireRole("customer", "vendor", "mod", "admin")
 	r.Method(http.MethodGet, "/account", accountMW(http.HandlerFunc(a.handleAccount)))
 	r.Method(http.MethodPost, "/account/phrase", accountMW(http.HandlerFunc(a.handlePhraseSubmit)))
+	// Phase 3 PGP surface (pgp.go): public-key upload/clear behind the same
+	// account gate + friction, and the public /pgp explainer page.
+	r.Method(http.MethodPost, "/account/pgp", accountMW(http.HandlerFunc(a.handlePGPUpload)))
+	r.Method(http.MethodPost, "/account/pgp/clear", accountMW(http.HandlerFunc(a.handlePGPClear)))
+	r.Get("/pgp", a.handlePGPToolPage)
 	return nil
 }
 
@@ -575,6 +622,13 @@ func ValidatePersonalPhrase(p string) error {
 func (a *App) handleAccount(w http.ResponseWriter, r *http.Request) {
 	data := a.baseData(r)
 	data.PersonalPhrase = a.sm.GetString(r.Context(), phraseKey)
+	// PGP state + the shared account-page CAPTCHA slot. Minted against the
+	// same anchor requireFriction reconstructs on POST (sessionTokenForRequest
+	// handles the rotated-session fallback consistently for both hops).
+	a.loadPGPState(r.Context(), &data)
+	if data.Captcha = a.newChallenge(w, r, accountPurpose); data.Captcha == nil {
+		return
+	}
 	a.render(w, "account", http.StatusOK, data)
 }
 
@@ -589,6 +643,14 @@ func (a *App) handlePhraseSubmit(w http.ResponseWriter, r *http.Request) {
 	}
 	if honeypotTriggered(r) {
 		fail("submission rejected")
+		return
+	}
+	// The account page embeds one CAPTCHA slot shared by both POST forms; the
+	// challenge is minted with this purpose and must be verified with it here.
+	// A wrong answer keeps the challenge alive (bounded retries), a correct
+	// one burns it — single-use per AGENTS.md §3.
+	if !a.requireFriction(w, r, accountPurpose) {
+		fail("challenge failed, please try again")
 		return
 	}
 	phrase := strings.TrimSpace(r.FormValue("personal_phrase"))
