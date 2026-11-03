@@ -46,11 +46,17 @@ type fakeAuthStore struct {
 	recorded       []recordedLogin
 	recordLoginErr error
 	setPhraseErr   error
+
+	// Phase 3 PGP: in-memory analogue of users.pgp_public_key, keyed by user
+	// UUID string. setPGPErr / clearPGPErr force store failures on demand.
+	pgpKeys     map[string]string
+	setPGPErr   error
+	clearPGPErr error
 }
 
 func newFakeAuthStore(t *testing.T) *fakeAuthStore {
 	t.Helper()
-	return &fakeAuthStore{users: map[string]*UserRecord{}, nextID: 1}
+	return &fakeAuthStore{users: map[string]*UserRecord{}, pgpKeys: map[string]string{}, nextID: 1}
 }
 
 // seedUser installs an already-hashed user under name (lower-cased like the
@@ -140,6 +146,47 @@ func (f *fakeAuthStore) AuthSetPersonalPhrase(_ context.Context, id pgtype.UUID,
 		}
 	}
 	return errors.New("store: set personal phrase: no such user")
+}
+
+// ---- Phase 3 PGP store methods ---------------------------------------------
+// Signatures must match the AuthStore interface exactly (ctx, id, key).
+
+func (f *fakeAuthStore) AuthGetPGPKey(_ context.Context, id pgtype.UUID) (string, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.pgpKeys[uuidStringForTest(id)], nil
+}
+
+func (f *fakeAuthStore) AuthSetPGPKey(_ context.Context, id pgtype.UUID, armoredPublicKey string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.setPGPErr != nil {
+		return f.setPGPErr
+	}
+	for _, u := range f.users {
+		if u.ID == id {
+			f.pgpKeys[uuidStringForTest(id)] = armoredPublicKey
+			return nil
+		}
+	}
+	return errors.New("store: set pgp key: no such user")
+}
+
+func (f *fakeAuthStore) AuthClearPGPKey(_ context.Context, id pgtype.UUID) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.clearPGPErr != nil {
+		return f.clearPGPErr
+	}
+	delete(f.pgpKeys, uuidStringForTest(id))
+	return nil
+}
+
+// uuidStringForTest renders a pgtype.UUID in the same canonical form the
+// production handlers use (uuidString), so the fake store keys maps exactly
+// like session identity lookups.
+func uuidStringForTest(u pgtype.UUID) string {
+	return uuidString(u)
 }
 
 // AuthRecordLogin matches the production 4-arg interface exactly

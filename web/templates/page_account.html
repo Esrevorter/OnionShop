@@ -7,15 +7,29 @@
 <p>Your anti-phishing phrase is shown on every page of this site while you are
 signed in. If it is missing or wrong, leave immediately &mdash; the page is not ours.</p>
 <form method="post" action="/account/phrase" autocomplete="off">
-<input type="hidden" name="csrf_token" value="{{.CsrfToken}}">
-{{if .HoneypotHidden}}
-<div class="hp" aria-hidden="true">
-<label>leave blank <input type="text" name="sta" tabindex="-1" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"></label>
-</div>
-{{end}}
+{{template "friction" .}}
 <label>Personal phrase (4-64 characters)
 <input type="text" name="personal_phrase" minlength="4" maxlength="64" value="{{.PersonalPhrase}}" required></label>
 <p><button type="submit">Save phrase</button></p>
+</form>
+
+<h2>PGP public key</h2>
+<p>Only <strong>public</strong> keys are accepted here. The server never holds
+private material and never decrypts anything &mdash; see the
+<a href="/pgp">PGP tool page</a> for how this works.</p>
+{{if .PGPPublicKey}}
+<p>Stored key fingerprint: <code>{{if .PGPFingerprint}}{{.PGPFingerprint}}{{else}}<span title="unparseable stored key">(stored key could not be parsed)</span>{{end}}</code></p>
+<pre>{{.PGPPublicKey}}</pre>
+<form method="post" action="/account/pgp/clear" autocomplete="off">
+{{template "friction" .}}
+<p><button type="submit">Remove public key</button></p>
+</form>
+{{end}}
+<form method="post" action="/account/pgp" autocomplete="off">
+{{template "friction" .}}
+<label>ASCII-armored PUBLIC key block
+<textarea name="pgp_public_key" rows="10" spellcheck="false">{{if .PGPPublicKey}}{{.PGPPublicKey}}{{end}}</textarea></label>
+<p><button type="submit">{{if .PGPPublicKey}}Replace key{{else}}Upload public key{{end}}</button></p>
 </form>
 <form method="post" action="/logout">
 <input type="hidden" name="csrf_token" value="{{.CsrfToken}}">

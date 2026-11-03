@@ -636,19 +636,27 @@ func (a *App) handlePhraseSubmit(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	_ = r.ParseForm()
 	data := a.baseData(r)
+	// Every re-render carries a FRESH challenge, exactly like handlePGPUpload:
+	// requireFriction burns the submitted puzzle on success (single-use per
+	// AGENTS.md §3), so reusing the GET-minted state would emit dead tokens —
+	// and rendering without any Captcha at all trips form_friction's nil guard
+	// into broken forms. newChallenge answers the 500 itself when minting fails.
 	fail := func(msg string) {
 		data.Error = msg
 		data.PersonalPhrase = a.sm.GetString(ctx, phraseKey)
+		if data.Captcha = a.newChallenge(w, r, accountPurpose); data.Captcha == nil {
+			return
+		}
 		a.render(w, "account", http.StatusUnprocessableEntity, data)
 	}
 	if honeypotTriggered(r) {
 		fail("submission rejected")
 		return
 	}
-	// The account page embeds one CAPTCHA slot shared by both POST forms; the
-	// challenge is minted with this purpose and must be verified with it here.
-	// A wrong answer keeps the challenge alive (bounded retries), a correct
-	// one burns it — single-use per AGENTS.md §3.
+	// The account page embeds one CAPTCHA slot shared by every POST form
+	// (phrase, PGP upload, PGP clear); the challenge is minted with this
+	// purpose and must be verified with it here. A wrong answer keeps the
+	// challenge alive (bounded retries), a correct one burns it.
 	if !a.requireFriction(w, r, accountPurpose) {
 		fail("challenge failed, please try again")
 		return
@@ -672,6 +680,11 @@ func (a *App) handlePhraseSubmit(w http.ResponseWriter, r *http.Request) {
 	a.sm.Put(ctx, phraseKey, phrase)
 	data.PersonalPhrase = phrase
 	data.Flash = "Personal phrase updated."
+	// Fresh challenge for the post-success render (the submitted one was just
+	// burned); mirrors handlePGPUpload's success path.
+	if data.Captcha = a.newChallenge(w, r, accountPurpose); data.Captcha == nil {
+		return
+	}
 	a.render(w, "account", http.StatusOK, data)
 }
 

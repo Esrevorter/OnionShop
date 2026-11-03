@@ -1,0 +1,39 @@
+{{template "layout" .}}
+
+{{define "title"}}PGP tool &middot; OnionShop{{end}}
+
+{{define "body"}}
+<h1>PGP public keys</h1>
+<p>This page explains how PGP fits into the marketplace. It is public
+information &mdash; no login, no forms, nothing you submit here.</p>
+
+<h2>What this site stores</h2>
+<p>Only your <strong>ASCII-armored PUBLIC key</strong>, uploaded from your
+account page after validation. The server checks the key structurally (real
+OpenPGP public-key block, at least one user ID, not revoked, not expired) and
+rejects anything containing private-key material before it is saved.</p>
+
+<h2>What this site will never do</h2>
+<ul>
+<li>Hold your private key &mdash; we do not accept it, ask for it, or store it.</li>
+<li>Decrypt anything server-side. Decryption happens only on your own machine,
+with your own private key and passphrase.</li>
+<li>Show your passphrase or session secrets to anyone.</li>
+</ul>
+
+<h2>How to get a key</h2>
+<p>Generate a key pair locally, then publish only the public half:</p>
+<pre>gpg --full-generate-key          # create a key pair (keep the private key local)
+gpg --armor --export you@example.com &gt; public.asc   # the PUBLIC block to upload</pre>
+<p>The uploaded block starts with
+<span class="inert-url">-----BEGIN PGP PUBLIC KEY BLOCK-----</span>. If yours
+starts with <em>PRIVATE KEY BLOCK</em>, this site will refuse it &mdash; that
+file must never leave your machine.</p>
+
+<h2>How messages stay readable only by you</h2>
+<p>Counterparties encrypt messages to your public key. Only your private key
+can open them, and it never touches this server: read and decrypt locally with
+your own GPG installation.</p>
+
+<p><a href="/account">Manage your key on the account page</a></p>
+{{end}}
