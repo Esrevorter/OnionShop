@@ -52,6 +52,12 @@ What `install.sh` does, phase by phase (all idempotent — existing values are n
 3. **Secrets** — generates `DB_PASSWORD`, `REDIS_PASSWORD`, `SESSION_HASH_KEY` (64 hex from
    `openssl rand`) and defaults `DB_USER`/`DB_NAME`, appending them to `.env` (mode 600) while
    keeping every pre-existing value; warns loudly if a `GITHUB_PAT` line exists (remove it).
+   Note: `SESSION_HASH_KEY` is dual-purpose — besides session handling it also derives the
+   CAPTCHA HMAC key at boot (`SHA-256("onionshop:captcha:" + SESSION_HASH_KEY)`), so rotating
+   it additionally invalidates any outstanding CAPTCHA challenges (users simply re-solve a
+   fresh puzzle; no data loss). The template directory defaults to `web/templates` inside the
+   image; set `ONIONSHOP_TEMPLATE_DIR` in `.env` only if you ship templates elsewhere — a bad
+   path fails the boot loudly rather than serving half-rendered auth forms.
 4. **Certificates** — runs `scripts/gen-certs.sh` *only if* `nginx/ssl/onion.crt` is absent:
    self-signed **Ed25519** cert for the onion, key in `nginx/ssl/` (mode 600, gitignored), prints
    the **SPKI fingerprint** and saves it to `/tmp/onionshop-spki.txt` (RAM only) — record it now.
@@ -107,7 +113,7 @@ For operators who want systemd instead of containers (same threat model, more wo
 | Status / logs | `docker compose ps`, `docker compose logs -f app nginx` |
 | Backup now | `./scripts/backup.sh` (age-encrypted dump staged in tmpfs, plaintext shredded) |
 | Restore | decrypt with the **offline** age private key, load into a throwaway DB, verify ledger invariants, only then consider a production restore (see `scripts/backup.sh` header for the exact dump format; drill first!) |
-| Rotate session keys | bump `SESSION_HASH_KEY`, `docker compose up -d app` (sessions invalidate — acceptable) |
+| Rotate session keys | bump `SESSION_HASH_KEY`, `docker compose up -d app` (sessions invalidate — acceptable; also invalidates outstanding CAPTCHA challenges, which is harmless: forms simply re-render a fresh puzzle) |
 | Update images | edit tags deliberately, `docker compose pull`, `up -d`, re-audit §4 checklist |
 | Emergency | `./scripts/panic-wipe.sh --i-understand-this-is-irreversible` (console/admin-onion only) |
 | Uninstall (soft) | `docker compose down -v` — removes RAM-only state; disk artifacts remain |

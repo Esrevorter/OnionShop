@@ -245,25 +245,95 @@ func (a *App) requireFriction(w http.ResponseWriter, r *http.Request, purpose st
 	// user sees the same puzzle (rate limiting bounds retries), while a
 	// correct answer can never be replayed (single-use guarantee).
 	a.captcha.Burn(ctx, id)
+	// Challenge consumed and the exchange authenticated by possession of the
+	// session cookie: drop the predicted-token stash so it never lingers in
+	// session data (and never gets copied into a post-login session).
+	a.sm.PopString(ctx, pendingTokenKey)
 	return true
 }
 
+// pendingTokenKey namespaces the ephemeral per-request token stash inside the
+// session itself. It lives only while StatusNone/Unchanged sessions get their
+// first real write (login success, CSRF mint), and every consumer treats a
+// missing entry as "no pending token".
+const pendingTokenKey = "pending_token"
+
 // sessionTokenForRequest returns the session token a challenge is bound to.
-// scs commits freshly generated tokens only at response time, so on the very
-// first request of an anonymous visit sm.Token(ctx) is still "" even though
-// LoadAndSave has already minted (and will send) a cookie. The raw cookie —
-// when present — is always the value the NEXT request (the form POST) will
-// carry in its context, making it the stable binding anchor across the GET/
-// POST pair; the ctx token is the fallback for requests without a cookie.
+// scs mints fresh identifiers lazily and commits them only at response time,
+// so neither the raw cookie nor sm.Token(ctx) alone is a stable anchor across
+// the GET→POST pair of an anonymous visit:
+//   - GET /login with no cookie: the browser has nothing yet; scs will mint T1
+//     when this response's session data is committed (CSRFLoad/login Put).
+//     The ctx token at handler time is still "".
+//   - POST /login carrying T1: the cookie IS the token the challenge was
+//     issued against — but if the session store lost T1 (memory-store flush,
+//     Redis eviction, or any commit race), scs silently re-mints T2 in the
+//     context, and a MAC bound to T1 would fail verification forever.
+//
+// Resolution order therefore prefers the live ctx token (authoritative once
+// committed), falls back to the raw cookie (first-post case above), and also
+// consults the pending token recorded at issue time when the previous hop had
+// no identifier yet. All three agree in the normal browser flow; the extra
+// sources only rescue the paths where scs' lazy-commit semantics would
+// otherwise break the binding.
 func (a *App) sessionTokenForRequest(r *http.Request) string {
+	ctx := r.Context()
+	pending := a.sm.GetString(ctx, pendingTokenKey)
 	if ck, err := r.Cookie(SessionCookieName); err == nil && ck.Value != "" {
+		// A pre-login session that already carries its own stashed identifier
+		// (minted by an earlier cookie-less GET whose LoadAndSave commit ended
+		// up generating a different token than the stash — e.g. the CSRF or
+		// absolute-expiry middleware destroyed/re-minted before flushing) must
+		// keep verifying against THAT value: challenges issued during this
+		// request's render were MAC'd with it. Without this, every retry after
+		// a failed login re-anchors to the raw cookie and fails the binding
+		// forever, even though the browser solved the fresh puzzle correctly.
+		if pending != "" {
+			return pending
+		}
 		return ck.Value
 	}
-	return a.sm.Token(r.Context())
+	if tok := a.sm.Token(ctx); tok != "" {
+		return tok
+	}
+	return pending
 }
 
-// newChallenge mints the CAPTCHA embedded in the next form render.
+// recordPendingToken stashes the token that scs is about to commit for this
+// response, so a challenge minted during THIS request can still be verified
+// by the NEXT one. The only path that needs it is the cookie-less GET whose
+// session becomes non-empty mid-response (CSRFLoad mints the CSRF token; the
+// login/register page embeds a CAPTCHA): at issue time there is no identifier
+// anywhere yet — neither cookie nor context — and scs generates the fresh
+// token lazily inside Commit(), after the handler has already rendered. We
+// pre-generate with scs' own generator (32 CSPRNG bytes, base64url) and
+// commit it explicitly via Load(), which flips the session to Modified so the
+// very same value lands in the Set-Cookie header.
+//
+// Failures here are non-fatal: losing the stash only means the next form post
+// re-solves a fresh challenge, never a security downgrade.
+func (a *App) recordPendingToken(ctx context.Context) {
+	if a.sm.Token(ctx) != "" {
+		return // an identifier already exists (cookie present or committed)
+	}
+	tok, err := NewRandomToken(32)
+	if err != nil {
+		log.Printf("auth: pending session token generation failed (non-fatal): %v", sanitizedErr(err))
+		return
+	}
+	if _, err := a.sm.Load(ctx, tok); err != nil {
+		log.Printf("auth: pending session token commit failed (non-fatal): %v", sanitizedErr(err))
+		return
+	}
+	a.sm.Put(ctx, pendingTokenKey, tok)
+}
+
+// newChallenge mints the CAPTCHA embedded in the next form render. When this
+// request has no session identifier yet (cookie-less GET), the soon-to-be-
+// committed token is stashed first so requireFriction on the following POST
+// can reconstruct the exact binding anchor.
 func (a *App) newChallenge(w http.ResponseWriter, r *http.Request, purpose string) *CaptchaChallenge {
+	a.recordPendingToken(r.Context())
 	ch, err := a.captcha.Issue(r.Context(), a.sessionTokenForRequest(r), CurrentUserID(r.Context(), a.sm), purpose)
 	if err != nil {
 		writeGenericError(w)
