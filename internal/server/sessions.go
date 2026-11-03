@@ -22,8 +22,11 @@ const (
 	CSRFFormField     = "csrf_token" // form field name in every POST form
 	csrfTokenBytes    = 32           // 256-bit tokens (>=128 bits required, AGENTS.md §4)
 
-	createdKey = "sess.created" // absolute-lifetime start, UTC epoch seconds
-	userIDKey  = "user_id"      // set by Phase 3 login handlers after rotation
+	createdKey  = "sess.created"  // absolute-lifetime start, UTC epoch seconds
+	userIDKey   = "user_id"       // set by Phase 3 login handlers after rotation
+	usernameKey = "sess.username" // display name; never a secret, never logged
+	roleKey     = "sess.role"     // RBAC role (customer|vendor|mod|admin)
+	phraseKey   = "sess.phrase"   // anti-phishing personal phrase (post-login only)
 )
 
 // ErrInternalSession marks CSPRNG/store failures. Handlers render a generic 500
@@ -123,6 +126,36 @@ func RotateOnAuth(ctx context.Context, sm *scs.SessionManager) error {
 // Phase 3 auth handlers ("" when anonymous). Rate limiting keys off this.
 func CurrentUserID(ctx context.Context, sm *scs.SessionManager) string {
 	return sm.GetString(ctx, userIDKey)
+}
+
+// CurrentRole returns the RBAC role recorded at login ("" when anonymous).
+// RequireRole reads it; nothing here trusts a client-supplied role.
+func CurrentRole(ctx context.Context, sm *scs.SessionManager) string {
+	return sm.GetString(ctx, roleKey)
+}
+
+// RequireRole is the RBAC gate (TASKS.md Phase 3): anonymous sessions are
+// bounced to /login; authenticated sessions outside the allowed roles get
+// the uniform 403 — never a hint about which roles exist.
+func (a *App) RequireRole(roles ...string) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if CurrentUserID(r.Context(), a.sm) == "" {
+				http.Redirect(w, r, "/login", http.StatusSeeOther)
+				return
+			}
+			role := CurrentRole(r.Context(), a.sm)
+			for _, want := range roles {
+				if role == want {
+					next.ServeHTTP(w, r)
+					return
+				}
+			}
+			w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+			w.WriteHeader(http.StatusForbidden)
+			_, _ = w.Write([]byte("forbidden\n"))
+		})
+	}
 }
 
 // NewRandomToken returns n cryptographically-random bytes (default 32 => 256

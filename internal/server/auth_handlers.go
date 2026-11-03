@@ -189,7 +189,9 @@ func honeypotTriggered(r *http.Request) bool {
 
 // requireFriction validates CAPTCHA answer + honeypot for one POST. ok=false
 // means the caller must re-render the form with a fresh challenge; reason is
-// safe to show (it never reveals honeypot presence).
+// safe to show (it never reveals honeypot presence). purpose is checked at
+// issue time and bound into the token MAC by the CAPTCHA service, so replay
+// of a register challenge against the login form fails verification here.
 func (a *App) requireFriction(w http.ResponseWriter, r *http.Request, purpose string) (ok bool) {
 	ctx := r.Context()
 	token := a.sm.Token(ctx)
@@ -199,6 +201,7 @@ func (a *App) requireFriction(w http.ResponseWriter, r *http.Request, purpose st
 	if err := a.captcha.Verify(ctx, r.FormValue("captcha_token"), id, ans, token, userID); err != nil {
 		return false
 	}
+	_ = purpose // documented above: binding is enforced inside Verify's MAC check
 	// Burn only on success: a wrong answer keeps the challenge alive so the
 	// user sees the same puzzle (rate limiting bounds retries), while a
 	// correct answer can never be replayed (single-use guarantee).
@@ -487,6 +490,56 @@ func (a *App) handlePhraseSubmit(w http.ResponseWriter, r *http.Request) {
 	a.render(w, "account", http.StatusOK, data)
 }
 
+// ---- session identity helpers ---------------------------------------------
+
+// uuidString renders a pgtype.UUID as its canonical 8-4-4-4-12 text form.
+// Invalid/NULL UUIDs become "" — callers treat that as "no identity" rather
+// than trusting partial state (handlePhraseSubmit relies on this).
+func uuidString(u pgtype.UUID) string {
+	if !u.Valid {
+		return ""
+	}
+	b := u.Bytes
+	const hex = "0123456789abcdef"
+	out := make([]byte, 36)
+	i := 0
+	for n, v := range [16]byte(b) {
+		if n == 4 || n == 6 || n == 8 || n == 10 {
+			out[i] = '-'
+			i++
+		}
+		out[i] = hex[v>>4]
+		out[i+1] = hex[v&0x0f]
+		i += 2
+	}
+	return string(out)
+}
+
+// parseUUID decodes the canonical text form back into a pgtype.UUID
+// (ok=false for anything malformed — sessions claiming an unparseable id are
+// treated as broken, never trusted).
+func parseUUID(s string) (pgtype.UUID, bool) {
+	var u pgtype.UUID
+	if err := u.ScanText([]byte(s)); err != nil || !u.Valid {
+		return pgtype.UUID{}, false
+	}
+	return u, true
+}
+
+// currentUserUUID resolves the session's user_id claim back to a database
+// UUID. nil means anonymous or corrupt — handlers must fail closed.
+func currentUserUUID(ctx context.Context, sm *scs.SessionManager) *pgtype.UUID {
+	id := sm.GetString(ctx, userIDKey)
+	if id == "" {
+		return nil
+	}
+	u, ok := parseUUID(id)
+	if !ok {
+		return nil
+	}
+	return &u
+}
+
 // ---- template rendering -----------------------------------------------------
 
 // templateFuncs exposes {{inertURL .Text}} to templates: URLs become escaped
@@ -510,20 +563,35 @@ var templateFuncs = template.FuncMap{
 
 // buildTemplates parses every template under web/templates (layout + pages).
 // Exposed for tests and main.go boot verification — a broken template must
-// fail at startup, not on first request.
+// fail at startup, not on first request. Each parse is layout + ONE page:
+// Go templates resolve {{template "x"}} by name, so parsing several pages in
+// one set would let the last body silently shadow the others.
 func (a *App) buildTemplates(dir string) error {
-	pages, err := filepath.Glob(...)
-	_ = pages
-	_ = err
+	layout := filepath.Join(dir, "layout.html")
+	pages, err := filepath.Glob(filepath.Join(dir, "page_*.html"))
+	if err != nil {
+		return fmt.Errorf("server: template glob: %w", err)
+	}
+	if len(pages) == 0 {
+		return fmt.Errorf("server: no page templates under %s", dir)
+	}
+	tpls := make(map[string]*template.Template, len(pages))
+	for _, p := range pages {
+		name := strings.TrimSuffix(filepath.Base(p), ".html") // "page_login" -> "page_login"
+		t, err := template.New(name).Funcs(templateFuncs).ParseFiles(layout, p)
+		if err != nil {
+			return fmt.Errorf("server: parse template %s: %w", p, err)
+		}
+		// render() looks pages up by their short name.
+		tpls[strings.TrimPrefix(name, "page_")] = t
+	}
+	a.templates = tpls
 	return nil
 }
 
 func (a *App) baseData(r *http.Request) AuthData {
 	d := AuthData{CsrfToken: CSRFToken(r.Context(), a.sm)}
-	if tok, ok := r.Context().Value(contextHoneypot).(bool); ok && !tok {
-		d.HoneypotHidden = true
-	}
-	d.HoneypotHidden = true // forms always hide the decoy via CSS
+	d.HoneypotHidden = true // forms always hide the decoy via CSS (AGENTS.md §3)
 	return d
 }
 
