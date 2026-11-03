@@ -37,14 +37,14 @@ const (
 type EscrowEvent string
 
 const (
-	EventPaymentConfirmed      EscrowEvent = "payment_confirmed"
-	EventUnderpaymentObserved  EscrowEvent = "underpayment_observed"
-	EventOverpaymentObserved   EscrowEvent = "overpayment_observed"
-	EventCancelRequested       EscrowEvent = "cancel_requested" // unpaid expiry / pre-ship cancel
-	EventVendorMarksShipped    EscrowEvent = "vendor_marks_shipped"
-	EventCustomerConfirms      EscrowEvent = "customer_confirms"
-	EventAutoRelease           EscrowEvent = "auto_release" // 14-day cron, UTC from Postgres
-	EventDisputeOpened         EscrowEvent = "dispute_opened"
+	EventPaymentConfirmed       EscrowEvent = "payment_confirmed"
+	EventUnderpaymentObserved   EscrowEvent = "underpayment_observed"
+	EventOverpaymentObserved    EscrowEvent = "overpayment_observed"
+	EventCancelRequested        EscrowEvent = "cancel_requested" // unpaid expiry / pre-ship cancel
+	EventVendorMarksShipped     EscrowEvent = "vendor_marks_shipped"
+	EventCustomerConfirms       EscrowEvent = "customer_confirms"
+	EventAutoRelease            EscrowEvent = "auto_release" // 14-day cron, UTC from Postgres
+	EventDisputeOpened          EscrowEvent = "dispute_opened"
 	EventDisputeResolvedRelease EscrowEvent = "dispute_resolved_release"
 	EventDisputeResolvedRefund  EscrowEvent = "dispute_resolved_refund"
 )
@@ -72,7 +72,7 @@ func (s EscrowState) IsTerminal() bool {
 //	disputed         -> released | refunded  (mod resolves either way)
 var escrowTransitions = map[EscrowState]map[EscrowEvent]EscrowState{
 	StateAwaitingPayment: {
-		EventPaymentConfirmed: StateInEscrow,
+		EventPaymentConfirmed:     StateInEscrow,
 		EventUnderpaymentObserved: StateAwaitingPayment, // stays put: delta-invoice option (§4)
 		EventCancelRequested:      StateCancelled,
 	},
@@ -92,8 +92,8 @@ var escrowTransitions = map[EscrowState]map[EscrowEvent]EscrowState{
 	},
 	// Terminal states map to nothing explicit; Apply handles the two
 	// idempotent replay events below before consulting this table.
-	StateReleased: {},
-	StateRefunded: {},
+	StateReleased:  {},
+	StateRefunded:  {},
 	StateCancelled: {},
 }
 

@@ -1,6 +1,7 @@
 package server
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"crypto/subtle"
@@ -593,11 +594,16 @@ var templateFuncs = template.FuncMap{
 	},
 }
 
-// buildTemplates parses every template under web/templates (layout + pages).
-// Exposed for tests and main.go boot verification — a broken template must
-// fail at startup, not on first request. Each parse is layout + ONE page:
-// Go templates resolve {{template "x"}} by name, so parsing several pages in
-// one set would let the last body silently shadow the others.
+// buildTemplates parses every template under web/templates (layout + shared
+// partials + one page per set). Exposed for tests and main.go boot
+// verification — a broken template must fail at startup, not on first
+// request. Each parse is layout + all partials + ONE page: Go templates
+// resolve {{template "x"}} by name, so parsing several *pages* in one set
+// would let the last body silently shadow the others. Partials (anything
+// that is neither layout nor page_*, e.g. form_friction.html defining
+// "friction") MUST ride along in every set — pages reference them by name
+// and an execution-time "no such template" error after headers are sent is
+// unrecoverable (see render()).
 func (a *App) buildTemplates(dir string) error {
 	layout := filepath.Join(dir, "layout.html")
 	pages, err := filepath.Glob(filepath.Join(dir, "page_*.html"))
@@ -607,10 +613,24 @@ func (a *App) buildTemplates(dir string) error {
 	if len(pages) == 0 {
 		return fmt.Errorf("server: no page templates under %s", dir)
 	}
+	partials, err := filepath.Glob(filepath.Join(dir, "*.html"))
+	if err != nil {
+		return fmt.Errorf("server: template glob: %w", err)
+	}
+	var extras []string
+	for _, p := range partials {
+		base := filepath.Base(p)
+		if base == "layout.html" || strings.HasPrefix(base, "page_") {
+			continue
+		}
+		extras = append(extras, p)
+	}
 	tpls := make(map[string]*template.Template, len(pages))
 	for _, p := range pages {
 		name := strings.TrimSuffix(filepath.Base(p), ".html") // "page_login" -> "page_login"
-		t, err := template.New(name).Funcs(templateFuncs).ParseFiles(layout, p)
+		files := append([]string{layout}, extras...)
+		files = append(files, p)
+		t, err := template.New(name).Funcs(templateFuncs).ParseFiles(files...)
 		if err != nil {
 			return fmt.Errorf("server: parse template %s: %w", p, err)
 		}
@@ -633,12 +653,18 @@ func (a *App) render(w http.ResponseWriter, name string, code int, data AuthData
 		writeGenericError(w)
 		return
 	}
-	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	w.WriteHeader(code)
-	if err := tpl.Execute(w, data); err != nil {
-		// Headers are already out; nothing further is safe to do.
+	// Buffer first: an execution error after headers are out is unrecoverable
+	// and would leave the client with a truncated 200. Rendering into memory
+	// lets a failure still answer the mandated generic 500 (these pages are
+	// small by design — no streaming bodies in Phase 3).
+	var buf bytes.Buffer
+	if err := tpl.ExecuteTemplate(&buf, "layout", data); err != nil {
+		writeGenericError(w)
 		return
 	}
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.WriteHeader(code)
+	_, _ = buf.WriteTo(w)
 }
 
 var _ chi.Router // reserved: route mounting stays chi-typed (AGENTS.md §2)

@@ -76,8 +76,8 @@ type App struct {
 	router    chi.Router
 	srv       *http.Server
 	sm        *scs.SessionManager
-	auth      AuthStore         // set by RegisterAuthRoutes (nil-safe: routes skip)
-	captcha   *CaptchaService   // set by RegisterAuthRoutes (nil-safe: routes skip)
+	auth      AuthStore       // set by RegisterAuthRoutes (nil-safe: routes skip)
+	captcha   *CaptchaService // set by RegisterAuthRoutes (nil-safe: routes skip)
 	templates map[string]*template.Template
 }
 
