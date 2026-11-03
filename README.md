@@ -5,8 +5,9 @@ No JavaScript, no CDNs, no IP logging — server-rendered Go HTML behind an ngin
 (loopback-only), HTTPS on the onion via a self-signed SPKI-pinned cert, encrypted at rest (LUKS2),
 admin access over Dropbear-through-a-private-onion.
 
-> **Status:** early foundation phase. See [TASKS.md](TASKS.md) for the roadmap; most of it is
-> not yet implemented.
+> **Status:** Phases 1–3 complete and merged to `main` (foundation, core server & security
+> middleware, auth & RBAC); Phases 4–8 (catalog, checkout/BTCPay, escrow/ledger, ticketing,
+> community) are pending. See [TASKS.md](TASKS.md) for the roadmap.
 
 ## Documentation
 | File | Contents |
@@ -34,7 +35,7 @@ internal/server/     chi router, middleware (security headers, CSRF, sessions, r
 internal/store/      pgx/sqlc data access, ledger & escrow services
 web/templates/       html/template pages (no JS anywhere)
 web/static/          locally-served CSS/images/fonts only (mounted read-only into nginx)
-db/migrations/       SQL migrations (golang-migrate/goose)
+db/migrations/       SQL migrations (golang-migrate; applied via `make migrate`)
 docker-compose.yml   hardened stack: Postgres + Redis + nginx + app (+ optional BTCPay)
 Dockerfile           multi-stage static build, non-root, read-only-rootfs compatible
 nginx/               nginx.conf (TLS 1.3, UNIX-socket upstream) + ssl/ (gitignored certs)
@@ -42,15 +43,16 @@ scripts/             gen-certs.sh, backup.sh (age-encrypted dumps), panic-wipe.s
 deploy/              torrc + nftables.conf host templates
 systemd/             sandboxed service units for the bare-metal path
 install/install.sh   guided one-shot deployment (see INSTALL.md)
-.env.example         documented secret template (.env itself is gitignored — never commit it)
 ```
+> Note: `.env` (gitignored, mode 600) holds the deployment secrets; `install/install.sh`
+> generates any missing values into it automatically, so no checked-in `.env.example` is needed.
 
 ## Installation
 For less-experienced operators, the guided installer automates everything that is safe to
 automate (secrets, certs, compose bring-up) and refuses to touch destructive host hardening:
 ```bash
-cp .env.example .env && vi .env      # fill in real values; chmod 600 enforced by installer
-make install                         # == sudo ./install/install.sh  (full guide: INSTALL.md)
+make install                         # == sudo ./install/install.sh — creates .env (mode 600),
+                                     #    generating any missing secrets (full guide: INSTALL.md)
 ```
 Host prerequisites (LUKS2, nftables default-deny, Tor, Dropbear admin onion) are **manual gates**
 the installer will make you acknowledge — see [INSTALL.md](INSTALL.md) and SECURITY_AND_OPSEC.md §5.
