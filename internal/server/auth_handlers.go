@@ -226,7 +226,14 @@ func honeypotTriggered(r *http.Request) bool {
 // of a register challenge against the login form fails verification here.
 func (a *App) requireFriction(w http.ResponseWriter, r *http.Request, purpose string) (ok bool) {
 	ctx := r.Context()
-	token := a.sm.Token(ctx)
+	// The challenge was minted against the token THIS request carries — i.e.
+	// the cookie value, not whatever LoadAndSave generated mid-flight for a
+	// session that only became non-empty on this very response. On anonymous
+	// form posts (login/register) sm.Token(ctx) is still "" here because scs
+	// commits the fresh token at response time; reading it verbatim would
+	// make every first-post CAPTCHA fail its binding MAC. Prefer the raw
+	// cookie; fall back to the committed ctx token when no cookie is present.
+	token := a.sessionTokenForRequest(r)
 	userID := CurrentUserID(ctx, a.sm)
 	id := r.FormValue("captcha_id")
 	ans := r.FormValue("captcha_answer")
@@ -241,9 +248,23 @@ func (a *App) requireFriction(w http.ResponseWriter, r *http.Request, purpose st
 	return true
 }
 
+// sessionTokenForRequest returns the session token a challenge is bound to.
+// scs commits freshly generated tokens only at response time, so on the very
+// first request of an anonymous visit sm.Token(ctx) is still "" even though
+// LoadAndSave has already minted (and will send) a cookie. The raw cookie —
+// when present — is always the value the NEXT request (the form POST) will
+// carry in its context, making it the stable binding anchor across the GET/
+// POST pair; the ctx token is the fallback for requests without a cookie.
+func (a *App) sessionTokenForRequest(r *http.Request) string {
+	if ck, err := r.Cookie(SessionCookieName); err == nil && ck.Value != "" {
+		return ck.Value
+	}
+	return a.sm.Token(r.Context())
+}
+
 // newChallenge mints the CAPTCHA embedded in the next form render.
 func (a *App) newChallenge(w http.ResponseWriter, r *http.Request, purpose string) *CaptchaChallenge {
-	ch, err := a.captcha.Issue(r.Context(), a.sm.Token(r.Context()), CurrentUserID(r.Context(), a.sm), purpose)
+	ch, err := a.captcha.Issue(r.Context(), a.sessionTokenForRequest(r), CurrentUserID(r.Context(), a.sm), purpose)
 	if err != nil {
 		writeGenericError(w)
 		return nil
