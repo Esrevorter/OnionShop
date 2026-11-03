@@ -12,6 +12,7 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -166,8 +167,8 @@ func (a *App) RegisterAuthRoutes(auth AuthStore, captcha *CaptchaService) {
 	r.Get("/login", a.handleLoginForm)
 	r.Post("/login", a.handleLoginSubmit)
 	r.Post("/logout", a.handleLogout)
-	r.Get("/account", a.RequireRole("customer", "vendor", "mod", "admin")(a.handleAccount))
-	r.Post("/account/phrase", a.RequireRole("customer", "vendor", "mod", "admin")(a.handlePhraseSubmit))
+	r.Get("/account", a.RequireRole("customer", "vendor", "mod", "admin")(http.HandlerFunc(a.handleAccount)))
+	r.Post("/account/phrase", a.RequireRole("customer", "vendor", "mod", "admin")(http.HandlerFunc(a.handlePhraseSubmit)))
 }
 
 // handleHome is the minimal Phase 3 landing page; the catalog replaces it in
@@ -377,7 +378,7 @@ func (a *App) handleLoginSubmit(w http.ResponseWriter, r *http.Request) {
 
 	// Transparent parameter upgrade: re-hash at current baseline once the
 	// stored record lags behind (records carry their own params by design).
-	if p, perr := decodeArgon(user.PasswordHash); perr == nil && NeedsUpgrade(p) {
+	if p, _, perr := decodeArgon(user.PasswordHash); perr == nil && NeedsUpgrade(p) {
 		if nh, _, herr := HashPassword(password); herr == nil {
 			if uerr := a.auth.AuthUpdatePasswordHash(ctx, user.ID, nh); uerr != nil {
 				log.Printf("auth: password param upgrade failed (non-fatal): %v", sanitizedErr(uerr))
@@ -391,10 +392,10 @@ func (a *App) handleLoginSubmit(w http.ResponseWriter, r *http.Request) {
 		writeGenericError(w)
 		return
 	}
-	a.sm.PutString(ctx, userIDKey, uuidString(user.ID))
-	a.sm.PutString(ctx, usernameKey, user.Username)
-	a.sm.PutString(ctx, roleKey, user.Role)
-	a.sm.PutInt64(ctx, createdKey, time.Now().UTC().Unix()) // absolute clock restarts at auth
+	a.sm.Put(ctx, userIDKey, uuidString(user.ID))
+	a.sm.Put(ctx, usernameKey, user.Username)
+	a.sm.Put(ctx, roleKey, user.Role)
+	a.sm.Put(ctx, createdKey, time.Now().UTC().Unix()) // absolute clock restarts at auth
 
 	if err := a.auth.AuthRecordLogin(ctx, user.ID, time.Now().UTC()); err != nil {
 		// Login history is defense-in-depth, not a gate: never block a good
