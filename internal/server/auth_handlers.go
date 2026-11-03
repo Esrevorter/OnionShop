@@ -278,13 +278,25 @@ const pendingTokenKey = "pending_token"
 // otherwise break the binding.
 func (a *App) sessionTokenForRequest(r *http.Request) string {
 	ctx := r.Context()
+	pending := a.sm.GetString(ctx, pendingTokenKey)
 	if ck, err := r.Cookie(SessionCookieName); err == nil && ck.Value != "" {
+		// A pre-login session that already carries its own stashed identifier
+		// (minted by an earlier cookie-less GET whose LoadAndSave commit ended
+		// up generating a different token than the stash — e.g. the CSRF or
+		// absolute-expiry middleware destroyed/re-minted before flushing) must
+		// keep verifying against THAT value: challenges issued during this
+		// request's render were MAC'd with it. Without this, every retry after
+		// a failed login re-anchors to the raw cookie and fails the binding
+		// forever, even though the browser solved the fresh puzzle correctly.
+		if pending != "" {
+			return pending
+		}
 		return ck.Value
 	}
 	if tok := a.sm.Token(ctx); tok != "" {
 		return tok
 	}
-	return a.sm.GetString(ctx, pendingTokenKey)
+	return pending
 }
 
 // recordPendingToken stashes the token that scs is about to commit for this

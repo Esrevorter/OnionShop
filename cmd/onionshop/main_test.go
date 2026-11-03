@@ -82,3 +82,64 @@ func TestAllowContainerBindTruthiness(t *testing.T) {
 		}
 	}
 }
+
+// TestCaptchaKeyFromSessionHash locks the SESSION_HASH_KEY -> CAPTCHA HMAC key
+// derivation contract (main.go): blank/whitespace-only secrets yield no key
+// (fail-loud at boot), the derivation is deterministic, the result always
+// meets the captcha service's 16-byte minimum, and it never equals the raw
+// secret bytes (domain-separated SHA-256, so rotating one secret cannot leak
+// into the other's key space).
+func TestCaptchaKeyFromSessionHash(t *testing.T) {
+	tests := []struct {
+		name   string
+		in     string
+		wantOK bool
+	}{
+		{"empty", "", false},
+		{"spaces only", "   ", false},
+		{"tabs and newlines only", "\t\n \r\n", false},
+		{"normal secret", "s3cr3t-session-hash", true},
+		{"padded secret trims to non-empty", "  padded  ", true},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			key, ok := captchaKeyFromSessionHash(tc.in)
+			if ok != tc.wantOK {
+				t.Fatalf("ok = %v, want %v", ok, tc.wantOK)
+			}
+			if !tc.wantOK {
+				if key != nil {
+					t.Errorf("expected nil key when ok=false, got %q", key)
+				}
+				return
+			}
+			if len(key) < 16 {
+				t.Errorf("key length = %d, want >= 16 (captcha.NewCaptchaService minimum)", len(key))
+			}
+		})
+	}
+
+	// Determinism: same input, same key across calls.
+	a, okA := captchaKeyFromSessionHash("deterministic-input")
+	b, okB := captchaKeyFromSessionHash("deterministic-input")
+	if !okA || !okB || string(a) != string(b) {
+		t.Errorf("derivation not deterministic: %q vs %q", a, b)
+	}
+
+	// Differs from raw value: the derived key must not be the secret itself.
+	raw := "raw-secret-value-0123456789"
+	k, ok := captchaKeyFromSessionHash(raw)
+	if !ok {
+		t.Fatal("expected ok=true for non-blank secret")
+	}
+	if string(k) == raw {
+		t.Error("derived key equals raw secret; domain separation missing")
+	}
+
+	// Different secrets produce different keys.
+	k1, _ := captchaKeyFromSessionHash("secret-one")
+	k2, _ := captchaKeyFromSessionHash("secret-two")
+	if string(k1) == string(k2) {
+		t.Error("distinct secrets produced identical captcha keys")
+	}
+}

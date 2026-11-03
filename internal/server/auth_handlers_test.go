@@ -40,12 +40,12 @@ type recordedLogin struct {
 type fakeAuthStore struct {
 	mu sync.Mutex
 
-	users        map[string]*UserRecord
-	nextID       int
-	recordLoginN int
-	recorded     []recordedLogin
+	users          map[string]*UserRecord
+	nextID         int
+	recordLoginN   int
+	recorded       []recordedLogin
 	recordLoginErr error
-	setPhraseErr error
+	setPhraseErr   error
 }
 
 func newFakeAuthStore(t *testing.T) *fakeAuthStore {
@@ -583,4 +583,3 @@ func extractText(t *testing.T, body, marker string) string {
 	}
 	return strings.TrimSpace(strings.ReplaceAll(rest, "\n", " "))
 }
-

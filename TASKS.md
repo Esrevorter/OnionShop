@@ -49,12 +49,27 @@ egress are mandatory.)
       Argon2id hashing with self-describing per-hash param records (`internal/server/password.go`),
       constant-time dummy verify for unknown users, username/password validators;
       single-use HMAC-bound image CAPTCHA with Redis+memory mirror and deterministic
-      stdlib PNG renderer (`internal/server/captcha.go`). Handlers/templates still pending.
-- [ ] RBAC Middleware (Customer, Vendor, Mod, Admin) incl. account tiers (Basic/Upgraded).
-- [ ] HTML Templates for Auth (with image CAPTCHA & Honeypot — see AGENTS.md §3).
+      stdlib PNG renderer (`internal/server/captcha.go`).
+      Handlers/templates done 2026-11-04: `internal/server/auth_handlers.go` registers
+      GET/POST `/register` + `/login` (CAPTCHA + honeypot friction per AGENTS.md §3, session
+      rotation on auth, transparent argon2 param upgrade), go:templates under `web/templates`
+      (`page_home/login/register/account.html`, parsed fail-loud at boot via `buildTemplates`;
+      template dir overridable with `ONIONSHOP_TEMPLATE_DIR`), mounted by `RegisterAuthRoutes`
+      in `cmd/onionshop/main.go`. Covered by `auth_handlers_test.go` (fake AuthStore, full
+      login-chain history assertions, template-parsing failure modes).
+- [x] RBAC Middleware (Customer, Vendor, Mod, Admin) — role gate `RequireRole` mounted on
+      `/account` and wired through the router 2026-11-04; roles are read from the session at
+      login. Account tiers (Basic/Upgraded) remain pending (depends on Phase 4 vendor flow).
+- [x] HTML Templates for Auth (with image CAPTCHA & Honeypot — see AGENTS.md §3) — done
+      2026-11-04 together with the handlers above (inline CAPTCHA PNG + hidden single-use
+      token + honeypot field in every auth form).
 - [ ] PGP public-key upload/validation + self-service PGP tool page (public keys only;
       private keys never server-side).
-- [ ] Personal phrase (anti-phishing) + login-history table (UTC time + Host header, no IPs).
+- [x] Personal phrase (anti-phishing) + login-history table (UTC time + Host header, no IPs) —
+      done 2026-11-04: successful logins record `(user_id, UTC timestamp, r.Host)` via the
+      4-arg `AuthRecordLogin(ctx, pgtype.UUID, time.Time, string)`; a history-write failure is
+      logged non-fatally and never blocks the login (still 303 → `/account`) — asserted by
+      `TestLoginRecordsHistoryWithUTCTimeAndHost` / `TestLoginHistoryWriteErrorDoesNotBlockLogin`.
 
 ## Phase 4: Catalog & Vendors
 - [ ] Vendor registration and Admin approval flow (writes to audit log).
