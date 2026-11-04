@@ -883,8 +883,17 @@ func (a *App) render(w http.ResponseWriter, name string, code int, data AuthData
 	// lets a failure still answer the mandated generic 500 (these pages are
 	// small by design — no streaming bodies in Phase 3).
 	var buf bytes.Buffer
-	if err := tpl.ExecuteTemplate(&buf, "layout", data); err != nil {
-		log.Printf("pgp: render %q failed: %v", name, sanitizedErr(err))
+	// Render the PAGE template, not "layout": page files begin with
+	// {{template "layout" .}} and define "title"/"body"; layout.html then
+	// invokes those blocks. ExecuteTemplate(&buf, "layout", ...) bypasses the
+	// page's top-level call and executes the bare layout, whose {{block
+	// "body"}} has no content defined in that parse set's execution path —
+	// producing a truncated/empty page (and, once PGP state is involved,
+	// failing outright). The debug log keeps the RAW error text: template
+	// errors never contain user secrets, and sanitizedErr() here previously
+	// disguised every render failure as "redis: operation failed".
+	if err := tpl.ExecuteTemplate(&buf, name, data); err != nil {
+		log.Printf("server: render %q failed: %v", name, err)
 		writeGenericError(w)
 		return
 	}
