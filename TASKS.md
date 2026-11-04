@@ -69,7 +69,8 @@ egress are mandatory.)
       Handlers/templates done 2026-11-04: `internal/server/auth_handlers.go` registers
       GET/POST `/register` + `/login` (CAPTCHA + honeypot friction per AGENTS.md §3, session
       rotation on auth, transparent argon2 param upgrade), go:templates under `web/templates`
-      (`page_home/login/register/account.html`, parsed fail-loud at boot via `buildTemplates`;
+      (`page_home/login/register/account/pgp.html` + shared `form_friction.html`, parsed
+      fail-loud at boot via `buildTemplates`;
       template dir overridable with `ONIONSHOP_TEMPLATE_DIR`), mounted by `RegisterAuthRoutes`
       in `cmd/onionshop/main.go`. Covered by `auth_handlers_test.go` (fake AuthStore, full
       login-chain history assertions, template-parsing failure modes).
@@ -79,8 +80,17 @@ egress are mandatory.)
 - [x] HTML Templates for Auth (with image CAPTCHA & Honeypot — see AGENTS.md §3) — done
       2026-11-04 together with the handlers above (inline CAPTCHA PNG + hidden single-use
       token + honeypot field in every auth form).
-- [ ] PGP public-key upload/validation + self-service PGP tool page (public keys only;
-      private keys never server-side).
+- [x] PGP public-key upload/validation + self-service PGP tool page (public keys only;
+      private keys never server-side) — done 2026-11-04: `internal/server/pgp.go` validates
+      armored PUBLIC keys in memory via `golang.org/x/crypto/openpgp` (private blocks and
+      malformed armor rejected before any DB write; raw key material never logged), computes
+      the display fingerprint, and serves the public explainer at GET `/pgp`
+      (`page_pgp.html`). Upload/clear POSTs (`/account/pgp`, `/account/pgp/clear`) sit behind
+      the account gate + CAPTCHA/honeypot friction with fresh-challenge re-render on failure;
+      storage via `AuthGetPGPKey`/`AuthSetPGPKey`/`AuthClearPGPKey` (migration 0001 column).
+      Fixed same day: `parseUUID` no longer relies on `pgtype.UUID.Scan` (canonical-string
+      decode), which had made identity-dependent POSTs fail closed with a silent 500.
+      Covered by `pgp_test.go` + `TestPGPUploadAndClearFullChain` in `auth_handlers_test.go`.
 - [x] Personal phrase (anti-phishing) + login-history table (UTC time + Host header, no IPs) —
       done 2026-11-04: successful logins record `(user_id, UTC timestamp, r.Host)` via the
       4-arg `AuthRecordLogin(ctx, pgtype.UUID, time.Time, string)`; a history-write failure is
