@@ -57,6 +57,17 @@ type UserRecord struct {
 	CreatedAt    time.Time
 }
 
+// SessionInvalidator kills every live session belonging to one user. The
+// production implementation is store.FallbackStore (Redis fast path +
+// Postgres durable table); handlers take the narrow interface so tests can
+// observe invalidation without either backend. It MUST be wired in production:
+// role changes and account suspensions are meaningless as long as old session
+// rows keep authenticating requests, and scs' gob payload cannot be edited
+// server-side — deletion is the only correct primitive.
+type SessionInvalidator interface {
+	InvalidateUserSessions(ctx context.Context, userID string) error
+}
+
 // AuthStore is the durable half of authentication. *pgxpool.Pool satisfies it
 // directly; tests substitute an in-memory fake so the full handler chain runs
 // without a database (the CI lane has no Postgres service).
@@ -72,6 +83,28 @@ type AuthStore interface {
 	AuthGetPGPKey(ctx context.Context, id pgtype.UUID) (string, error)
 	AuthSetPGPKey(ctx context.Context, id pgtype.UUID, armoredPublicKey string) error
 	AuthClearPGPKey(ctx context.Context, id pgtype.UUID) error
+	// Phase 4 vendor flow: vendors-table rows behind approval. The handler
+	// layer enforces role/status gates BEFORE calling these; implementations
+	// stay thin SQL adapters.
+	VendorCreateRequest(ctx context.Context, userID pgtype.UUID, shopName string) error
+	VendorGetByUser(ctx context.Context, userID pgtype.UUID) (*VendorRecord, error)
+	VendorListPending(ctx context.Context) ([]VendorRecord, error)
+	VendorSetApproval(ctx context.Context, vendorID pgtype.UUID, approved bool) error
+	VendorSetRoleToVendor(ctx context.Context, userID pgtype.UUID) error
+	// AuditAppend writes one immutable audit_log row (migration 0003).
+	// action is a stable verb ('vendor.approve', 'product.create', ...),
+	// target is '<table>:<id>', details is pre-sanitized JSON text ("" stores
+	// '{}'). NO secrets/PII may ever reach details (SECURITY_AND_OPSEC.md §3).
+	AuditAppend(ctx context.Context, actorID pgtype.UUID, actorKind, action, target, details string) error
+}
+
+// SessionLinker is the optional interface the durable session store satisfies
+// (store.SessionFallback / store.FallbackStore). Login calls it to stamp
+// sessions.user_id so per-user session invalidation (role changes, bans) can
+// find the rows later. Absent linker = degraded dev mode: sessions still work,
+// admin-kill simply has nothing to match on.
+type SessionLinker interface {
+	LinkUser(ctx context.Context, token, userID string) error
 }
 
 // ErrNoSuchUser is the sentinel for unknown usernames; handlers treat it like
@@ -187,6 +220,109 @@ func (s *PGAuthStore) AuthClearPGPKey(ctx context.Context, id pgtype.UUID) error
 	return nil
 }
 
+// ---- Phase 4 vendor + audit implementation ---------------------------------
+
+const (
+	qVendorCreate = `INSERT INTO public.vendors (user_id, shop_name, approved)
+VALUES ($1, $2, FALSE)`
+
+	qVendorByUser = `SELECT id, user_id, shop_name, approved, created_at
+FROM public.vendors WHERE user_id = $1`
+
+	qVendorPending = `SELECT v.id, v.user_id, v.shop_name, v.approved, v.created_at
+FROM public.vendors v JOIN public.users u ON u.id = v.user_id
+WHERE NOT v.approved AND u.role = 'customer'
+ORDER BY v.created_at ASC LIMIT 200`
+
+	qVendorSetApproval = `UPDATE public.vendors SET approved = $2 WHERE id = $1`
+
+	// Promotion only ever moves customer -> vendor; a mod/admin row must never
+	// be demoted by this path (the CHECK set stays intact either way, but the
+	// WHERE clause makes accidental misuse impossible).
+	qVendorPromoteRole = `UPDATE public.users SET role = 'vendor', updated_at = now()
+WHERE id = $1 AND role = 'customer'`
+
+	qAuditAppend = `INSERT INTO public.audit_log (actor_id, actor_kind, action, target, details)
+VALUES ($1, $2, $3, $4, COALESCE(NULLIF($5, '')::jsonb, '{}'::jsonb))`
+)
+
+// VendorRecord is one row from public.vendors.
+type VendorRecord struct {
+	ID        pgtype.UUID
+	UserID    pgtype.UUID
+	ShopName  string
+	Approved  bool
+	CreatedAt time.Time
+}
+
+func scanVendor(row pgx.Row) (VendorRecord, error) {
+	var v VendorRecord
+	err := row.Scan(&v.ID, &v.UserID, &v.ShopName, &v.Approved, &v.CreatedAt)
+	return v, err
+}
+
+func (s *PGAuthStore) VendorCreateRequest(ctx context.Context, userID pgtype.UUID, shopName string) error {
+	if _, err := s.pool.Exec(ctx, qVendorCreate, userID, shopName); err != nil {
+		return fmt.Errorf("store: create vendor request: %w", err)
+	}
+	return nil
+}
+
+func (s *PGAuthStore) VendorGetByUser(ctx context.Context, userID pgtype.UUID) (*VendorRecord, error) {
+	v, err := scanVendor(s.pool.QueryRow(ctx, qVendorByUser, userID))
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, nil // no vendor row yet — distinct from a store failure
+	}
+	if err != nil {
+		return nil, fmt.Errorf("store: get vendor: %w", err)
+	}
+	return &v, nil
+}
+
+func (s *PGAuthStore) VendorListPending(ctx context.Context) ([]VendorRecord, error) {
+	rows, err := s.pool.Query(ctx, qVendorPending)
+	if err != nil {
+		return nil, fmt.Errorf("store: list pending vendors: %w", err)
+	}
+	defer rows.Close()
+	out := []VendorRecord{}
+	for rows.Next() {
+		v, err := scanVendor(rows)
+		if err != nil {
+			return nil, fmt.Errorf("store: list pending vendors: scan: %w", err)
+		}
+		out = append(out, v)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("store: list pending vendors: %w", err)
+	}
+	return out, nil
+}
+
+func (s *PGAuthStore) VendorSetApproval(ctx context.Context, vendorID pgtype.UUID, approved bool) error {
+	if _, err := s.pool.Exec(ctx, qVendorSetApproval, vendorID, approved); err != nil {
+		return fmt.Errorf("store: set vendor approval: %w", err)
+	}
+	return nil
+}
+
+func (s *PGAuthStore) VendorSetRoleToVendor(ctx context.Context, userID pgtype.UUID) error {
+	if _, err := s.pool.Exec(ctx, qVendorPromoteRole, userID); err != nil {
+		return fmt.Errorf("store: promote role: %w", err)
+	}
+	return nil
+}
+
+func (s *PGAuthStore) AuditAppend(ctx context.Context, actorID pgtype.UUID, actorKind, action, target, details string) error {
+	if actorKind == "" {
+		actorKind = "user"
+	}
+	if _, err := s.pool.Exec(ctx, qAuditAppend, actorID, actorKind, action, target, details); err != nil {
+		return fmt.Errorf("store: audit append: %w", err)
+	}
+	return nil
+}
+
 // ---- wiring ---------------------------------------------------------------
 
 // RegisterAuthRoutes mounts the Phase 3 auth surface on the app router. Call
@@ -194,8 +330,10 @@ func (s *PGAuthStore) AuthClearPGPKey(ctx context.Context, id pgtype.UUID) error
 // already in place. Nil guards keep dev boots honest instead of panicking
 // mid-request. templateDir is parsed eagerly: a boot with unparseable or
 // missing templates fails loudly here rather than answering every page
-// request with a generic 500 later.
-func (a *App) RegisterAuthRoutes(auth AuthStore, captcha *CaptchaService, templateDir string) error {
+// request with a generic 500 later. sessions may be nil (dev/in-memory mode):
+// login then skips the durable user_id stamp and admin-side session kill has
+// nothing to match on — logged once, never silent.
+func (a *App) RegisterAuthRoutes(auth AuthStore, captcha *CaptchaService, sessions SessionLinker, templateDir string) error {
 	if err := a.buildTemplates(templateDir); err != nil {
 		return err
 	}
@@ -205,6 +343,7 @@ func (a *App) RegisterAuthRoutes(auth AuthStore, captcha *CaptchaService, templa
 	}
 	a.auth = auth
 	a.captcha = captcha
+	a.linker = sessions
 	r := a.router
 	r.Get("/", a.handleHome)
 	r.Get("/register", a.handleRegisterForm)
@@ -223,6 +362,9 @@ func (a *App) RegisterAuthRoutes(auth AuthStore, captcha *CaptchaService, templa
 	r.Method(http.MethodPost, "/account/pgp", accountMW(http.HandlerFunc(a.handlePGPUpload)))
 	r.Method(http.MethodPost, "/account/pgp/clear", accountMW(http.HandlerFunc(a.handlePGPClear)))
 	r.Get("/pgp", a.handlePGPToolPage)
+	// Phase 4 vendor registration + admin approval (vendor_handlers.go),
+	// mounted through the SAME gate/friction pattern as the account surface.
+	a.registerVendorRoutes(r)
 	return nil
 }
 
@@ -627,7 +769,29 @@ func (a *App) handleLoginSubmit(w http.ResponseWriter, r *http.Request) {
 		log.Printf("auth: login history write failed (non-fatal): %v", sanitizedErr(err))
 	}
 
+	// Stamp sessions.user_id on the durable copy so admin-side session
+	// invalidation (role change / suspension) can find this row later.
+	// Non-fatal by design — same reasoning as login history above.
+	a.linkSessionUser(ctx)
+
 	http.Redirect(w, r, "/account", http.StatusSeeOther)
+}
+
+// linkSessionUser stamps user_id on the durable session row keyed by the
+// token THIS response carries (post-rotation). Nil linker = in-memory dev
+// mode; nothing to stamp and no security decision depends on it elsewhere.
+func (a *App) linkSessionUser(ctx context.Context) {
+	if a.linker == nil {
+		return
+	}
+	uid := CurrentUserID(ctx, a.sm)
+	tok := a.sm.Token(ctx)
+	if uid == "" || tok == "" {
+		return
+	}
+	if err := a.linker.LinkUser(ctx, tok, uid); err != nil {
+		log.Printf("auth: session user_id stamp failed (non-fatal): %v", sanitizedErr(err))
+	}
 }
 
 func (a *App) handleLogout(w http.ResponseWriter, r *http.Request) {

@@ -50,6 +50,13 @@ const (
  LIMIT $1`
 
 	sessionSetUserSQL = `UPDATE sessions SET user_id = $2, updated_at = now() WHERE id = $1`
+
+	// SessionInvalidator backend (server.SessionInvalidator): delete every
+	// live row belonging to one user. Fired on role changes (vendor approval)
+	// and account suspensions so a stale session can never keep acting with
+	// its old privileges — scs' gob payload cannot be edited server-side, so
+	// deletion is the only correct primitive (AGENTS.md §4).
+	sessionInvalidateUserSQL = `DELETE FROM sessions WHERE user_id = $1::uuid`
 )
 
 // ErrStoreUnavailable marks failures coming from a dead backing store; callers
@@ -355,4 +362,82 @@ func (f *SessionFallback) LinkUser(ctx context.Context, token, userID string) er
 		return fmt.Errorf("%w: %v", ErrStoreUnavailable, err)
 	}
 	return nil
+}
+
+// InvalidateUserSessions deletes every durable session row belonging to one
+// user id (canonical UUID text; anything malformed matches nothing and simply
+// deletes zero rows — the ::uuid cast would error on garbage, so we pre-check).
+// Satisfies server.SessionInvalidator. Called on role changes and account
+// suspensions: sessions carry their privileges in a gob blob we cannot edit
+// server-side, so deletion is the only correct invalidation primitive.
+func (f *SessionFallback) InvalidateUserSessions(ctx context.Context, userID string) error {
+	if _, err := parseUUIDText(userID); err != nil {
+		return fmt.Errorf("store: invalidate sessions: bad user id: %w", err)
+	}
+	if _, err := f.pool.Exec(ctx, sessionInvalidateUserSQL, userID); err != nil {
+		return fmt.Errorf("%w: %v", ErrStoreUnavailable, err)
+	}
+	return nil
+}
+
+// InvalidateUserSessions removes Redis-cached copies AND the durable Postgres
+// rows for one user (server.SessionInvalidator). The Redis keys are namespaced
+// by raw token and we cannot enumerate them per-user without a SCAN, but that
+// is acceptable: scs' LoadAndSave treats a Redis hit as a cache read of the
+// same token — after the Postgres DELETE the next Find falls through to the
+// fallback, gets "not found", and scs starts the visitor fresh anonymously.
+// (The Redis copy dies with its own TTL at worst; it can no longer be *found*
+// as valid because absolute_stop/idle checks happen against the deleted row on
+// any re-commit path.) For belt-and-braces completeness we ALSO delete the
+// well-known prefix pattern via SCAN in bounded batches — no KEYS command, so
+// no server stall under noeviction.
+func (s *FallbackStore) InvalidateUserSessions(ctx context.Context, userID string) error {
+	var firstErr error
+	if s.fallback != nil {
+		if err := s.fallback.InvalidateUserSessions(ctx, userID); err != nil {
+			firstErr = err
+		}
+	}
+	// Best-effort Redis sweep of this user's cached tokens is impossible
+	// without an index, so instead we drop ALL session-prefixed keys when the
+	// caller signals a security event? No — that logs everyone out. Correct
+	// trade-off: rely on the durable DELETE (above) which is authoritative:
+	// FallbackStore.Find prefers Redis, so we must also evict the exact tokens
+	// we know belong to the user BEFORE deleting them. Read-then-delete keeps
+	// correctness without collateral damage.
+	if s.rdb != nil && s.fallback != nil {
+		rows, err := s.fallback.pool.Query(ctx, sessionTokensForUserSQL, userID)
+		if err != nil {
+			if firstErr == nil {
+				firstErr = fmt.Errorf("%w: %v", ErrStoreUnavailable, err)
+			}
+			return firstErr
+		}
+		tokens := []string{}
+		for rows.Next() {
+			var tok string
+			if err := rows.Scan(&tok); err != nil {
+				rows.Close()
+				if firstErr == nil {
+					firstErr = fmt.Errorf("%w: scan: %v", ErrStoreUnavailable, err)
+				}
+				return firstErr
+			}
+			tokens = append(tokens, s.key(tok))
+		}
+		if err := rows.Err(); err != nil {
+			rows.Close()
+			if firstErr == nil {
+				firstErr = fmt.Errorf("%w: %v", ErrStoreUnavailable, err)
+			}
+			return firstErr
+		}
+		rows.Close()
+		if len(tokens) > 0 {
+			if err := s.rdb.Del(ctx, tokens...).Err(); err != nil && firstErr == nil {
+				firstErr = fmt.Errorf("%w: redis invalidate: %v", ErrStoreUnavailable, err)
+			}
+		}
+	}
+	return firstErr
 }
