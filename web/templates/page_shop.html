@@ -1,0 +1,20 @@
+{{template "layout" .}}
+
+{{define "title"}}{{if .ShopName}}{{.ShopName}}{{else}}Shop{{end}} &middot; OnionShop{{end}}
+
+{{define "body"}}
+<h1>{{if .ShopName}}{{.ShopName}}{{else}}Shop{{end}}</h1>
+{{if .VendorRating}}<p>Rating: {{printf "%.2f" .VendorRating}}/5 &middot; {{.VendorSales}} sales</p>{{end}}
+{{template "productgrid" .}}
+{{if and .CsrfToken .Vendor}}
+<h2>Message this vendor</h2>
+<form method="post" action="/vendor/{{.Vendor.VendorUsernamePlaceholder}}/message" autocomplete="off">
+{{template "friction" .}}
+<label>Message (plain text, max 5000 chars)
+<textarea name="body" rows="6" maxlength="5000" required></textarea></label>
+<p><button type="submit">Send</button></p>
+</form>
+{{else}}
+<p><a href="/login">Log in</a> to message this vendor.</p>
+{{end}}
+{{end}}

@@ -1,0 +1,18 @@
+{{template "layout" .}}
+
+{{define "title"}}{{if .Product}}{{.Product.Title}}{{else}}Listing{{end}} &middot; OnionShop{{end}}
+
+{{define "body"}}
+{{with .Product}}
+<h1>{{.Title}}</h1>
+<p>{{$.SatToBTC}} BTC &middot; {{.PriceSat}} sat &middot; {{.Stock}} in stock</p>
+<p>Vendor: <a href="/u/{{.VendorUsername}}">{{.ShopName}}</a>{{if .Eta}} &middot; ships {{.Eta}}{{end}}</p>
+{{if .ImagePath}}<p><img src="{{.ImagePath}}" alt="" style="max-width:100%"></p>{{end}}
+<div class="description">{{inertURL .Description}}</div>
+{{if $.CsrfToken}}
+<p><a href="/account/reviews?vendor={{.VendorUsername}}">Review this vendor</a></p>
+{{end}}
+{{else}}
+<p>No such listing.</p>
+{{end}}
+{{end}}

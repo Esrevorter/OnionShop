@@ -219,7 +219,7 @@ func main() {
 	// cheap read instead of an aggregate per request. Runs on the same
 	// shutdown ctx as the listener; skipped (with a loud log inside cron)
 	// when no Postgres pool is wired — dev boots stay honest.
-	board := servercron.NewLeaderboard(catalogStore, servercron.DefaultInterval, 0)
+	board := cron.NewLeaderboard(catalogStore, cron.DefaultInterval, 0)
 	go board.Run(ctx)
 	// Bind policy was already vetted by resolveAddr above: loopback, or a
 	// contained-namespace bind under ONIONSHOP_NET_NEVER=1.

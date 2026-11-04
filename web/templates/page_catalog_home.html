@@ -1,0 +1,37 @@
+{{template "layout" .}}
+
+{{define "title"}}Marketplace &middot; OnionShop{{end}}
+
+{{define "body"}}
+<h1>OnionShop</h1>
+<p>A marketplace reachable only over Tor. Listings are vendor copy &mdash; verify, never trust.</p>
+
+<form method="get" action="/search">
+<label>Search listings
+<input type="text" name="q" placeholder="keywords" maxlength="200"></label>
+<p><button type="submit">Search</button></p>
+</form>
+
+{{if .Categories}}
+<h2>Categories</h2>
+<ul>
+{{range .Categories}}
+<li><a href="/category/{{.Slug}}">{{.Name}}</a></li>
+{{end}}
+</ul>
+{{end}}
+
+{{if .TopVendors}}
+<h2>Top vendors</h2>
+<ol>
+{{range .TopVendors}}
+<li>{{.ShopName}} &middot; {{.VendorUsername}}{{if .Eta}} &middot; {{.Eta}}{{end}}
+&middot; {{.SalesCount}} sales &middot; <span title="average rating">{{printf "%.2f" .AvgRating}}/5</span></li>
+{{end}}
+</ol>
+{{end}}
+
+<h2>Newest listings</h2>
+{{template "productgrid" .}}
+<p><a href="/vendor/apply">Become a vendor</a></p>
+{{end}}

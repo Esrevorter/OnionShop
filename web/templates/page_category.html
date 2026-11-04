@@ -1,0 +1,15 @@
+{{template "layout" .}}
+
+{{define "title"}}{{.CategoryName}} &middot; OnionShop{{end}}
+
+{{define "body"}}
+<h1>Category: {{.CategoryName}}</h1>
+<p><a href="/">&larr; all categories</a></p>
+{{template "productgrid" .}}
+{{if gt .Total 0}}
+<nav>
+{{if gt .Offset 0}}<a href="/category/{{.CategoryName}}?offset={{.PrevOffset}}">&larr; previous</a>{{end}}
+{{if lt .NextOffset .Total}}<a href="/category/{{.CategoryName}}?offset={{.NextOffset}}">next &rarr;</a>{{end}}
+</nav>
+{{end}}
+{{end}}

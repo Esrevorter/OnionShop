@@ -1,0 +1,25 @@
+{{/*
+Shared product grid for catalog_home / search / category / shop pages — all
+four render []StorefrontProduct (via .Products on *CatalogData). Kept as one
+partial so listing markup lives in exactly one place. Prices stay raw integer
+satoshis: the sat -> BTC text conversion is a server-side formatting concern
+(satToBTC) and list rows never re-derive it per request. Vendor copy renders
+through html/template's automatic escaping like everywhere else.
+*/}}
+{{define "productgrid"}}
+{{if .Products}}
+<ul class="products">
+{{range .Products}}
+<li>
+  <a href="/product/{{.ID}}">{{.Title}}</a>
+  &mdash; {{.PriceSat}} sat
+  <span title="stock">({{.Stock}})</span>
+  <br><small>{{.ShopName}}{{if .Eta}} &middot; {{.Eta}}{{end}}
+  &middot; <a href="/u/{{.VendorUsername}}">{{.VendorUsername}}</a></small>
+</li>
+{{end}}
+</ul>
+{{else}}
+<p>No listings here yet.</p>
+{{end}}
+{{end}}

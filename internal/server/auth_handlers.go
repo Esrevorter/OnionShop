@@ -10,6 +10,7 @@ import (
 	"html/template"
 	"log"
 	"net/http"
+	"os"
 	"path/filepath"
 	"strings"
 	"time"
@@ -1352,14 +1353,26 @@ func (a *App) buildTemplates(dir string) error {
 	tpls := make(map[string]*template.Template, len(pages))
 	for _, p := range pages {
 		name := strings.TrimSuffix(filepath.Base(p), ".html") // "page_login" -> "page_login"
+		short := strings.TrimPrefix(name, "page_")            // handler lookup key: "login"
 		files := append([]string{layout}, extras...)
+		// ParseFiles keys each defined template by the BASENAME of its file, so a
+		// page named page_<short>.html defines "page_<short>" — while handlers
+		// look the set up under "<short>". The existing convention bridges that
+		// gap by making the page's FIRST line call {{template "layout" .}} (the
+		// root template then carries the short name); every new page must keep
+		// that first-line contract or render() misses the template and answers a
+		// generic 500. Validate the contract here at boot instead: if the page
+		// never invokes layout, fail startup loudly rather than ship a broken set.
+		if b, err := os.ReadFile(p); err == nil && !strings.Contains(string(b), `{{template "layout" .}}`) {
+			return fmt.Errorf("server: template %s must start with {{template \"layout\" .}}", p)
+		}
 		files = append(files, p)
 		t, err := template.New(name).Funcs(templateFuncs).ParseFiles(files...)
 		if err != nil {
 			return fmt.Errorf("server: parse template %s: %w", p, err)
 		}
 		// render() looks pages up by their short name.
-		tpls[strings.TrimPrefix(name, "page_")] = t
+		tpls[short] = t
 	}
 	a.templates = tpls
 	return nil
