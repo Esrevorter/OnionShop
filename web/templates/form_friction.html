@@ -8,11 +8,16 @@ carry, in this exact order:
 */}}
 {{define "friction"}}
 <input type="hidden" name="csrf_token" value="{{.CsrfToken}}">
+{{/* Nil-guard: pages rendered WITHOUT a minted challenge (e.g. the account
+   page) share this partial; dereferencing a nil *CaptchaChallenge would make
+   template execution fail AFTER headers, i.e. a generic 500 on every render. */}}
+{{if .Captcha}}
 <input type="hidden" name="captcha_id" value="{{.Captcha.ID}}">
 <input type="hidden" name="captcha_token" value="{{.Captcha.Token}}">
 <label>CAPTCHA: {{.Captcha.Prompt}}
 <img class="captcha-img" src="/captcha/{{.Captcha.ID}}.png" alt="captcha puzzle">
 <input type="text" name="captcha_answer" autocomplete="off" maxlength="4" required></label>
+{{end}}
 {{if .HoneypotHidden}}
 <div class="hp" aria-hidden="true">
 <label>leave blank <input type="text" name="sta" tabindex="-1" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"></label>
