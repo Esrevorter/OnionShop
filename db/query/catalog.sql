@@ -32,10 +32,8 @@ UPDATE vendors SET eta = $2 WHERE id = $1;
 -- name: ListCategories :many
 SELECT * FROM categories ORDER BY slug;
 
--- name: CreateProduct :one
-INSERT INTO products (vendor_id, category_id, title, description, price_sat, stock, image_path, status)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-RETURNING *;
+-- (CreateProduct lives in products.sql — query names are package-wide in sqlc,
+-- duplicates here caused "duplicate query name: CreateProduct" in CI.)
 
 -- name: UpdateProductOwned :one
 UPDATE products SET
