@@ -15,8 +15,8 @@
 {{template "productgrid" .}}
 {{if gt .Total 0}}
 <nav>
-{{if gt .Offset 0}}<a href="/search?q={{.Query}}&offset={{sub .Offset .Limit}}">&larr; previous</a>{{end}}
-{{if lt (add .Offset .Limit) .Total}}<a href="/search?q={{.Query}}&offset={{add .Offset .Limit}}">next &rarr;</a>{{end}}
+{{if gt .Offset 0}}<a href="/search?q={{.Query}}&offset={{.PrevOffset}}">&larr; previous</a>{{end}}
+{{if lt .NextOffset .Total}}<a href="/search?q={{.Query}}&offset={{.NextOffset}}">next &rarr;</a>{{end}}
 </nav>
 {{end}}
 {{end}}
