@@ -275,16 +275,20 @@ func (a *App) handlePGPUpload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := a.auth.AuthSetPGPKey(ctx, *uid, canonical); err != nil {
+		log.Printf("pgp: key save failed: %v", err)
 		fail("could not save the key, please try again")
 		return
 	}
+	// Success path: render WITHOUT minting a fresh challenge. requireFriction
+	// just consumed (burned + popped the pending stash) this request's anchor;
+	// minting here would bind the new puzzle to an identifier that may differ
+	// from what scs commits at flush, poisoning the NEXT post. The success
+	// page shows the stored key; any subsequent GET/POST mints its own
+	// challenge normally.
 	a.sm.Put(ctx, pgpKeySessionKey, canonical)
 	data.PGPPublicKey = canonical
 	data.PGPFingerprint = pgpFingerprint(canonical)
 	data.Flash = "Public key saved."
-	if data.Captcha = a.newChallenge(w, r, accountPurpose); data.Captcha == nil {
-		return
-	}
 	a.render(w, "account", http.StatusOK, data)
 }
 
@@ -319,11 +323,13 @@ func (a *App) handlePGPClear(w http.ResponseWriter, r *http.Request) {
 		fail("could not remove the key, please try again")
 		return
 	}
+	// Success path renders without minting (see handlePGPUpload): the anchor
+	// was consumed by requireFriction this request; a fresh mint here would
+	// bind to an identifier scs may not commit.
 	a.sm.Put(ctx, pgpKeySessionKey, "")
+	data.PGPPublicKey = ""
+	data.PGPFingerprint = ""
 	data.Flash = "Public key removed."
-	if data.Captcha = a.newChallenge(w, r, accountPurpose); data.Captcha == nil {
-		return
-	}
 	a.render(w, "account", http.StatusOK, data)
 }
 

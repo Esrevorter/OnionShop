@@ -780,8 +780,16 @@ func uuidString(u pgtype.UUID) string {
 // treated as broken, never trusted). pgtype.UUID implements sql.Scanner, so
 // Scan does the hex/hyphen validation for us.
 func parseUUID(s string) (pgtype.UUID, bool) {
+	// pgtype.UUID.Scan accepts []byte holding a canonical UUID string. It
+	// rejects shorter synthetic fixtures (e.g. "user-1"), so tests seed
+	// canonical-form UUIDs. Keep the Scan path but normalize first: trim
+	// whitespace and accept uppercase input.
+	s = strings.TrimSpace(s)
+	if len(s) != 36 {
+		return pgtype.UUID{}, false
+	}
 	var u pgtype.UUID
-	if err := u.Scan([]byte(s)); err != nil || !u.Valid {
+	if err := u.Scan([]byte(strings.ToLower(s))); err != nil || !u.Valid {
 		return pgtype.UUID{}, false
 	}
 	return u, true
