@@ -10,6 +10,7 @@ module github.com/example/onionshop
 go 1.25.0
 
 require (
+	github.com/ProtonMail/go-crypto v1.5.2
 	github.com/alexedwards/scs/v2 v2.8.0
 	github.com/go-chi/chi/v5 v5.0.12
 	github.com/jackc/pgx/v5 v5.9.2
@@ -18,7 +19,6 @@ require (
 )
 
 require (
-	github.com/ProtonMail/go-crypto v1.5.2 // indirect
 	github.com/cespare/xxhash/v2 v2.2.0 // indirect
 	github.com/cloudflare/circl v1.6.3 // indirect
 	github.com/dgryski/go-rendezvous v0.0.0-20200823014737-9f7001d12a5f // indirect

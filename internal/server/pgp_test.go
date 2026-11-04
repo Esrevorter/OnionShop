@@ -20,20 +20,42 @@ import (
 
 // ---- local key fixtures -----------------------------------------------------
 
+// armorEntity serializes an entity's raw packet stream (public or private)
+// under the matching ASCII armor header. go-crypto's Entity.Serialize /
+// SerializePrivate emit BINARY packets — production code must armor them
+// itself, and these fixtures mirror that contract so tests exercise the same
+// shapes the handlers receive.
+func armorEntity(t *testing.T, body []byte, blockType string) string {
+	t.Helper()
+	var out bytes.Buffer
+	w, err := armor.Encode(&out, blockType, nil)
+	if err != nil {
+		t.Fatalf("armor.Encode(%q): %v", blockType, err)
+	}
+	if _, err := w.Write(body); err != nil {
+		t.Fatalf("armor write: %v", err)
+	}
+	if err := w.Close(); err != nil {
+		t.Fatalf("armor close: %v", err)
+	}
+	return out.String()
+}
+
 func generateArmoredKeyPair(t *testing.T) (pubArmor, privArmor string) {
 	t.Helper()
 	ent, err := openpgp.NewEntity("Test User", "", "test@example.com", nil)
 	if err != nil {
 		t.Fatalf("openpgp.NewEntity: %v", err)
 	}
-	var pub, priv bytes.Buffer
-	if err := ent.Serialize(&pub); err != nil {
+	var pubBin, privBin bytes.Buffer
+	if err := ent.Serialize(&pubBin); err != nil {
 		t.Fatalf("serialize public: %v", err)
 	}
-	if err := ent.SerializePrivate(&priv, nil); err != nil {
+	if err := ent.SerializePrivate(&privBin, nil); err != nil {
 		t.Fatalf("serialize private: %v", err)
 	}
-	return pub.String(), priv.String()
+	return armorEntity(t, pubBin.Bytes(), openpgp.PublicKeyType),
+		armorEntity(t, privBin.Bytes(), openpgp.PrivateKeyType)
 }
 
 // armorWithBlockType re-arms binary key material under an arbitrary armor
@@ -66,7 +88,23 @@ func TestValidatePGPPublicKeyRoundTrip(t *testing.T) {
 	if !strings.HasPrefix(got, "-----BEGIN PGP PUBLIC KEY BLOCK-----") {
 		t.Errorf("canonical output is not an armored public block:\n%.80s", got)
 	}
-	if !strings.Contains(got, "test@example.com") {
+	// The User ID packet lives inside base64-armored binary, so it can never
+	// appear as plaintext in the block. Verify structurally instead: re-parse
+	// the canonical armor and confirm the identity survived normalization.
+	ring, err := openpgp.ReadArmoredKeyRing(strings.NewReader(got))
+	if err != nil {
+		t.Fatalf("re-parsing canonical armor: %v", err)
+	}
+	if len(ring) != 1 {
+		t.Fatalf("canonical key ring has %d entities, want 1", len(ring))
+	}
+	foundUID := false
+	for _, ident := range ring[0].Identities {
+		if strings.Contains(ident.Name, "test@example.com") {
+			foundUID = true
+		}
+	}
+	if !foundUID {
 		t.Error("canonical output dropped the user ID packet")
 	}
 	// Canonical text must itself re-validate (idempotent normalization).

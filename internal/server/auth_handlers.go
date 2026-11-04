@@ -884,6 +884,7 @@ func (a *App) render(w http.ResponseWriter, name string, code int, data AuthData
 	// small by design — no streaming bodies in Phase 3).
 	var buf bytes.Buffer
 	if err := tpl.ExecuteTemplate(&buf, "layout", data); err != nil {
+		log.Printf("pgp: render %q failed: %v", name, sanitizedErr(err))
 		writeGenericError(w)
 		return
 	}
