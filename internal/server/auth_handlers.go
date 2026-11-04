@@ -34,7 +34,9 @@ import (
 // any browser-agnostic bot fills it in and gets silently rejected.
 const honeypotField = "sta"
 
-// AuthData renders the login/register/account/pgp templates.
+// AuthData renders the login/register/account/pgp templates. The Phase 4
+// slices back the vendor/admin pages (vendor_products, admin_vendors); they
+// stay nil on every other page, where the templates never touch them.
 type AuthData struct {
 	CsrfToken      string
 	Captcha        *CaptchaChallenge
@@ -44,6 +46,11 @@ type AuthData struct {
 	PersonalPhrase string // anti-phishing phrase shown ONLY after login (§9)
 	PGPPublicKey   string // armored PUBLIC key only (Phase 3 PGP); never private material
 	PGPFingerprint string // display fingerprint of PGPPublicKey ("" when absent)
+
+	Products    []ProductRecord  // vendor dashboard rows (vendor_handlers.go)
+	Categories  []CategoryRecord // category dropdown options
+	Pending     []VendorRecord   // admin approval queue (handleAdminVendors)
+	VendorState *VendorRecord    // this account's vendor row, if any
 }
 
 // UserRecord is one row from public.users. PasswordHash never leaves this
@@ -89,6 +96,13 @@ type AuthStore interface {
 	VendorCreateRequest(ctx context.Context, userID pgtype.UUID, shopName string) error
 	VendorGetByUser(ctx context.Context, userID pgtype.UUID) (*VendorRecord, error)
 	VendorListPending(ctx context.Context) ([]VendorRecord, error)
+	// VendorGetByID resolves one vendors row by its own id (admin approval).
+	// Unknown ids return (nil, nil) — never an error — so handlers treat
+	// missing rows uniformly.
+	VendorGetByID(ctx context.Context, vendorID pgtype.UUID) (*VendorRecord, error)
+	// VendorByShopName resolves the UNIQUE shop_name (case-insensitive).
+	// Unknown names return (nil, nil).
+	VendorByShopName(ctx context.Context, shopName string) (*VendorRecord, error)
 	VendorSetApproval(ctx context.Context, vendorID pgtype.UUID, approved bool) error
 	VendorSetRoleToVendor(ctx context.Context, userID pgtype.UUID) error
 	// VendorUsername resolves a pending/approved vendor row's owner to the
@@ -100,6 +114,10 @@ type AuthStore interface {
 	// sessions on mismatch (AGENTS.md §4 — privilege changes must never ride
 	// an old cookie). Unknown ids return ErrNoSuchUser.
 	AuthUserRole(ctx context.Context, id pgtype.UUID) (string, error)
+	// AuthUserByID fetches the full authoritative USERS row by primary key
+	// (vendor request flow re-checks role/status server-side). Unknown ids
+	// return ErrNoSuchUser.
+	AuthUserByID(ctx context.Context, id pgtype.UUID) (*UserRecord, error)
 	// AuditAppend writes one immutable audit_log row (migration 0003).
 	// action is a stable verb ('vendor.approve', 'product.create', ...),
 	// target is '<table>:<id>', details is pre-sanitized JSON text ("" stores
@@ -260,6 +278,55 @@ ORDER BY v.created_at ASC LIMIT 200`
 	qVendorPromoteRole = `UPDATE public.users SET role = 'vendor', updated_at = now()
 WHERE id = $1 AND role = 'customer'`
 
+	// ---- Phase 4 catalog/vendor queries (mirror db/query/products.sql) ----
+
+	qVendorByID = `SELECT id, user_id, shop_name, approved, created_at
+FROM public.vendors WHERE id = $1`
+
+	qVendorByShopName = `SELECT id, user_id, lower(shop_name), approved, created_at
+FROM public.vendors WHERE lower(shop_name) = $1`
+
+	qCategoryList = `SELECT id, slug, name FROM public.categories ORDER BY name ASC LIMIT 200`
+
+	qProductInsert = `INSERT INTO public.products
+(vendor_id, category_id, title, description, price_sat, stock, image_path, status)
+VALUES ($1, NULLIF($2, 0), $3, $4, $5, $6, NULLIF($7, ''), $8)
+RETURNING id`
+
+	qProductGet = `SELECT id, vendor_id, COALESCE(category_id, 0), title, description,
+price_sat, stock, COALESCE(image_path, ''), status, created_at, updated_at
+FROM public.products WHERE id = $1`
+
+	qProductUpdate = `UPDATE public.products SET
+category_id = NULLIF($2, 0), title = $3, description = $4, price_sat = $5,
+stock = $6, image_path = NULLIF($7, ''), status = $8, updated_at = now()
+WHERE id = $1`
+
+	qProductSetStatus = `UPDATE public.products SET status = $2, updated_at = now() WHERE id = $1`
+
+	qProductsByVendor = `SELECT id, vendor_id, COALESCE(category_id, 0), title, description,
+price_sat, stock, COALESCE(image_path, ''), status, created_at, updated_at
+FROM public.products WHERE vendor_id = $1 ORDER BY created_at DESC LIMIT 500`
+
+	qProductsActive = `SELECT p.id, p.vendor_id, COALESCE(p.category_id, 0), p.title, p.description,
+p.price_sat, p.stock, COALESCE(p.image_path, ''), p.status, p.created_at, p.updated_at
+FROM public.products p JOIN public.vendors v ON v.id = p.vendor_id
+WHERE p.status = 'active' AND v.approved
+  AND (NULLIF($1, 0::bigint) IS NULL OR p.category_id = NULLIF($1, 0::bigint))
+ORDER BY p.created_at DESC LIMIT $2`
+
+	qProductsSearch = `SELECT p.id, p.vendor_id, COALESCE(p.category_id, 0), p.title, p.description,
+p.price_sat, p.stock, COALESCE(p.image_path, ''), p.status, p.created_at, p.updated_at
+FROM public.products p JOIN public.vendors v ON v.id = p.vendor_id
+WHERE p.status = 'active' AND v.approved
+  AND to_tsvector('simple', p.title || ' ' || p.description) @@ plainto_tsquery('simple', $1)
+ORDER BY ts_rank(to_tsvector('simple', p.title || ' ' || p.description),
+                 plainto_tsquery('simple', $1)) DESC LIMIT $2`
+
+	qShopNameForID = `SELECT shop_name FROM public.vendors WHERE id = $1 AND approved`
+
+	qApprovedVendorID = `SELECT id FROM public.vendors WHERE user_id = $1 AND approved`
+
 	qAuditAppend = `INSERT INTO public.audit_log (actor_id, actor_kind, action, target, details)
 VALUES ($1, $2, $3, $4, COALESCE(NULLIF($5, '')::jsonb, '{}'::jsonb))`
 )
@@ -317,6 +384,148 @@ func (s *PGAuthStore) VendorListPending(ctx context.Context) ([]VendorRecord, er
 	return out, nil
 }
 
+// VendorGetByID resolves one vendors row by primary key; unknown ids yield
+// (nil, nil) so the admin approve handler can redirect uniformly instead of
+// distinguishing "gone" from "never existed".
+func (s *PGAuthStore) VendorGetByID(ctx context.Context, vendorID pgtype.UUID) (*VendorRecord, error) {
+	v, err := scanVendor(s.pool.QueryRow(ctx, qVendorByID, vendorID))
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("store: get vendor by id: %w", err)
+	}
+	return &v, nil
+}
+
+// VendorByShopName resolves the UNIQUE shop_name case-insensitively (handles
+// are lowercase on the wire; the schema stores what was applied for). The
+// returned record carries the LOWER-cased name — the canonical handle.
+func (s *PGAuthStore) VendorByShopName(ctx context.Context, shopName string) (*VendorRecord, error) {
+	v, err := scanVendor(s.pool.QueryRow(ctx, qVendorByShopName, strings.ToLower(shopName)))
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("store: get vendor by shop name: %w", err)
+	}
+	return &v, nil
+}
+
+// ---- Phase 4 catalog: PGAuthStore doubles as VendorStore --------------------
+
+func (s *PGAuthStore) CategoryList(ctx context.Context) ([]CategoryRecord, error) {
+	rows, err := s.pool.Query(ctx, qCategoryList)
+	if err != nil {
+		return nil, fmt.Errorf("store: category list: %w", err)
+	}
+	defer rows.Close()
+	out := []CategoryRecord{}
+	for rows.Next() {
+		var c CategoryRecord
+		if err := rows.Scan(&c.ID, &c.Slug, &c.Name); err != nil {
+			return nil, fmt.Errorf("store: category list: scan: %w", err)
+		}
+		out = append(out, c)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("store: category list: %w", err)
+	}
+	return out, nil
+}
+
+// scanProduct lives in catalog_store.go and scans the canonical 11-column
+// product projection (id .. status, created_at, updated_at); all product
+// queries in this file select the same column list.
+
+func (s *PGAuthStore) ProductCreate(ctx context.Context, p *ProductRecord) error {
+	return s.pool.QueryRow(ctx, qProductInsert, p.VendorID, p.CategoryID, p.Title,
+		p.Description, p.PriceSat, p.Stock, p.ImagePath, p.Status).Scan(&p.ID)
+}
+
+func (s *PGAuthStore) ProductGet(ctx context.Context, id pgtype.UUID) (*ProductRecord, error) {
+	p, err := scanProduct(s.pool.QueryRow(ctx, qProductGet, id))
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, ErrNoSuchUser // sentinel: handlers map it to "no such product"
+	}
+	if err != nil {
+		return nil, fmt.Errorf("store: get product: %w", err)
+	}
+	return &p, nil
+}
+
+func (s *PGAuthStore) ProductUpdate(ctx context.Context, p *ProductRecord) error {
+	_, err := s.pool.Exec(ctx, qProductUpdate, p.ID, p.CategoryID, p.Title, p.Description,
+		p.PriceSat, p.Stock, p.ImagePath, p.Status)
+	if err != nil {
+		return fmt.Errorf("store: update product: %w", err)
+	}
+	return nil
+}
+
+func (s *PGAuthStore) ProductSetStatus(ctx context.Context, id pgtype.UUID, status string) error {
+	if _, err := s.pool.Exec(ctx, qProductSetStatus, id, status); err != nil {
+		return fmt.Errorf("store: set product status: %w", err)
+	}
+	return nil
+}
+
+func (s *PGAuthStore) queryProducts(ctx context.Context, sql string, args ...any) ([]ProductRecord, error) {
+	rows, err := s.pool.Query(ctx, sql, args...)
+	if err != nil {
+		return nil, fmt.Errorf("store: product query: %w", err)
+	}
+	defer rows.Close()
+	out := []ProductRecord{}
+	for rows.Next() {
+		p, err := scanProduct(rows)
+		if err != nil {
+			return nil, fmt.Errorf("store: product query: scan: %w", err)
+		}
+		out = append(out, p)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("store: product query: %w", err)
+	}
+	return out, nil
+}
+
+func (s *PGAuthStore) ProductListByVendor(ctx context.Context, vendorID pgtype.UUID) ([]ProductRecord, error) {
+	return s.queryProducts(ctx, qProductsByVendor, vendorID)
+}
+
+func (s *PGAuthStore) ProductListActive(ctx context.Context, categoryID int64, limit int) ([]ProductRecord, error) {
+	return s.queryProducts(ctx, qProductsActive, categoryID, limit)
+}
+
+func (s *PGAuthStore) ProductSearch(ctx context.Context, query string, limit int) ([]ProductRecord, error) {
+	return s.queryProducts(ctx, qProductsSearch, query, limit)
+}
+
+func (s *PGAuthStore) ShopNameForID(ctx context.Context, vendorID pgtype.UUID) (string, error) {
+	var name string
+	err := s.pool.QueryRow(ctx, qShopNameForID, vendorID).Scan(&name)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return "", nil // unapproved/unknown shop renders without a name, never an error page
+	}
+	if err != nil {
+		return "", fmt.Errorf("store: shop name: %w", err)
+	}
+	return name, nil
+}
+
+func (s *PGAuthStore) ApprovedVendorID(ctx context.Context, userID pgtype.UUID) (*pgtype.UUID, error) {
+	var id pgtype.UUID
+	err := s.pool.QueryRow(ctx, qApprovedVendorID, userID).Scan(&id)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("store: approved vendor id: %w", err)
+	}
+	return &id, nil
+}
+
 func (s *PGAuthStore) VendorSetApproval(ctx context.Context, vendorID pgtype.UUID, approved bool) error {
 	if _, err := s.pool.Exec(ctx, qVendorSetApproval, vendorID, approved); err != nil {
 		return fmt.Errorf("store: set vendor approval: %w", err)
@@ -367,6 +576,23 @@ func (s *PGAuthStore) AuthUserRole(ctx context.Context, id pgtype.UUID) (string,
 		return "", fmt.Errorf("store: get role: %w", err)
 	}
 	return role, nil
+}
+
+// qAuthUserByID mirrors qAuthUserByUsername but keyed on the primary key —
+// the vendor request flow re-checks role/status server-side from the session
+// id (defense in depth against stale client state).
+const qAuthUserByID = `SELECT id, username, password_hash, role, status, created_at
+FROM public.users WHERE id = $1`
+
+func (s *PGAuthStore) AuthUserByID(ctx context.Context, id pgtype.UUID) (*UserRecord, error) {
+	u, err := scanUser(s.pool.QueryRow(ctx, qAuthUserByID, id))
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, ErrNoSuchUser
+	}
+	if err != nil {
+		return nil, fmt.Errorf("store: get user by id: %w", err)
+	}
+	return u, nil
 }
 
 // ---- wiring ---------------------------------------------------------------

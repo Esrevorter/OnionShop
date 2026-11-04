@@ -116,6 +116,49 @@ func (f *fakeAuthStore) AuthUserByUsername(_ context.Context, username string) (
 	return &cp, nil
 }
 
+// AuthUserByID mirrors the production interface member: authoritative USERS
+// row by primary key; unknown ids return ErrNoSuchUser.
+func (f *fakeAuthStore) AuthUserByID(_ context.Context, id pgtype.UUID) (*UserRecord, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	for _, u := range f.users {
+		if u.ID == id {
+			cp := *u
+			return &cp, nil
+		}
+	}
+	return nil, ErrNoSuchUser
+}
+
+// VendorGetByID resolves one vendors row by its own id; unknown ids return
+// (nil, nil), matching the production contract.
+func (f *fakeAuthStore) VendorGetByID(_ context.Context, vendorID pgtype.UUID) (*VendorRecord, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	for _, v := range f.vendors {
+		if v.ID == vendorID {
+			cp := *v
+			return &cp, nil
+		}
+	}
+	return nil, nil
+}
+
+// VendorByShopName resolves the unique shop_name case-insensitively; unknown
+// names return (nil, nil).
+func (f *fakeAuthStore) VendorByShopName(_ context.Context, shopName string) (*VendorRecord, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	want := strings.ToLower(shopName)
+	for _, v := range f.vendors {
+		if strings.ToLower(v.ShopName) == want {
+			cp := *v
+			return &cp, nil
+		}
+	}
+	return nil, nil
+}
+
 func (f *fakeAuthStore) AuthCreateUser(_ context.Context, username, passwordHash, status string) (*UserRecord, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
