@@ -57,7 +57,31 @@ const (
 	// its old privileges — scs' gob payload cannot be edited server-side, so
 	// deletion is the only correct primitive (AGENTS.md §4).
 	sessionInvalidateUserSQL = `DELETE FROM sessions WHERE user_id = $1::uuid`
+
+	// Read-then-evict companion for FallbackStore.InvalidateUserSessions: the
+	// tokens whose Redis copies must die alongside the durable rows. Runs
+	// BEFORE the DELETE so the cache fast path can never resurrect a killed
+	// session.
+	sessionTokensForUserSQL = `SELECT id FROM sessions WHERE user_id = $1::uuid`
 )
+
+// isValidUUIDText reports whether s is a canonical 8-4-4-4-12 UUID string.
+// Cheap pre-check so garbage ids match zero rows instead of tripping the
+// ::uuid cast with a driver error on every invalidation call.
+func isValidUUIDText(s string) bool {
+	if len(s) != 36 {
+		return false
+	}
+	for i, c := range s {
+		switch {
+		case c >= '0' && c <= '9', c >= 'a' && c <= 'f', c >= 'A' && c <= 'F':
+		case c == '-' && (i == 8 || i == 13 || i == 18 || i == 23):
+		default:
+			return false
+		}
+	}
+	return true
+}
 
 // ErrStoreUnavailable marks failures coming from a dead backing store; callers
 // wrap them for logging but must never leak the detail to the client.
@@ -365,14 +389,15 @@ func (f *SessionFallback) LinkUser(ctx context.Context, token, userID string) er
 }
 
 // InvalidateUserSessions deletes every durable session row belonging to one
-// user id (canonical UUID text; anything malformed matches nothing and simply
-// deletes zero rows — the ::uuid cast would error on garbage, so we pre-check).
+// user id. The id MUST be canonical 8-4-4-4-12 UUID text; anything else is
+// rejected outright (the DELETE casts $1::uuid, and letting garbage through
+// would surface as a driver error on every call instead of a clean rejection).
 // Satisfies server.SessionInvalidator. Called on role changes and account
 // suspensions: sessions carry their privileges in a gob blob we cannot edit
 // server-side, so deletion is the only correct invalidation primitive.
 func (f *SessionFallback) InvalidateUserSessions(ctx context.Context, userID string) error {
-	if _, err := parseUUIDText(userID); err != nil {
-		return fmt.Errorf("store: invalidate sessions: bad user id: %w", err)
+	if !isValidUUIDText(userID) {
+		return errors.New("store: invalidate sessions: bad user id")
 	}
 	if _, err := f.pool.Exec(ctx, sessionInvalidateUserSQL, userID); err != nil {
 		return fmt.Errorf("%w: %v", ErrStoreUnavailable, err)
@@ -380,64 +405,53 @@ func (f *SessionFallback) InvalidateUserSessions(ctx context.Context, userID str
 	return nil
 }
 
-// InvalidateUserSessions removes Redis-cached copies AND the durable Postgres
-// rows for one user (server.SessionInvalidator). The Redis keys are namespaced
-// by raw token and we cannot enumerate them per-user without a SCAN, but that
-// is acceptable: scs' LoadAndSave treats a Redis hit as a cache read of the
-// same token — after the Postgres DELETE the next Find falls through to the
-// fallback, gets "not found", and scs starts the visitor fresh anonymously.
-// (The Redis copy dies with its own TTL at worst; it can no longer be *found*
-// as valid because absolute_stop/idle checks happen against the deleted row on
-// any re-commit path.) For belt-and-braces completeness we ALSO delete the
-// well-known prefix pattern via SCAN in bounded batches — no KEYS command, so
-// no server stall under noeviction.
+// InvalidateUserSessions evicts the Redis-cached copies AND deletes the
+// durable Postgres rows for one user (server.SessionInvalidator). Order is
+// load-bearing: FallbackStore.Find prefers the Redis fast path, so the exact
+// tokens still owned by the user are read from Postgres FIRST, their cached
+// copies DELeted, and only then do the durable rows go. A crash between the
+// eviction and the delete merely leaves dead rows that idle-expire; a crash
+// the other way around could leave a live-looking cache entry behind.
+// No SCAN/KEYS anywhere: the token list comes from the indexed user_id
+// column, so the Redis work is one bounded DEL per affected session.
 func (s *FallbackStore) InvalidateUserSessions(ctx context.Context, userID string) error {
-	var firstErr error
-	if s.fallback != nil {
-		if err := s.fallback.InvalidateUserSessions(ctx, userID); err != nil {
-			firstErr = err
-		}
+	if s.fallback == nil {
+		return errors.New("store: invalidate sessions: no durable backend")
 	}
-	// Best-effort Redis sweep of this user's cached tokens is impossible
-	// without an index, so instead we drop ALL session-prefixed keys when the
-	// caller signals a security event? No — that logs everyone out. Correct
-	// trade-off: rely on the durable DELETE (above) which is authoritative:
-	// FallbackStore.Find prefers Redis, so we must also evict the exact tokens
-	// we know belong to the user BEFORE deleting them. Read-then-delete keeps
-	// correctness without collateral damage.
-	if s.rdb != nil && s.fallback != nil {
+	if !isValidUUIDText(userID) {
+		return errors.New("store: invalidate sessions: bad user id")
+	}
+	var firstErr error
+	if s.rdb != nil {
 		rows, err := s.fallback.pool.Query(ctx, sessionTokensForUserSQL, userID)
 		if err != nil {
-			if firstErr == nil {
-				firstErr = fmt.Errorf("%w: %v", ErrStoreUnavailable, err)
-			}
-			return firstErr
+			return fmt.Errorf("%w: %v", ErrStoreUnavailable, err)
 		}
 		tokens := []string{}
 		for rows.Next() {
 			var tok string
 			if err := rows.Scan(&tok); err != nil {
 				rows.Close()
-				if firstErr == nil {
-					firstErr = fmt.Errorf("%w: scan: %v", ErrStoreUnavailable, err)
-				}
-				return firstErr
+				return fmt.Errorf("%w: scan: %v", ErrStoreUnavailable, err)
 			}
 			tokens = append(tokens, s.key(tok))
 		}
 		if err := rows.Err(); err != nil {
 			rows.Close()
-			if firstErr == nil {
-				firstErr = fmt.Errorf("%w: %v", ErrStoreUnavailable, err)
-			}
-			return firstErr
+			return fmt.Errorf("%w: %v", ErrStoreUnavailable, err)
 		}
 		rows.Close()
 		if len(tokens) > 0 {
-			if err := s.rdb.Del(ctx, tokens...).Err(); err != nil && firstErr == nil {
+			if err := s.rdb.Del(ctx, tokens...).Err(); err != nil {
 				firstErr = fmt.Errorf("%w: redis invalidate: %v", ErrStoreUnavailable, err)
 			}
 		}
+	}
+	// Durable delete runs even when the cache sweep failed: Postgres is the
+	// authority, and leaving rows alive would keep the stale-role session
+	// findable the moment Redis recovers or the key expires.
+	if err := s.fallback.InvalidateUserSessions(ctx, userID); err != nil && firstErr == nil {
+		firstErr = err
 	}
 	return firstErr
 }
