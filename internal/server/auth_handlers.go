@@ -427,6 +427,9 @@ func (a *App) newChallenge(w http.ResponseWriter, r *http.Request, purpose strin
 	a.recordPendingToken(r.Context())
 	ch, err := a.captcha.Issue(r.Context(), a.sessionTokenForRequest(r), CurrentUserID(r.Context(), a.sm), purpose)
 	if err != nil {
+		// Debug aid: writeGenericError swallows the cause; without this line
+		// every captcha-mint 500 is indistinguishable in tests/ops.
+		log.Printf("server: captcha issue failed purpose=%q: %v", purpose, err)
 		writeGenericError(w)
 		return nil
 	}
@@ -883,16 +886,17 @@ func (a *App) render(w http.ResponseWriter, name string, code int, data AuthData
 	// lets a failure still answer the mandated generic 500 (these pages are
 	// small by design — no streaming bodies in Phase 3).
 	var buf bytes.Buffer
-	// Render the PAGE template, not "layout": page files begin with
-	// {{template "layout" .}} and define "title"/"body"; layout.html then
-	// invokes those blocks. ExecuteTemplate(&buf, "layout", ...) bypasses the
-	// page's top-level call and executes the bare layout, whose {{block
-	// "body"}} has no content defined in that parse set's execution path —
-	// producing a truncated/empty page (and, once PGP state is involved,
-	// failing outright). The debug log keeps the RAW error text: template
-	// errors never contain user secrets, and sanitizedErr() here previously
-	// disguised every render failure as "redis: operation failed".
-	if err := tpl.ExecuteTemplate(&buf, name, data); err != nil {
+	// Each stored set was parsed as template.New("page_x").ParseFiles(layout,
+	// partials..., page). Because the page file starts with
+	// {{template "layout" .}} and only DEFINES "title"/"body", the page's own
+	// content lives inside the "layout" template once parsed; layout invokes
+	// those blocks at execution time. So execute "layout" — NOT the short name
+	// ("login" is undefined inside the set) and NOT the raw page root (it is
+	// an empty shell whose only statement is the layout call). The debug log
+	// keeps the RAW error text: template errors never contain user secrets,
+	// and sanitizedErr() here previously disguised every render failure as
+	// "redis: operation failed".
+	if err := tpl.ExecuteTemplate(&buf, "layout", data); err != nil {
 		log.Printf("server: render %q failed: %v", name, err)
 		writeGenericError(w)
 		return
