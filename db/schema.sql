@@ -1,7 +1,7 @@
 -- db/schema.sql — canonical schema for sqlc (sqlc.yaml: schema: "db/schema.sql").
 --
 -- This is the Postgres state after applying every migration in db/migrations/
--- (0001–0005), flattened so sqlc's built-in parser can resolve all queries.
+-- (0001–0007), flattened so sqlc's built-in parser can resolve all queries.
 -- The live schema is still managed by golang-migrate (make migrate); keep this
 -- file in sync whenever a new migration lands. Notably, migration 0005 rewrites
 -- sessions.id to TEXT and sessions.data to BYTEA and adds sessions.updated_at;
@@ -48,6 +48,8 @@ CREATE TABLE vendors (
     user_id    UUID NOT NULL UNIQUE REFERENCES users(id) ON DELETE CASCADE,
     shop_name  TEXT NOT NULL UNIQUE CHECK (char_length(shop_name) BETWEEN 3 AND 60),
     approved   BOOLEAN NOT NULL DEFAULT FALSE,   -- set by admin; audit-logged
+    eta        TEXT NOT NULL DEFAULT 'medium'    -- shipping-speed badge (Phase 4, 0007)
+               CHECK (eta IN ('fast','medium','slow')),
     created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
@@ -271,3 +273,28 @@ CREATE TABLE messages (
 
 CREATE INDEX messages_thread_idx ON messages(thread_id, created_at);
 CREATE INDEX messages_unread_idx ON messages(thread_id, read_at) WHERE read_at IS NULL;
+
+-- ---------------------------------------------------------------------------
+-- 0007_catalog_phase4 — reviews (one per order line) + leaderboard snapshot
+-- ---------------------------------------------------------------------------
+
+CREATE TABLE reviews (
+    id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    order_item_id BIGINT NOT NULL REFERENCES order_items(id) ON DELETE CASCADE,
+    product_id    UUID   NOT NULL REFERENCES products(id) ON DELETE CASCADE,
+    reviewer_id   UUID   NOT NULL REFERENCES users(id),
+    rating        INT    NOT NULL CHECK (rating BETWEEN 1 AND 5),
+    body          TEXT   NOT NULL DEFAULT '' CHECK (char_length(body) <= 2000),
+    created_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at    TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE UNIQUE INDEX reviews_item_uniq ON reviews (order_item_id);
+CREATE INDEX reviews_product_idx ON reviews (product_id, created_at DESC);
+
+CREATE TABLE top_vendors_snapshot (
+    rank         INT PRIMARY KEY,
+    vendor_id    UUID NOT NULL UNIQUE REFERENCES vendors(id) ON DELETE CASCADE,
+    sales_count  INT  NOT NULL CHECK (sales_count >= 0),
+    avg_rating   NUMERIC(3,2) NOT NULL DEFAULT 0 CHECK (avg_rating BETWEEN 0 AND 5),
+    refreshed_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
