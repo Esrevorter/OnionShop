@@ -52,11 +52,25 @@ type fakeAuthStore struct {
 	pgpKeys     map[string]string
 	setPGPErr   error
 	clearPGPErr error
+
+	// Phase 4: vendors-table analogue (keyed by owner user UUID string) and
+	// captured audit rows, so the fake satisfies the full AuthStore surface.
+	vendors map[string]*VendorRecord
+	audits  []auditEntry
+}
+
+// auditEntry mirrors one AuditAppend call for assertions.
+type auditEntry struct {
+	actorID   pgtype.UUID
+	actorKind string
+	action    string
+	target    string
+	details   string
 }
 
 func newFakeAuthStore(t *testing.T) *fakeAuthStore {
 	t.Helper()
-	return &fakeAuthStore{users: map[string]*UserRecord{}, pgpKeys: map[string]string{}, nextID: 1}
+	return &fakeAuthStore{users: map[string]*UserRecord{}, pgpKeys: map[string]string{}, vendors: map[string]*VendorRecord{}, nextID: 1}
 }
 
 // seedUser installs an already-hashed user under name (lower-cased like the
@@ -209,6 +223,99 @@ func (f *fakeAuthStore) history() ([]recordedLogin, int) {
 	return out, f.recordLoginN
 }
 
+// ---- Phase 4 vendor + audit store methods ----------------------------------
+// Signatures must match the AuthStore interface exactly; the handlers under
+// test (vendor apply / admin queue / reviews) reach through these.
+
+func (f *fakeAuthStore) VendorCreateRequest(_ context.Context, userID pgtype.UUID, shopName string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	key := uuidString(userID)
+	if v, ok := f.vendors[key]; ok {
+		v.ShopName = shopName // one row per user: a re-submit updates the pending request
+		return nil
+	}
+	f.nextID++
+	f.vendors[key] = &VendorRecord{ID: idFromCounter(f.nextID), UserID: userID, ShopName: shopName, CreatedAt: time.Now().UTC()}
+	return nil
+}
+
+func (f *fakeAuthStore) VendorGetByUser(_ context.Context, userID pgtype.UUID) (*VendorRecord, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	v, ok := f.vendors[uuidString(userID)]
+	if !ok {
+		return nil, nil // no vendor row yet — distinct from a store failure
+	}
+	cp := *v
+	return &cp, nil
+}
+
+func (f *fakeAuthStore) VendorListPending(_ context.Context) ([]VendorRecord, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	out := []VendorRecord{}
+	for _, v := range f.vendors {
+		if !v.Approved {
+			out = append(out, *v)
+		}
+	}
+	return out, nil
+}
+
+func (f *fakeAuthStore) VendorSetApproval(_ context.Context, vendorID pgtype.UUID, approved bool) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	for _, v := range f.vendors {
+		if uuidString(v.ID) == uuidString(vendorID) {
+			v.Approved = approved
+			return nil
+		}
+	}
+	return errors.New("store: set vendor approval: no such vendor")
+}
+
+func (f *fakeAuthStore) VendorSetRoleToVendor(_ context.Context, userID pgtype.UUID) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	for _, u := range f.users {
+		if u.ID == userID {
+			u.Role = "vendor"
+			return nil
+		}
+	}
+	return errors.New("store: promote vendor: no such user")
+}
+
+func (f *fakeAuthStore) VendorUsername(_ context.Context, vendorUserID pgtype.UUID) (string, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	for _, u := range f.users {
+		if u.ID == vendorUserID {
+			return u.Username, nil
+		}
+	}
+	return "", nil // unknown ids return "" per the interface contract
+}
+
+func (f *fakeAuthStore) AuthUserRole(_ context.Context, id pgtype.UUID) (string, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	for _, u := range f.users {
+		if u.ID == id {
+			return u.Role, nil
+		}
+	}
+	return "", ErrNoSuchUser
+}
+
+func (f *fakeAuthStore) AuditAppend(_ context.Context, actorID pgtype.UUID, actorKind, action, target, details string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.audits = append(f.audits, auditEntry{actorID: actorID, actorKind: actorKind, action: action, target: target, details: details})
+	return nil
+}
+
 // ---- full-chain login helper ------------------------------------------------
 
 // newAuthAppForTest wires the complete middleware chain (rate limiting OFF
@@ -225,7 +332,7 @@ func newAuthAppForTest(t *testing.T, store AuthStore) *App {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := app.RegisterAuthRoutes(store, capSvc, dir); err != nil {
+	if err := app.RegisterAuthRoutes(store, capSvc, nil, dir); err != nil {
 		t.Fatalf("RegisterAuthRoutes: %v", err)
 	}
 	return app
@@ -480,7 +587,7 @@ func TestRegisterAuthRoutesPropagatesTemplateError(t *testing.T) {
 	}
 	app := routerWithoutRateLimitForTest(t, Config{SecureCookies: false}, Deps{})
 	missing := filepath.Join(t.TempDir(), "nope")
-	if err := app.RegisterAuthRoutes(store, capSvc, missing); err == nil {
+	if err := app.RegisterAuthRoutes(store, capSvc, nil, missing); err == nil {
 		t.Fatal("RegisterAuthRoutes accepted a missing template dir; boot must fail loudly")
 	}
 }
@@ -501,7 +608,7 @@ func TestRegisterAuthRoutesNilStoreLogsAndSkips(t *testing.T) {
 	}
 	// Templates still parse first (a broken dir fails even without a store),
 	// then the nil store degrades gracefully: nil error + loud log.
-	if err := app.RegisterAuthRoutes(nil, capSvc, dir); err != nil {
+	if err := app.RegisterAuthRoutes(nil, capSvc, nil, dir); err != nil {
 		t.Fatalf("nil-store registration returned error %v; want log-and-skip", err)
 	}
 	if msg := logBuf.String(); !strings.Contains(msg, "auth routes not registered") {

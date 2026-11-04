@@ -176,8 +176,10 @@ func main() {
 	// /healthz in degraded mode rather than panicking mid-request.
 	templateDir := envOr(envTemplateDir, defaultTemplates)
 	var authStore server.AuthStore
+	var catalogStore server.VendorStore
 	if pool != nil {
 		authStore = server.NewPGAuthStore(pool)
+		catalogStore = server.NewPGCatalogStore(pool)
 	}
 	captchaSecret, haveCaptchaKey := captchaKeyFromSessionHash(os.Getenv(envSessionHashKey))
 	if !haveCaptchaKey {
@@ -195,7 +197,14 @@ func main() {
 	if err != nil {
 		log.Fatalf("captcha service setup failed: %v", err)
 	}
-	if err := app.RegisterAuthRoutes(authStore, captchaSvc, templateDir); err != nil {
+	// RegisterAuthRoutesFull takes the session store as BOTH the durable
+	// linker (stamp sessions.user_id on login) and the invalidator (kill all
+	// sessions on role change); store.FallbackStore satisfies both roles and
+	// the in-memory scs store stays nil-safe inside the app. The catalog
+	// store mounts the Phase 4 storefront; nil keeps dev boots honest.
+	sessionLinker, _ := sessionStore.(server.SessionLinker)
+	sessionInvalidator, _ := sessionStore.(server.SessionInvalidator)
+	if err := app.RegisterAuthRoutesFull(authStore, captchaSvc, sessionLinker, sessionInvalidator, catalogStore, templateDir); err != nil {
 		log.Fatalf("auth route registration failed: %v", err)
 	}
 

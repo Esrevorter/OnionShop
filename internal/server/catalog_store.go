@@ -21,6 +21,12 @@ import (
 // echoing anything about why the row is absent.
 var ErrNotFound = errors.New("store: not found")
 
+// DefaultLeaderboardSize is the number of top vendors the cron snapshot keeps
+// and the homepage widget shows when no explicit limit is requested
+// (CatalogRefreshTopVendors / CatalogListTopVendors treat limit <= 0 as "use
+// this default"). Ten ranks mirror TASKS.md Phase 4 "top vendors" widget.
+const DefaultLeaderboardSize = 10
+
 // ProductRecord is one row from public.products. Prices are integer satoshis
 // end-to-end (never float, ARCHITECTURE.md §5); ImagePath stays nil-safe —
 // only locally-served static paths ever land there (AGENTS.md §1: no CDNs).
