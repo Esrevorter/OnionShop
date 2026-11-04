@@ -107,9 +107,23 @@ func ValidatePGPPublicKeyArmor(submission string) (string, error) {
 	}
 	// Only the primary public key and its self-signed identities may be
 	// stored; re-serializing through the library normalizes the armor and
-	// drops pasted decoration or trailing packets.
-	var out strings.Builder
-	if err := primary.Serialize(&out); err != nil {
+	// drops pasted decoration or trailing packets. Entity.Serialize emits
+	// the RAW packet stream, so we must wrap it in ASCII armor ourselves —
+	// go-crypto does not (SECURITY_AND_OPSEC.md: only armored public blocks
+	// are ever persisted or displayed).
+	var rawBin bytes.Buffer
+	if err := primary.Serialize(&rawBin); err != nil {
+		return "", fmt.Errorf("server: could not normalize key: %w", err)
+	}
+	var out bytes.Buffer
+	aw, err := armor.Encode(&out, openpgp.PublicKeyType, nil)
+	if err != nil {
+		return "", fmt.Errorf("server: could not normalize key: %w", err)
+	}
+	if _, err := aw.Write(rawBin.Bytes()); err != nil {
+		return "", fmt.Errorf("server: could not normalize key: %w", err)
+	}
+	if err := aw.Close(); err != nil {
 		return "", fmt.Errorf("server: could not normalize key: %w", err)
 	}
 	return out.String(), nil

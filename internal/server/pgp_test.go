@@ -20,20 +20,42 @@ import (
 
 // ---- local key fixtures -----------------------------------------------------
 
+// armorEntity serializes an entity's raw packet stream (public or private)
+// under the matching ASCII armor header. go-crypto's Entity.Serialize /
+// SerializePrivate emit BINARY packets — production code must armor them
+// itself, and these fixtures mirror that contract so tests exercise the same
+// shapes the handlers receive.
+func armorEntity(t *testing.T, body []byte, blockType string) string {
+	t.Helper()
+	var out bytes.Buffer
+	w, err := armor.Encode(&out, blockType, nil)
+	if err != nil {
+		t.Fatalf("armor.Encode(%q): %v", blockType, err)
+	}
+	if _, err := w.Write(body); err != nil {
+		t.Fatalf("armor write: %v", err)
+	}
+	if err := w.Close(); err != nil {
+		t.Fatalf("armor close: %v", err)
+	}
+	return out.String()
+}
+
 func generateArmoredKeyPair(t *testing.T) (pubArmor, privArmor string) {
 	t.Helper()
 	ent, err := openpgp.NewEntity("Test User", "", "test@example.com", nil)
 	if err != nil {
 		t.Fatalf("openpgp.NewEntity: %v", err)
 	}
-	var pub, priv bytes.Buffer
-	if err := ent.Serialize(&pub); err != nil {
+	var pubBin, privBin bytes.Buffer
+	if err := ent.Serialize(&pubBin); err != nil {
 		t.Fatalf("serialize public: %v", err)
 	}
-	if err := ent.SerializePrivate(&priv, nil); err != nil {
+	if err := ent.SerializePrivate(&privBin, nil); err != nil {
 		t.Fatalf("serialize private: %v", err)
 	}
-	return pub.String(), priv.String()
+	return armorEntity(t, pubBin.Bytes(), openpgp.PublicKeyType),
+		armorEntity(t, privBin.Bytes(), openpgp.PrivateKeyType)
 }
 
 // armorWithBlockType re-arms binary key material under an arbitrary armor
