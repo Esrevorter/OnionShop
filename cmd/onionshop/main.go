@@ -27,6 +27,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/redis/go-redis/v9"
 
+	"github.com/example/onionshop/internal/cron"
 	"github.com/example/onionshop/internal/server"
 	"github.com/example/onionshop/internal/store"
 )
@@ -213,6 +214,13 @@ func main() {
 			log.Fatalf("server error: %v", err)
 		}
 	}()
+	// Phase 4 leaderboard worker (ARCHITECTURE.md §9): hourly snapshot
+	// rewrite into top_vendors_snapshot so the homepage widget renders a
+	// cheap read instead of an aggregate per request. Runs on the same
+	// shutdown ctx as the listener; skipped (with a loud log inside cron)
+	// when no Postgres pool is wired — dev boots stay honest.
+	board := cron.NewLeaderboard(catalogStore, cron.DefaultInterval, 0)
+	go board.Run(ctx)
 	// Bind policy was already vetted by resolveAddr above: loopback, or a
 	// contained-namespace bind under ONIONSHOP_NET_NEVER=1.
 	log.Printf("onionshop listening on %s (TCP; bind policy enforced by resolveAddr)", target)

@@ -121,6 +121,86 @@ func (a *App) registerVendorRoutes(r chi.Router) {
 	// Order reviews: list of rateable lines per vendor + one submit endpoint.
 	r.Method(http.MethodGet, "/account/reviews", anyUser(http.HandlerFunc(a.handleReviewList)))
 	r.Method(http.MethodPost, "/reviews/submit", anyUser(http.HandlerFunc(a.handleReviewSubmit)))
+
+	// "Message vendor" from the public shop page (catalog_store's
+	// CatalogSendVendorMessage; Phase 7 re-homes these rows into threads).
+	r.Method(http.MethodPost, "/vendor/{handle}/message", anyUser(http.HandlerFunc(a.handleVendorMessage)))
+
+	// Vendor product dashboard + CRUD (product_handlers.go). Skipped without
+	// a catalog store — same nil discipline as every mount above.
+	if a.vendor != nil {
+		a.registerProductRoutes(r)
+	}
+}
+
+// ---- message vendor -----------------------------------------------------------
+
+// handleVendorMessage posts one note to an approved vendor from their /u/<handle>
+// page. The recipient is resolved server-side from the URL handle (never a form
+// id), so a crafted body cannot retarget the message. Self-messaging and unknown
+// or unapproved vendors all fail with the same generic verb.
+func (a *App) handleVendorMessage(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	_ = r.ParseForm()
+	data := a.vendorData(r)
+	fail := func(code int, msg string) {
+		data.Error = msg
+		a.renderAs(w, "shop", code, data)
+	}
+	uid, ok := a.currentUUID(r)
+	if !ok {
+		http.Redirect(w, r, "/login", http.StatusSeeOther)
+		return
+	}
+	if a.vendor == nil || a.auth == nil {
+		writeGenericError(w)
+		return
+	}
+	if honeypotTriggered(r) || !a.requireFriction(w, r, messagePurpose) {
+		fail(http.StatusUnauthorized, "challenge failed, please try again")
+		return
+	}
+	handle := strings.ToLower(strings.TrimSpace(chi.URLParam(r, "handle")))
+	target, err := a.vendor.CatalogGetVendorByUsername(ctx, handle)
+	if errors.Is(err, ErrNotFound) || target == nil {
+		fail(http.StatusBadRequest, "no such vendor")
+		return
+	}
+	if err != nil {
+		log.Printf("server: vendor message target lookup failed: %v", sanitizedErr(err))
+		writeGenericError(w)
+		return
+	}
+	senderName, err := a.auth.VendorUsername(ctx, uid)
+	if err != nil {
+		log.Printf("server: vendor message sender lookup failed: %v", sanitizedErr(err))
+		writeGenericError(w)
+		return
+	}
+	if strings.EqualFold(senderName, handle) {
+		fail(http.StatusBadRequest, "cannot message yourself")
+		return
+	}
+	body := strings.TrimSpace(r.FormValue("body"))
+	if body == "" {
+		fail(http.StatusBadRequest, "message is empty")
+		return
+	}
+	if len(body) > vendorMessageMax {
+		fail(http.StatusBadRequest, "message too long")
+		return
+	}
+	if err := a.vendor.CatalogSendVendorMessage(ctx, uid, target.UserID, body); err != nil {
+		log.Printf("server: vendor message write failed: %v", sanitizedErr(err))
+		fail(http.StatusInternalServerError, "message failed, please try again")
+		return
+	}
+	details, _ := json.Marshal(map[string]any{"to": handle, "length": len(body)})
+	if err := a.auth.AuditAppend(ctx, uid, "user", actionVendorMessage, "vendor:"+uuidString(target.ID), string(details)); err != nil {
+		log.Printf("server: vendor message audit write failed (non-fatal): %v", sanitizedErr(err))
+	}
+	data.Flash = "Message sent."
+	fail(http.StatusOK, "")
 }
 
 // ---- application -----------------------------------------------------------

@@ -47,6 +47,9 @@ type CatalogData struct {
 	Total        int64  // full match count for the current listing (pagination)
 	Limit        int
 	Offset       int
+	PrevOffset   int    // Offset-Limit clamped at 0 (computed Go-side; templates stay arithmetic-free)
+	NextOffset   int    // Offset+Limit — render "next" only while < Total
+	ShopHandle   string // /u/{handle} username for the shop page's message form action
 }
 
 // satToBTC renders an integer-satoshi price as an 8-decimal BTC string. Pure
@@ -104,6 +107,17 @@ func listLimit(r *http.Request) int {
 		}
 	}
 	return defaultListSize
+}
+
+// paginationData computes PrevOffset/NextOffset once in Go — templates are
+// deliberately logic-free (html/template has no arithmetic), and precomputed
+// window numbers keep page markup from silently mis-paging.
+func (d *CatalogData) paginationData() {
+	d.PrevOffset = d.Offset - d.Limit
+	if d.PrevOffset < 0 {
+		d.PrevOffset = 0
+	}
+	d.NextOffset = d.Offset + d.Limit
 }
 
 // listOffset parses ?offset= defensively: garbage or negatives page zero.
