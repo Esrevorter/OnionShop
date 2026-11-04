@@ -76,11 +76,11 @@ type App struct {
 	router    chi.Router
 	srv       *http.Server
 	sm        *scs.SessionManager
-	auth      AuthStore       // set by RegisterAuthRoutes (nil-safe: routes skip)
-	captcha   *CaptchaService // set by RegisterAuthRoutes (nil-safe: routes skip)
-	linker    SessionLinker   // set by RegisterAuthRoutes (optional: durable user_id stamp)
+	auth      AuthStore          // set by RegisterAuthRoutes (nil-safe: routes skip)
+	captcha   *CaptchaService    // set by RegisterAuthRoutes (nil-safe: routes skip)
+	linker    SessionLinker      // set by RegisterAuthRoutes (optional: durable user_id stamp)
 	invalid   SessionInvalidator // set by RegisterCatalogRoutes (optional: role-change kill)
-	vendor    VendorStore     // set by RegisterCatalogRoutes (optional: catalog/vendor pages)
+	vendor    VendorStore        // set by RegisterCatalogRoutes (optional: catalog/vendor pages)
 	templates map[string]*template.Template
 }
 

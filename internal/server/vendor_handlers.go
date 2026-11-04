@@ -1,497 +1,435 @@
 package server
 
-// Phase 4 — vendor registration, admin approval, and product CRUD
-// (TASKS.md "Phase 4: Catalog & Vendors"). The store interfaces live in
-// auth_handlers.go (AuthStore vendor methods + the VendorStore projection
-// below); this file owns the HTTP surface only. Every state-changing POST
-// rides the same gate as the account pages: RequireRole middleware + CSRF
-// (router stack) + requireFriction (CAPTCHA single-use + honeypot, AGENTS.md
-// §3). Role promotions ALWAYS kill the promoted user's other sessions via
-// InvalidateUserSessions — a privilege change must never ride an old cookie
-// (AGENTS.md §4).
-
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
+	"fmt"
 	"log"
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+// Phase 4 vendor surface (TASKS.md "Catalog & Vendors"): registration with
+// admin approval, the /u/<handle> profile pages (rating, sales count, ETA
+// badge, "message vendor"), and order reviews with a bounded edit window.
+// Every POST rides the same gate/friction pattern as the auth surface:
+// RequireRole + CSRF (global middleware) + image CAPTCHA + honeypot, and
+// every privilege/state change lands in audit_log (migration 0003).
+
 const (
-	vendorPurpose   = "vendor"   // CAPTCHA purpose namespace for vendor forms
-	productPurpose  = "product"  // CAPTCHA purpose namespace for product forms
-	maxTitleLen     = 200        // mirrors products.title CHECK (db/schema.sql)
-	maxDescLen      = 20000      // mirrors products.description CHECK
-	maxShopNameLen  = 60         // mirrors vendors.shop_name CHECK
-	defaultListSize = 24         // catalog page size
-	maxListSize     = 96         // hard cap on ?limit= to bound store load
+	// Audit action verbs — stable identifiers, never free text (SECURITY §3).
+	actionVendorRequest = "vendor.request"
+	actionVendorApprove = "vendor.approve"
+	actionVendorReject  = "vendor.reject"
+	actionProductCreate = "product.create"
+	actionProductUpdate = "product.update"
+	actionProductRemove = "product.remove"
+	actionReviewSubmit  = "review.submit"
+	actionVendorMessage = "vendor.message"
+
+	vendorPurpose  = "vendor"   // CAPTCHA slot: apply / approve / reject forms
+	reviewPurpose  = "review"   // CAPTCHA slot: review submit forms
+	messagePurpose = "vmessage" // CAPTCHA slot: "message vendor" form
+
+	shopNameMin, shopNameMax = 3, 60 // mirrors vendors.shop_name CHECK
+	reviewBodyMax            = 2000  // mirrors reviews.body CHECK
+	vendorMessageMax         = 5000  // mirrors messages.body CHECK
 )
 
-// ProductRecord is one row from public.products (db/schema.sql). PriceSat is
-// integer satoshis end-to-end — never a float anywhere in this stack.
-type ProductRecord struct {
-	ID          pgtype.UUID
-	VendorID    pgtype.UUID
-	CategoryID  int64 // 0 = uncategorized (nullable FK)
-	Title       string
-	Description string
-	PriceSat    int64
-	Stock       int
-	ImagePath   string // "" unless served from web/static (never remote URLs)
-	Status      string // draft | active | removed (schema CHECK)
+// ReviewEditWindow bounds how long after an order's last state change its
+// lines stay rateable/editable. Enforced server-side (Postgres' own clock in
+// the store; this constant only sizes the UI copy + the SQL interval), never
+// by a form-supplied timestamp.
+const ReviewEditWindow = 30 * 24 * time.Hour
+
+// VendorData renders the vendor-facing templates (apply page, admin queue,
+// profile page, review forms). It embeds AuthData so baseData stays the one
+// place CSRF/phrase/flash/error are assembled, and every template keeps
+// working when handed either shape.
+type VendorData struct {
+	AuthData
+	ShopName      string
+	Pending       []VendorRecord // admin queue rows
+	Vendor        *VendorRecord  // profile subject
+	VendorRating  float64        // avg 1..5 from released orders
+	VendorSales   int64          // completed-order count
+	Reviews       []ReviewRecord // customer review lines (account page)
+	MessageTarget string         // username the message form posts to
+	Eta           string         // fast|medium|slow badge
 }
 
-// CategoryRecord is one row from public.categories.
-type CategoryRecord struct {
-	ID   int64
-	Slug string
-	Name string
+// vendorData builds the typed payload for catalog templates: baseData keeps
+// assembling CSRF/phrase/flash/error in one place (auth_handlers.go), and the
+// catalog extras ride on top so pages never re-derive them.
+func (a *App) vendorData(r *http.Request) *VendorData {
+	return &VendorData{AuthData: a.baseData(r)}
 }
 
-// VendorStore is the catalog-facing projection of AuthStore: everything the
-// storefront and vendor product-management pages read. Registering with a
-// *PGAuthStore satisfies both interfaces with one pool-backed object; tests
-// substitute one in-memory fake for both.
-type VendorStore interface {
-	CategoryList(ctx context.Context) ([]CategoryRecord, error)
-	ProductCreate(ctx context.Context, p *ProductRecord) error
-	ProductGet(ctx context.Context, id pgtype.UUID) (*ProductRecord, error)
-	ProductUpdate(ctx context.Context, p *ProductRecord) error
-	ProductSetStatus(ctx context.Context, id pgtype.UUID, status string) error
-	ProductListByVendor(ctx context.Context, vendorID pgtype.UUID) ([]ProductRecord, error)
-	ProductListActive(ctx context.Context, categoryID int64, limit int) ([]ProductRecord, error)
-	ProductSearch(ctx context.Context, query string, limit int) ([]ProductRecord, error)
-	ShopNameForID(ctx context.Context, vendorID pgtype.UUID) (string, error)
-	ApprovedVendorID(ctx context.Context, userID pgtype.UUID) (*pgtype.UUID, error)
+// renderAs is render()'s typed-payload sibling: pass an AuthData for the
+// plain pages or a *VendorData whenever the template needs catalog extras
+// (Pending, Reviews, profile fields). Buffering + generic-500 policy are
+// identical to render() — kept separate only because render() takes AuthData
+// by value and would silently drop the embedded-pointer fields' siblings.
+func (a *App) renderAs(w http.ResponseWriter, name string, code int, data any) {
+	tpl := a.templates[name]
+	if tpl == nil {
+		writeGenericError(w)
+		return
+	}
+	var buf bytes.Buffer
+	if err := tpl.ExecuteTemplate(&buf, "layout", data); err != nil {
+		log.Printf("server: render %q failed: %v", name, err)
+		writeGenericError(w)
+		return
+	}
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.WriteHeader(code)
+	_, _ = buf.WriteTo(w)
 }
 
-// ---- route wiring ----------------------------------------------------------
+// currentUUID parses the session user id back into a pgtype.UUID. Handlers
+// call it instead of re-reading the DB: the value was validated at login and
+// role-checked by RequireRole on this very request.
+func (a *App) currentUUID(r *http.Request) (pgtype.UUID, bool) {
+	u := parseUUIDText(CurrentUserID(r.Context(), a.sm))
+	return u, u.Valid
+}
 
-// registerVendorRoutes mounts the vendor/admin product surface. It is called
-// from RegisterAuthRoutesFull AFTER the middleware stack exists; a nil store
-// degrades loudly at request time (generic error), never at boot.
+// registerVendorRoutes mounts the Phase 4 vendor/admin/review surface. It is
+// called from RegisterAuthRoutesFull AFTER the middleware stack exists; nil
+// stores simply skip their routes (dev boots stay honest, never panic).
 func (a *App) registerVendorRoutes(r chi.Router) {
-	vendorMW := a.RequireRole("vendor", "admin")
-	adminMW := a.RequireRole("admin")
+	anyUser := a.RequireRole("customer", "vendor", "mod", "admin")
+	adminOnly := a.RequireRole("admin")
 
-	r.Method(http.MethodGet, "/vendor/register", a.RequireRole("customer")(http.HandlerFunc(a.handleVendorRequestForm)))
-	r.Method(http.MethodPost, "/vendor/register", a.RequireRole("customer")(http.HandlerFunc(a.handleVendorRequestSubmit)))
-	r.Method(http.MethodGet, "/vendor/products", vendorMW(http.HandlerFunc(a.handleVendorProducts)))
-	r.Method(http.MethodPost, "/vendor/products", vendorMW(http.HandlerFunc(a.handleVendorProductCreate)))
-	r.Method(http.MethodPost, "/vendor/products/{id}", vendorMW(http.HandlerFunc(a.handleVendorProductUpdate)))
-	r.Method(http.MethodGet, "/admin/vendors", adminMW(http.HandlerFunc(a.handleAdminVendors)))
-	r.Method(http.MethodPost, "/admin/vendors/{id}/approve", adminMW(http.HandlerFunc(a.handleAdminVendorApprove)))
+	// Vendor application: any authenticated account may ask; approval flips
+	// the role through the durable store (never via this form).
+	r.Method(http.MethodGet, "/vendor/apply", anyUser(http.HandlerFunc(a.handleVendorApplyForm)))
+	r.Method(http.MethodPost, "/vendor/apply", anyUser(http.HandlerFunc(a.handleVendorApplySubmit)))
+
+	// Admin approval queue (writes to audit log, TASKS.md Phase 4 line 1).
+	r.Method(http.MethodGet, "/admin/vendors", adminOnly(http.HandlerFunc(a.handleVendorQueue)))
+	r.Method(http.MethodPost, "/admin/vendors/{id}/decision", adminOnly(http.HandlerFunc(a.handleVendorDecision)))
+
+	// Order reviews: list of rateable lines per vendor + one submit endpoint.
+	r.Method(http.MethodGet, "/account/reviews", anyUser(http.HandlerFunc(a.handleReviewList)))
+	r.Method(http.MethodPost, "/reviews/submit", anyUser(http.HandlerFunc(a.handleReviewSubmit)))
 }
 
-// registerCatalogRoutes mounts the public storefront. Home is RE-MOUNTED here
-// (chi replaces the earlier pattern) so the landing page becomes the catalog
-// once Phase 4 stores are wired; without a vendor store the handler falls
-// back to the minimal Phase 3 home render, keeping router tests honest.
-func (a *App) registerCatalogRoutes(r chi.Router) {
-	r.Get("/", a.handleCatalogHome)
-	r.Get("/search", a.handleSearch)
-	r.Get("/category/{slug}", a.handleCategory)
-	r.Get("/product/{id}", a.handleProductPage)
-	r.Get("/u/{handle}", a.handleShopPage)
-}
+// ---- application -----------------------------------------------------------
 
-// ---- shared guards ----------------------------------------------------------
-
-// vendorGuard resolves the session user's APPROVED vendor row. It answers the
-// failure itself (redirect / generic error) and returns ok=false in every
-// non-happy case — handlers then simply return. An unapproved vendor editing
-// products would let a rejected applicant trade under an unvetted shop, so
-// approval is re-read from the store on every write, never trusted from the
-// session role alone.
-func (a *App) vendorGuard(w http.ResponseWriter, r *http.Request) (vendorID pgtype.UUID, ok bool) {
+func (a *App) handleVendorApplyForm(w http.ResponseWriter, r *http.Request) {
 	if a.vendor == nil || a.auth == nil {
 		writeGenericError(w)
-		return pgtype.UUID{}, false
+		return
 	}
-	uid := currentUserUUID(r.Context(), a.sm)
-	if uid == nil {
+	data := a.vendorData(r)
+	uid, ok := a.currentUUID(r)
+	if !ok {
 		http.Redirect(w, r, "/login", http.StatusSeeOther)
-		return pgtype.UUID{}, false
+		return
 	}
-	id, err := a.vendor.ApprovedVendorID(r.Context(), *uid)
+	existing, err := a.auth.VendorGetByUser(r.Context(), uid)
 	if err != nil {
-		log.Printf("server: approved-vendor lookup failed: %v", sanitizedErr(err))
+		log.Printf("server: vendor apply lookup failed: %v", sanitizedErr(err))
 		writeGenericError(w)
-		return pgtype.UUID{}, false
+		return
 	}
-	if id == nil {
-		a.renderVendorState(w, r, http.StatusForbidden, "", "No approved vendor shop for this account. Request one first.")
-		return pgtype.UUID{}, false
-	}
-	return *id, true
-}
-
-// parseProductForm reads + validates one product form into rec (existing !=
-// nil keeps identity/status from the DB row). Returns a user-safe error text.
-func parseProductForm(r *http.Request, existing *ProductRecord) (*ProductRecord, string) {
-	title := strings.TrimSpace(r.FormValue("title"))
-	desc := strings.TrimSpace(r.FormValue("description"))
-	priceTxt := strings.TrimSpace(r.FormValue("price_sat"))
-	stockTxt := strings.TrimSpace(r.FormValue("stock"))
-	catTxt := strings.TrimSpace(r.FormValue("category_id"))
-
-	rec := &ProductRecord{}
 	if existing != nil {
-		*rec = *existing
-	}
-	if len(title) < 3 || len(title) > maxTitleLen {
-		return nil, "Title must be 3-200 characters."
-	}
-	if len(desc) > maxDescLen {
-		return nil, "Description too long (max 20000 characters)."
-	}
-	price, err := strconv.ParseInt(priceTxt, 10, 64)
-	if err != nil || price <= 0 {
-		return nil, "Price must be a whole number of satoshis greater than zero."
-	}
-	stock, err := strconv.Atoi(stockTxt)
-	if err != nil || stock < 0 {
-		return nil, "Stock must be a whole number zero or greater."
-	}
-	var catID int64
-	if catTxt != "" {
-		catID, err = strconv.ParseInt(catTxt, 10, 64)
-		if err != nil || catID <= 0 {
-			return nil, "Unknown category."
+		data.Flash = "Your vendor application is already on file."
+		if existing.Approved {
+			data.Flash = "You are an approved vendor. Manage listings under /vendor/products."
 		}
-	}
-	img := strings.TrimSpace(r.FormValue("image_path"))
-	if img != "" && !strings.HasPrefix(img, "/static/") {
-		// image_path is rendered into <img src>; anything but our own static
-		// tree is either a remote tracker or an XSS probe (CSP would block it
-		// anyway — refusing it here keeps the data clean).
-		return nil, "Image path must start with /static/."
-	}
-	rec.Title, rec.Description, rec.PriceSat, rec.Stock, rec.CategoryID, rec.ImagePath = title, desc, price, stock, catID, img
-	return rec, ""
-}
-
-var productStatuses = map[string]bool{"draft": true, "active": true, "removed": true}
-
-// ---- vendor request flow -----------------------------------------------------
-
-func (a *App) handleVendorRequestForm(w http.ResponseWriter, r *http.Request) {
-	if a.auth == nil || a.vendor == nil {
-		writeGenericError(w)
+		a.renderAs(w, "vendor_apply", http.StatusOK, data)
 		return
 	}
-	uid := currentUserUUID(r.Context(), a.sm)
-	if uid == nil {
-		http.Redirect(w, r, "/login", http.StatusSeeOther)
-		return
-	}
-	v, err := a.auth.VendorGetByUser(r.Context(), *uid)
-	if err != nil {
-		log.Printf("server: vendor state read failed: %v", sanitizedErr(err))
-		writeGenericError(w)
-		return
-	}
-	if v != nil {
-		a.renderVendorState(w, r, http.StatusOK, v.ShopName, vendorStateText(v.Approved))
-		return
-	}
-	data := a.baseData(r)
 	if data.Captcha = a.newChallenge(w, r, vendorPurpose); data.Captcha == nil {
 		return
 	}
-	a.render(w, "vendor_request", http.StatusOK, data)
+	a.renderAs(w, "vendor_apply", http.StatusOK, data)
 }
 
-func vendorStateText(approved bool) string {
-	if approved {
-		return "Your shop is approved. Manage products from your vendor dashboard."
-	}
-	return "Your application is pending administrator approval."
-}
-
-func (a *App) handleVendorRequestSubmit(w http.ResponseWriter, r *http.Request) {
+func (a *App) handleVendorApplySubmit(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	_ = r.ParseForm()
-	data := a.baseData(r)
+	data := a.vendorData(r)
 	fail := func(msg string) {
 		data.Error = msg
 		if data.Captcha = a.newChallenge(w, r, vendorPurpose); data.Captcha == nil {
 			return
 		}
-		a.render(w, "vendor_request", http.StatusOK, data)
+		a.renderAs(w, "vendor_apply", http.StatusBadRequest, data)
 	}
-	if !a.requireFriction(w, r, vendorPurpose) {
+
+	uid, ok := a.currentUUID(r)
+	if !ok {
+		http.Redirect(w, r, "/login", http.StatusSeeOther)
 		return
 	}
-	uid := currentUserUUID(ctx, a.sm)
-	if a.auth == nil || a.vendor == nil || uid == nil {
-		writeGenericError(w)
+	if CurrentRole(ctx, a.sm) != "customer" {
+		fail("this account cannot request vendor status")
 		return
 	}
-	name := strings.TrimSpace(r.FormValue("shop_name"))
-	if len(name) < 3 || len(name) > maxShopNameLen {
-		fail("Shop name must be 3-60 characters.")
+	if honeypotTriggered(r) || !a.requireFriction(w, r, vendorPurpose) {
+		fail("challenge failed, please try again")
 		return
 	}
-	// Re-check via the store (never trust the session role claim alone). The
-	// authoritative USERS row is fetched by the session's user id — a forged
-	// or stale username claim can never steer this lookup.
-	u, err := a.auth.AuthUserByID(ctx, *uid)
-	if err != nil || u == nil {
-		fail("Account not found. Log in again and retry.")
+
+	shop := strings.TrimSpace(r.FormValue("shop_name"))
+	if len(shop) < shopNameMin || len(shop) > shopNameMax {
+		fail(fmt.Sprintf("shop name must be %d-%d characters", shopNameMin, shopNameMax))
 		return
 	}
-	if u.Role != "customer" || u.Status != "active" {
-		writeGenericError(w) // banned/promoted riding an old cookie — no detail leak
+	// One row per user (vendors.user_id UNIQUE): a second submission updates
+	// the pending request instead of stacking duplicates behind approval.
+	if err := a.auth.VendorCreateRequest(ctx, uid, shop); err != nil {
+		log.Printf("server: vendor request write failed: %v", sanitizedErr(err))
+		fail("vendor application failed, please try again")
 		return
 	}
-	existing, err := a.auth.VendorGetByUser(ctx, u.ID)
-	if err != nil {
-		log.Printf("server: vendor pre-check failed: %v", sanitizedErr(err))
-		writeGenericError(w)
-		return
+	details, _ := json.Marshal(map[string]any{"shop_name": shop})
+	if err := a.auth.AuditAppend(ctx, uid, "user", actionVendorRequest, "vendor:"+uuidString(uid), string(details)); err != nil {
+		// Bookkeeping failure must not strand a valid application — loud log,
+		// same policy as login history (auth_handlers.go).
+		log.Printf("server: vendor request audit write failed (non-fatal): %v", sanitizedErr(err))
 	}
-	if existing != nil {
-		a.renderVendorState(w, r, http.StatusOK, existing.ShopName, vendorStateText(existing.Approved))
-		return
-	}
-	if err := a.auth.VendorCreateRequest(ctx, u.ID, name); err != nil {
-		// vendors.user_id/shop_name are UNIQUE: a double-submit lands here.
-		// Show the state page instead of a raw constraint error.
-		again, gerr := a.auth.VendorGetByUser(ctx, u.ID)
-		if gerr == nil && again != nil {
-			a.renderVendorState(w, r, http.StatusOK, again.ShopName, vendorStateText(again.Approved))
-			return
-		}
-		log.Printf("server: vendor request create failed: %v", sanitizedErr(err))
-		writeGenericError(w)
-		return
-	}
-	_ = a.auth.AuditAppend(ctx, u.ID, "user", "vendor.request", uuidString(u.ID), "")
 	data.Flash = "Application submitted. An administrator will review it."
-	a.render(w, "vendor_request", http.StatusOK, data)
+	a.renderAs(w, "vendor_apply", http.StatusOK, data)
 }
 
-func (a *App) renderVendorState(w http.ResponseWriter, r *http.Request, code int, shop, msg string) {
-	data := a.baseData(r)
-	data.Flash = msg
-	if shop != "" {
-		data.Error = "" // flash carries the message; Error stays for real faults
-	}
-	data.PersonalPhrase = a.sm.GetString(r.Context(), phraseKey)
-	a.render(w, "vendor_state", code, data)
-}
+// ---- admin approval queue ----------------------------------------------------
 
-// ---- admin approval ----------------------------------------------------------
-
-func (a *App) handleAdminVendors(w http.ResponseWriter, r *http.Request) {
+func (a *App) handleVendorQueue(w http.ResponseWriter, r *http.Request) {
 	if a.auth == nil {
 		writeGenericError(w)
 		return
 	}
+	data := a.vendorData(r)
 	pending, err := a.auth.VendorListPending(r.Context())
 	if err != nil {
 		log.Printf("server: pending vendor list failed: %v", sanitizedErr(err))
 		writeGenericError(w)
 		return
 	}
-	data := a.baseData(r)
-	data.PersonalPhrase = a.sm.GetString(r.Context(), phraseKey)
 	data.Pending = pending
-	a.render(w, "admin_vendors", http.StatusOK, data)
+	a.renderAs(w, "admin_vendors", http.StatusOK, data)
 }
 
-func (a *App) handleAdminVendorApprove(w http.ResponseWriter, r *http.Request) {
+func (a *App) handleVendorDecision(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	_ = r.ParseForm()
-	if !a.requireFriction(w, r, vendorPurpose) {
-		return
-	}
-	if a.auth == nil {
-		writeGenericError(w)
-		return
-	}
-	vid, ok := parseUUID(chi.URLParam(r, "id"))
-	if !ok {
-		writeGenericError(w)
-		return
-	}
-	// Resolve the ROW FIRST so a bad id can never trigger a half-applied
-	// promote/approve pair.
-	target, err := a.auth.VendorGetByID(ctx, vid)
-	if err != nil {
-		log.Printf("server: vendor resolve failed: %v", sanitizedErr(err))
-		writeGenericError(w)
-		return
-	}
-	if target == nil || target.Approved {
-		http.Redirect(w, r, "/admin/vendors", http.StatusSeeOther)
-		return
-	}
-	if err := a.auth.VendorSetApproval(ctx, vid, true); err != nil {
-		log.Printf("server: vendor approval write failed: %v", sanitizedErr(err))
-		writeGenericError(w)
-		return
-	}
-	if err := a.auth.VendorSetRoleToVendor(ctx, target.UserID); err != nil {
-		log.Printf("server: vendor role promotion failed: %v", sanitizedErr(err))
-		writeGenericError(w)
-		return
-	}
-	// THE point of Phase 4 security-wise: the promoted user's OTHER sessions
-	// still carry role=customer in their payloads; scs cannot edit them
-	// server-side, so deletion is the only correct primitive (AGENTS.md §4).
-	if err := a.InvalidateUserSessions(ctx, uuidString(target.UserID)); err != nil {
-		log.Printf("server: session invalidation after approval failed: %v", sanitizedErr(err))
-	}
-	actor := currentUserUUID(ctx, a.sm)
-	if actor != nil {
-		who, _ := a.auth.VendorUsername(ctx, target.UserID) // "" on unknown ids, bookkeeping only
-		_ = a.auth.AuditAppend(ctx, *actor, "admin", "vendor.approve", uuidString(vid), who)
-	}
-	http.Redirect(w, r, "/admin/vendors", http.StatusSeeOther)
-}
-
-// ---- vendor product CRUD ------------------------------------------------------
-
-func (a *App) handleVendorProducts(w http.ResponseWriter, r *http.Request) {
-	vendorID, ok := a.vendorGuard(w, r)
-	if !ok {
-		return
-	}
-	products, err := a.vendor.ProductListByVendor(r.Context(), vendorID)
-	if err != nil {
-		log.Printf("server: vendor product list failed: %v", sanitizedErr(err))
-		writeGenericError(w)
-		return
-	}
-	cats, err := a.vendor.CategoryList(r.Context())
-	if err != nil {
-		log.Printf("server: category list failed: %v", sanitizedErr(err))
-		writeGenericError(w)
-		return
-	}
-	data := a.baseData(r)
-	data.PersonalPhrase = a.sm.GetString(r.Context(), phraseKey)
-	data.Products = products
-	data.Categories = cats
-	if data.Captcha = a.newChallenge(w, r, productPurpose); data.Captcha == nil {
-		return
-	}
-	a.render(w, "vendor_products", http.StatusOK, data)
-}
-
-func (a *App) handleVendorProductCreate(w http.ResponseWriter, r *http.Request) {
-	vendorID, ok := a.vendorGuard(w, r)
-	if !ok {
-		return
-	}
-	ctx := r.Context()
-	if !a.requireFriction(w, r, productPurpose) {
-		return
-	}
-	status := r.FormValue("status")
-	if !productStatuses[status] {
-		status = "draft"
-	}
-	rec, errMsg := parseProductForm(r, nil)
-	if errMsg != "" {
-		a.flashVendorProducts(w, r, errMsg)
-		return
-	}
-	rec.VendorID, rec.Status = vendorID, status
-	if err := a.vendor.ProductCreate(ctx, rec); err != nil {
-		log.Printf("server: product create failed: %v", sanitizedErr(err))
-		writeGenericError(w)
-		return
-	}
-	if actor := currentUserUUID(ctx, a.sm); actor != nil {
-		_ = a.auth.AuditAppend(ctx, *actor, "vendor", "product.create", uuidString(rec.ID), "")
-	}
-	a.flashVendorProducts(w, r, "")
-}
-
-func (a *App) handleVendorProductUpdate(w http.ResponseWriter, r *http.Request) {
-	vendorID, ok := a.vendorGuard(w, r)
-	if !ok {
-		return
-	}
-	ctx := r.Context()
-	if !a.requireFriction(w, r, productPurpose) {
-		return
-	}
-	pid, valid := parseUUID(chi.URLParam(r, "id"))
-	if !valid {
-		writeGenericError(w)
-		return
-	}
-	existing, err := a.vendor.ProductGet(ctx, pid)
-	if err != nil {
-		if errors.Is(err, ErrNoSuchUser) { // sentinel reuse: unknown product id
-			a.flashVendorProducts(w, r, "No such product.")
+	data := a.vendorData(r)
+	fail := func(code int, msg string) {
+		data.Error = msg
+		pending, err := a.auth.VendorListPending(ctx)
+		if err != nil {
+			writeGenericError(w)
 			return
 		}
-		log.Printf("server: product fetch failed: %v", sanitizedErr(err))
-		writeGenericError(w)
+		data.Pending = pending
+		a.renderAs(w, "admin_vendors", code, data)
+	}
+
+	if honeypotTriggered(r) || !a.requireFriction(w, r, vendorPurpose) {
+		fail(http.StatusUnauthorized, "challenge failed, please try again")
 		return
 	}
-	if existing == nil || existing.VendorID != vendorID {
-		// Someone else's product (or gone): uniform refusal, no existence hint.
-		a.flashVendorProducts(w, r, "You may only edit your own products.")
+	approve := r.FormValue("decision") == "approve"
+	vid, err := parseUUIDParam(r, "id")
+	if err != nil {
+		fail(http.StatusBadRequest, "unknown application")
 		return
 	}
-	rec, errMsg := parseProductForm(r, existing)
-	if errMsg != "" {
-		a.flashVendorProducts(w, r, errMsg)
+
+	// Re-read the authoritative role for the applicant before flipping
+	// anything: approving must promote exactly one known 'customer'.
+	target, err := a.vendorRowTarget(ctx, vid)
+	if err != nil {
+		fail(http.StatusBadRequest, "unknown application")
 		return
 	}
-	if status := r.FormValue("status"); productStatuses[status] {
-		rec.Status = status
-	}
-	if err := a.vendor.ProductUpdate(ctx, rec); err != nil {
-		log.Printf("server: product update failed: %v", sanitizedErr(err))
-		writeGenericError(w)
+	role, err := a.auth.AuthUserRole(ctx, target.UserID)
+	if err != nil {
+		log.Printf("server: vendor decision role lookup failed: %v", sanitizedErr(err))
+		fail(http.StatusInternalServerError, "approval failed, please try again")
 		return
 	}
-	if actor := currentUserUUID(ctx, a.sm); actor != nil {
-		_ = a.auth.AuditAppend(ctx, *actor, "vendor", "product.update", uuidString(pid), "")
+	if role != "customer" && approve {
+		fail(http.StatusBadRequest, "unknown application")
+		return
 	}
-	a.flashVendorProducts(w, r, "")
+
+	if err := a.auth.VendorSetApproval(ctx, vid, approve); err != nil {
+		log.Printf("server: vendor approval write failed: %v", sanitizedErr(err))
+		fail(http.StatusInternalServerError, "approval failed, please try again")
+		return
+	}
+	if approve {
+		if err := a.auth.VendorSetRoleToVendor(ctx, target.UserID); err != nil {
+			log.Printf("server: vendor promotion failed: %v", sanitizedErr(err))
+		}
+		// Privilege change: kill every live session of the promoted user so
+		// no stale 'customer' cookie survives the flip (AGENTS.md §4). The
+		// new vendor signs in fresh with the upgraded role.
+		if err := a.InvalidateUserSessions(ctx, uuidString(target.UserID)); err != nil {
+			log.Printf("server: session invalidation after vendor approval failed: %v", sanitizedErr(err))
+		}
+	}
+
+	actorID, _ := a.currentUUID(r)
+	name, _ := a.auth.VendorUsername(ctx, target.UserID)
+	details, _ := json.Marshal(map[string]any{"shop_name": target.ShopName, "username": name})
+	action := actionVendorApprove
+	if !approve {
+		action = actionVendorReject
+	}
+	if err := a.auth.AuditAppend(ctx, actorID, "admin", action, "vendor:"+uuidString(vid), string(details)); err != nil {
+		log.Printf("server: vendor decision audit write failed (non-fatal): %v", sanitizedErr(err))
+	}
+	if approve {
+		data.Flash = "Vendor approved."
+	} else {
+		data.Flash = "Application rejected."
+	}
+	fail(http.StatusOK, "")
 }
 
-// flashVendorProducts re-renders the dashboard with a flash/error line. The
-// friction partial on that page has no CAPTCHA slot by design (the guard POST
-// already burned the puzzle; re-minting per redirect loop would train bots to
-// expect fresh puzzles per click), so the re-render carries CSRF + honeypot
-// only.
-func (a *App) flashVendorProducts(w http.ResponseWriter, r *http.Request, msg string) {
-	vendorID, ok := a.vendorGuard(w, r)
+// vendorRowTarget pulls the vendor row being decided on. VendorStore does not
+// expose GetVendorByID (the handlers never needed it elsewhere), so the queue
+// template carries the owner/user ids alongside the row id; we reconstruct
+// the target from the pending list snapshot instead of trusting the form.
+func (a *App) vendorRowTarget(ctx context.Context, vendorID pgtype.UUID) (*VendorRecord, error) {
+	pending, err := a.auth.VendorListPending(ctx)
+	if err != nil {
+		return nil, err
+	}
+	for i := range pending {
+		if uuidString(pending[i].ID) == uuidString(vendorID) {
+			return &pending[i], nil
+		}
+	}
+	return nil, ErrNotFound
+}
+
+// ---- reviews ------------------------------------------------------------------
+
+func (a *App) handleReviewList(w http.ResponseWriter, r *http.Request) {
+	if a.vendor == nil {
+		writeGenericError(w)
+		return
+	}
+	ctx := r.Context()
+	data := a.vendorData(r)
+	uid, ok := a.currentUUID(r)
 	if !ok {
+		http.Redirect(w, r, "/login", http.StatusSeeOther)
 		return
 	}
-	products, err := a.vendor.ProductListByVendor(r.Context(), vendorID)
+	handle := strings.ToLower(strings.TrimSpace(r.URL.Query().Get("vendor")))
+	if handle == "" {
+		data.Error = "pick a vendor to review"
+		a.renderAs(w, "reviews", http.StatusOK, data)
+		return
+	}
+	prof, err := a.vendor.CatalogGetVendorByUsername(ctx, handle)
+	if errors.Is(err, ErrNotFound) {
+		data.Error = "no such vendor"
+		a.renderAs(w, "reviews", http.StatusOK, data)
+		return
+	}
 	if err != nil {
+		log.Printf("server: review vendor lookup failed: %v", sanitizedErr(err))
 		writeGenericError(w)
 		return
 	}
-	cats, err := a.vendor.CategoryList(r.Context())
+	lines, err := a.vendor.CatalogReviewableLines(ctx, uid, prof.ID)
 	if err != nil {
+		log.Printf("server: reviewable lines failed: %v", sanitizedErr(err))
 		writeGenericError(w)
 		return
 	}
-	data := a.baseData(r)
-	data.PersonalPhrase = a.sm.GetString(r.Context(), phraseKey)
-	data.Products = products
-	data.Categories = cats
-	if msg != "" {
+	data.Reviews = lines
+	data.MessageTarget = handle
+	if data.Captcha = a.newChallenge(w, r, reviewPurpose); data.Captcha == nil {
+		return
+	}
+	a.renderAs(w, "reviews", http.StatusOK, data)
+}
+
+func (a *App) handleReviewSubmit(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	_ = r.ParseForm()
+	data := a.vendorData(r)
+	fail := func(code int, msg string) {
 		data.Error = msg
-	} else {
-		data.Flash = "Saved."
+		if data.Captcha = a.newChallenge(w, r, reviewPurpose); data.Captcha == nil {
+			return
+		}
+		a.renderAs(w, "reviews", code, data)
 	}
-	a.render(w, "vendor_products", http.StatusOK, data)
+	uid, ok := a.currentUUID(r)
+	if !ok {
+		http.Redirect(w, r, "/login", http.StatusSeeOther)
+		return
+	}
+	if honeypotTriggered(r) || !a.requireFriction(w, r, reviewPurpose) {
+		fail(http.StatusUnauthorized, "challenge failed, please try again")
+		return
+	}
+
+	itemID, err := strconv.ParseInt(r.FormValue("item_id"), 10, 64)
+	if err != nil || itemID <= 0 {
+		fail(http.StatusBadRequest, "unknown order line")
+		return
+	}
+	rating, err := strconv.Atoi(r.FormValue("rating"))
+	if err != nil || rating < 1 || rating > 5 {
+		fail(http.StatusBadRequest, "rating must be between 1 and 5")
+		return
+	}
+	body := strings.TrimSpace(r.FormValue("body"))
+	if len(body) > reviewBodyMax {
+		fail(http.StatusBadRequest, "review text too long")
+		return
+	}
+
+	err = a.vendor.CatalogSubmitReview(ctx, uid, itemID, rating, body)
+	switch {
+	case errors.Is(err, ErrNotFound):
+		fail(http.StatusBadRequest, "that order line cannot be reviewed")
+		return
+	case err != nil && strings.Contains(err.Error(), "window closed"):
+		// Error text here is ours ("store: review window closed") — safe verb,
+		// no internals (sanitizedErr still strips driver detail).
+		fail(http.StatusBadRequest, "the review window for this order has closed")
+		return
+	case err != nil:
+		log.Printf("server: review submit failed: %v", sanitizedErr(err))
+		fail(http.StatusInternalServerError, "review failed, please try again")
+		return
+	}
+	details, _ := json.Marshal(map[string]any{"item_id": itemID, "rating": rating})
+	if aerr := a.auth.AuditAppend(ctx, uid, "user", actionReviewSubmit, fmt.Sprintf("order_item:%d", itemID), string(details)); aerr != nil {
+		log.Printf("server: review audit write failed (non-fatal): %v", sanitizedErr(aerr))
+	}
+	data.Flash = "Review saved."
+	fail(http.StatusOK, "")
+}
+
+// parseUUIDParam reads one chi URL parameter as a UUID, rejecting malformed
+// input without echoing it back.
+func parseUUIDParam(r *http.Request, key string) (pgtype.UUID, error) {
+	raw := chi.URLParam(r, key)
+	u := parseUUIDText(raw)
+	if !u.Valid {
+		return pgtype.UUID{}, errors.New("server: invalid uuid parameter")
+	}
+	return u, nil
 }

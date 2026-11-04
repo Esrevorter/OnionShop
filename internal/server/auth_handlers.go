@@ -294,7 +294,7 @@ VALUES ($1, NULLIF($2, 0), $3, $4, $5, $6, NULLIF($7, ''), $8)
 RETURNING id`
 
 	qProductGet = `SELECT id, vendor_id, COALESCE(category_id, 0), title, description,
-price_sat, stock, COALESCE(image_path, ''), status
+price_sat, stock, COALESCE(image_path, ''), status, created_at, updated_at
 FROM public.products WHERE id = $1`
 
 	qProductUpdate = `UPDATE public.products SET
@@ -305,18 +305,18 @@ WHERE id = $1`
 	qProductSetStatus = `UPDATE public.products SET status = $2, updated_at = now() WHERE id = $1`
 
 	qProductsByVendor = `SELECT id, vendor_id, COALESCE(category_id, 0), title, description,
-price_sat, stock, COALESCE(image_path, ''), status
+price_sat, stock, COALESCE(image_path, ''), status, created_at, updated_at
 FROM public.products WHERE vendor_id = $1 ORDER BY created_at DESC LIMIT 500`
 
 	qProductsActive = `SELECT p.id, p.vendor_id, COALESCE(p.category_id, 0), p.title, p.description,
-p.price_sat, p.stock, COALESCE(p.image_path, ''), p.status
+p.price_sat, p.stock, COALESCE(p.image_path, ''), p.status, p.created_at, p.updated_at
 FROM public.products p JOIN public.vendors v ON v.id = p.vendor_id
 WHERE p.status = 'active' AND v.approved
   AND (NULLIF($1, 0::bigint) IS NULL OR p.category_id = NULLIF($1, 0::bigint))
 ORDER BY p.created_at DESC LIMIT $2`
 
 	qProductsSearch = `SELECT p.id, p.vendor_id, COALESCE(p.category_id, 0), p.title, p.description,
-p.price_sat, p.stock, COALESCE(p.image_path, ''), p.status
+p.price_sat, p.stock, COALESCE(p.image_path, ''), p.status, p.created_at, p.updated_at
 FROM public.products p JOIN public.vendors v ON v.id = p.vendor_id
 WHERE p.status = 'active' AND v.approved
   AND to_tsvector('simple', p.title || ' ' || p.description) @@ plainto_tsquery('simple', $1)
@@ -434,12 +434,9 @@ func (s *PGAuthStore) CategoryList(ctx context.Context) ([]CategoryRecord, error
 	return out, nil
 }
 
-func scanProduct(row pgx.Row) (ProductRecord, error) {
-	var p ProductRecord
-	err := row.Scan(&p.ID, &p.VendorID, &p.CategoryID, &p.Title, &p.Description,
-		&p.PriceSat, &p.Stock, &p.ImagePath, &p.Status)
-	return p, err
-}
+// scanProduct lives in catalog_store.go and scans the canonical 11-column
+// product projection (id .. status, created_at, updated_at); all product
+// queries in this file select the same column list.
 
 func (s *PGAuthStore) ProductCreate(ctx context.Context, p *ProductRecord) error {
 	return s.pool.QueryRow(ctx, qProductInsert, p.VendorID, p.CategoryID, p.Title,
@@ -579,6 +576,23 @@ func (s *PGAuthStore) AuthUserRole(ctx context.Context, id pgtype.UUID) (string,
 		return "", fmt.Errorf("store: get role: %w", err)
 	}
 	return role, nil
+}
+
+// qAuthUserByID mirrors qAuthUserByUsername but keyed on the primary key —
+// the vendor request flow re-checks role/status server-side from the session
+// id (defense in depth against stale client state).
+const qAuthUserByID = `SELECT id, username, password_hash, role, status, created_at
+FROM public.users WHERE id = $1`
+
+func (s *PGAuthStore) AuthUserByID(ctx context.Context, id pgtype.UUID) (*UserRecord, error) {
+	u, err := scanUser(s.pool.QueryRow(ctx, qAuthUserByID, id))
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, ErrNoSuchUser
+	}
+	if err != nil {
+		return nil, fmt.Errorf("store: get user by id: %w", err)
+	}
+	return u, nil
 }
 
 // ---- wiring ---------------------------------------------------------------
@@ -1244,7 +1258,7 @@ func parseUUID(s string) (pgtype.UUID, bool) {
 			}
 			continue
 		}
-		v := byte(0xff)
+		var v byte
 		switch {
 		case c >= '0' && c <= '9':
 			v = c - '0'
