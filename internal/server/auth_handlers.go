@@ -91,6 +91,15 @@ type AuthStore interface {
 	VendorListPending(ctx context.Context) ([]VendorRecord, error)
 	VendorSetApproval(ctx context.Context, vendorID pgtype.UUID, approved bool) error
 	VendorSetRoleToVendor(ctx context.Context, userID pgtype.UUID) error
+	// VendorUsername resolves a pending/approved vendor row's owner to the
+	// canonical username for audit-log details (never raw PII beyond the
+	// display identity the action is about). Unknown ids return "".
+	VendorUsername(ctx context.Context, vendorUserID pgtype.UUID) (string, error)
+	// AuthUserRole re-reads the authoritative role for one user id. Login
+	// compares it against the role embedded in the session and kills stale
+	// sessions on mismatch (AGENTS.md §4 — privilege changes must never ride
+	// an old cookie). Unknown ids return ErrNoSuchUser.
+	AuthUserRole(ctx context.Context, id pgtype.UUID) (string, error)
 	// AuditAppend writes one immutable audit_log row (migration 0003).
 	// action is a stable verb ('vendor.approve', 'product.create', ...),
 	// target is '<table>:<id>', details is pre-sanitized JSON text ("" stores
@@ -236,6 +245,15 @@ ORDER BY v.created_at ASC LIMIT 200`
 
 	qVendorSetApproval = `UPDATE public.vendors SET approved = $2 WHERE id = $1`
 
+	// Audit-detail lookup: the username of a vendor-row owner. Display
+	// identity only (usernames are not secrets, AGENTS.md §4) — never the
+	// password hash or any other column rides this query.
+	qVendorUsername = `SELECT username FROM public.users WHERE id = $1`
+
+	// Authoritative role read used by login to detect sessions whose embedded
+	// role went stale (approval/ban between cookie mint and request).
+	qAuthUserRole = `SELECT role FROM public.users WHERE id = $1`
+
 	// Promotion only ever moves customer -> vendor; a mod/admin row must never
 	// be demoted by this path (the CHECK set stays intact either way, but the
 	// WHERE clause makes accidental misuse impossible).
@@ -323,6 +341,34 @@ func (s *PGAuthStore) AuditAppend(ctx context.Context, actorID pgtype.UUID, acto
 	return nil
 }
 
+// VendorUsername returns the owner's canonical username for audit details;
+// unknown ids yield "" without an error so a vanished user can never wedge
+// the approval flow over bookkeeping.
+func (s *PGAuthStore) VendorUsername(ctx context.Context, vendorUserID pgtype.UUID) (string, error) {
+	var name string
+	err := s.pool.QueryRow(ctx, qVendorUsername, vendorUserID).Scan(&name)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return "", nil
+	}
+	if err != nil {
+		return "", fmt.Errorf("store: vendor username: %w", err)
+	}
+	return name, nil
+}
+
+// AuthUserRole reads the authoritative role; ErrNoSuchUser for unknown ids.
+func (s *PGAuthStore) AuthUserRole(ctx context.Context, id pgtype.UUID) (string, error) {
+	var role string
+	err := s.pool.QueryRow(ctx, qAuthUserRole, id).Scan(&role)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return "", ErrNoSuchUser
+	}
+	if err != nil {
+		return "", fmt.Errorf("store: get role: %w", err)
+	}
+	return role, nil
+}
+
 // ---- wiring ---------------------------------------------------------------
 
 // RegisterAuthRoutes mounts the Phase 3 auth surface on the app router. Call
@@ -334,9 +380,29 @@ func (s *PGAuthStore) AuditAppend(ctx context.Context, actorID pgtype.UUID, acto
 // login then skips the durable user_id stamp and admin-side session kill has
 // nothing to match on — logged once, never silent.
 func (a *App) RegisterAuthRoutes(auth AuthStore, captcha *CaptchaService, sessions SessionLinker, templateDir string) error {
+	return a.RegisterAuthRoutesFull(auth, captcha, sessions, nil, nil, templateDir)
+}
+
+// RegisterAuthRoutesFull is the Phase 4 wiring entry point: the same auth
+// surface plus the durable session invalidator (kills every live session of a
+// user whose role changed — vendor approval, bans) and the product catalog
+// store behind the storefront pages. Both extras are optional; nil degrades
+// loudly exactly like the linker above (dev/in-memory mode). The invalidator
+// doubles as the linker when no separate linker was passed (production passes
+// the same store.FallbackStore value for both).
+func (a *App) RegisterAuthRoutesFull(auth AuthStore, captcha *CaptchaService, sessions SessionLinker, invalid SessionInvalidator, catalog VendorStore, templateDir string) error {
 	if err := a.buildTemplates(templateDir); err != nil {
 		return err
 	}
+	if invalid == nil && sessions != nil {
+		// One backend, two roles: store.FallbackStore satisfies both. An
+		// explicit nil stays loud below at each use site instead.
+		if si, ok := sessions.(SessionInvalidator); ok {
+			invalid = si
+		}
+	}
+	a.invalid = invalid
+	a.vendor = catalog
 	if auth == nil || captcha == nil {
 		log.Print("server: auth routes not registered (missing store or captcha service)")
 		return nil
@@ -365,6 +431,8 @@ func (a *App) RegisterAuthRoutes(auth AuthStore, captcha *CaptchaService, sessio
 	// Phase 4 vendor registration + admin approval (vendor_handlers.go),
 	// mounted through the SAME gate/friction pattern as the account surface.
 	a.registerVendorRoutes(r)
+	// Phase 4 storefront: public catalog browsing (catalog_handlers.go).
+	a.registerCatalogRoutes(r)
 	return nil
 }
 
