@@ -1258,7 +1258,7 @@ func parseUUID(s string) (pgtype.UUID, bool) {
 			}
 			continue
 		}
-		v := byte(0xff)
+		var v byte
 		switch {
 		case c >= '0' && c <= '9':
 			v = c - '0'
