@@ -10,7 +10,6 @@ import (
 	"errors"
 	"fmt"
 	stdimage "image"
-	"image/color"
 	"image/draw"
 	"image/gif"
 	"image/jpeg"
@@ -109,7 +108,7 @@ func Scrub(data []byte) (*Scrubbed, error) {
 // every alpha channel into the pixels themselves.
 func opaque(src stdimage.Image) *stdimage.NRGBA {
 	b := src.Bounds()
-	dst := stdimage.NewNRGBA(image.Rect(0, 0, b.Dx(), b.Dy()))
+	dst := stdimage.NewNRGBA(stdimage.Rect(0, 0, b.Dx(), b.Dy()))
 	draw.Draw(dst, dst.Bounds(), src, b.Min, draw.Over)
 	return dst
 }
