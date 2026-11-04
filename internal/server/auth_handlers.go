@@ -777,14 +777,52 @@ func uuidString(u pgtype.UUID) string {
 
 // parseUUID decodes the canonical text form back into a pgtype.UUID
 // (ok=false for anything malformed — sessions claiming an unparseable id are
-// treated as broken, never trusted). pgtype.UUID implements sql.Scanner, so
-// Scan does the hex/hyphen validation for us.
+// treated as broken, never trusted). Hand-decoded so parseUUID stays the exact
+// inverse of uuidString with no dependency on driver Scan quirks: pgtype's
+// Scan historically rejected some canonical strings depending on version,
+// which surfaced as silent 500s from identity-dependent POST handlers.
 func parseUUID(s string) (pgtype.UUID, bool) {
-	var u pgtype.UUID
-	if err := u.Scan([]byte(s)); err != nil || !u.Valid {
+	// Canonical 8-4-4-4-12 form only; anything malformed returns ok=false and
+	// callers treat that as "broken session", failing closed.
+	s = strings.TrimSpace(s)
+	if len(s) != 36 {
 		return pgtype.UUID{}, false
 	}
-	return u, true
+	var b [16]byte
+	pos := 0
+	nibble := -1
+	for i := 0; i < 36; i++ {
+		c := s[i]
+		if c == '-' {
+			// Hyphens must appear exactly at 8-4-4-4-12 boundaries.
+			if i != 8 && i != 13 && i != 18 && i != 23 {
+				return pgtype.UUID{}, false
+			}
+			continue
+		}
+		v := byte(0xff)
+		switch {
+		case c >= '0' && c <= '9':
+			v = c - '0'
+		case c >= 'a' && c <= 'f':
+			v = c - 'a' + 10
+		case c >= 'A' && c <= 'F':
+			v = c - 'A' + 10
+		default:
+			return pgtype.UUID{}, false
+		}
+		if nibble < 0 {
+			nibble = int(v)
+		} else {
+			b[pos] = byte(nibble<<4) | v
+			pos++
+			nibble = -1
+		}
+	}
+	if pos != 16 || nibble >= 0 {
+		return pgtype.UUID{}, false
+	}
+	return pgtype.UUID{Bytes: b, Valid: true}, true
 }
 
 // currentUserUUID resolves the session's user_id claim back to a database
