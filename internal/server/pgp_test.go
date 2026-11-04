@@ -88,7 +88,23 @@ func TestValidatePGPPublicKeyRoundTrip(t *testing.T) {
 	if !strings.HasPrefix(got, "-----BEGIN PGP PUBLIC KEY BLOCK-----") {
 		t.Errorf("canonical output is not an armored public block:\n%.80s", got)
 	}
-	if !strings.Contains(got, "test@example.com") {
+	// The User ID packet lives inside base64-armored binary, so it can never
+	// appear as plaintext in the block. Verify structurally instead: re-parse
+	// the canonical armor and confirm the identity survived normalization.
+	ring, err := openpgp.ReadArmoredKeyRing(strings.NewReader(got))
+	if err != nil {
+		t.Fatalf("re-parsing canonical armor: %v", err)
+	}
+	if len(ring) != 1 {
+		t.Fatalf("canonical key ring has %d entities, want 1", len(ring))
+	}
+	foundUID := false
+	for _, ident := range ring[0].Identities {
+		if strings.Contains(ident.Name, "test@example.com") {
+			foundUID = true
+		}
+	}
+	if !foundUID {
 		t.Error("canonical output dropped the user ID packet")
 	}
 	// Canonical text must itself re-validate (idempotent normalization).
