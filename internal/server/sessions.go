@@ -8,6 +8,7 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
+	"log"
 	"net/http"
 	"time"
 
@@ -156,6 +157,29 @@ func (a *App) RequireRole(roles ...string) func(http.Handler) http.Handler {
 			_, _ = w.Write([]byte("forbidden\n"))
 		})
 	}
+}
+
+// InvalidateUserSessions kills every live session belonging to userID when a
+// SessionInvalidator is wired (store.FallbackStore in production). Callers:
+// vendor approval (customer -> vendor promotion) and any future admin role or
+// status change. AGENTS.md §4 makes rotation mandatory on privilege change;
+// since scs' gob payload cannot be edited server-side, deleting OTHERS' rows
+// for that user is the correct primitive (the acting admin's own session rides
+// this very request and is untouched). A nil invalidator means an in-memory
+// dev store where no durable row exists — logged, never silent, because
+// forgetting this wiring would leave stale-role sessions alive in production.
+func (a *App) InvalidateUserSessions(ctx context.Context, userID string) error {
+	if a.invalid == nil {
+		log.Printf("server: session invalidation skipped for a privilege change (no SessionInvalidator wired)")
+		return nil
+	}
+	if userID == "" {
+		return errors.New("server: empty user id in session invalidation")
+	}
+	if err := a.invalid.InvalidateUserSessions(ctx, userID); err != nil {
+		return fmt.Errorf("server: invalidate sessions: %w", err)
+	}
+	return nil
 }
 
 // NewRandomToken returns n cryptographically-random bytes (default 32 => 256

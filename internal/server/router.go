@@ -78,6 +78,9 @@ type App struct {
 	sm        *scs.SessionManager
 	auth      AuthStore       // set by RegisterAuthRoutes (nil-safe: routes skip)
 	captcha   *CaptchaService // set by RegisterAuthRoutes (nil-safe: routes skip)
+	linker    SessionLinker   // set by RegisterAuthRoutes (optional: durable user_id stamp)
+	invalid   SessionInvalidator // set by RegisterCatalogRoutes (optional: role-change kill)
+	vendor    VendorStore     // set by RegisterCatalogRoutes (optional: catalog/vendor pages)
 	templates map[string]*template.Template
 }
 
