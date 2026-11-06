@@ -17,6 +17,8 @@ admin access over Dropbear-through-a-private-onion.
 | [SECURITY_AND_OPSEC.md](SECURITY_AND_OPSEC.md) | Threat model, Tor/onion hardening, nginx + firewall + tmpfs + Dropbear infrastructure controls, encryption at rest, data minimization, payment/escrow integrity, audit trail, anti-phishing measures, incident response |
 | [INSTALL.md](INSTALL.md) | Operator guide: prerequisites, quick start (`make install`), post-install steps, backup/panic-wipe runbooks |
 | [TASKS.md](TASKS.md) | Phased roadmap with current status |
+| [AUDIT.md](AUDIT.md) | Code Audit and action list |
+
 
 ## Tech Stack
 - **Go** (`chi` router, `html/template`, `scs` sessions, `pgx`/`sqlc`, `argon2id`)
