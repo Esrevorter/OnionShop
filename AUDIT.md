@@ -133,6 +133,6 @@ Rather than hand-rolling from zero, consider vendoring a small classless CSS bas
 
 1. **Stabilize the Foundation:** Fix the 4 ship-blocking config contradictions (HSTS, Port Mapping, Container Binding, CSP).
 2. **Add CI Smoke Test:** Ensure `docker compose up` actually serves the site and enforces the unified headers.
-3. **Resolve Auth/Authenticity:** Decide on the TLS/SPKI story, implement the two-step personal phrase login, and add TOTP 2FA.
+3. **Resolve Auth/Authenticity:** Abandon the TLS/SPKI implementation, implement the two-step personal phrase login, and add TOTP 2FA.
 4. **Database Hardening:** Revoke `UPDATE/DELETE` on the ledger, rename Redis `CONFIG`, and enable Tor PoW.
 5. **Feature & Test Parity:** Write tests for the existing Phase 4 catalog code, document the image pipeline, and begin building Phase 5 (Cart/Checkout).
