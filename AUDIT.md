@@ -92,6 +92,7 @@ Use radio inputs + labels + sibling selectors for bookmarkable, accessible tabs.
   <section class="panel p1">…</section>
   <section class="panel p2">…</section>
 </div>
+```
 
 ```css
 .tabs input { position: absolute; opacity: 0; }
@@ -100,10 +101,38 @@ Use radio inputs + labels + sibling selectors for bookmarkable, accessible tabs.
 
 label { padding: .5rem 1rem; cursor: pointer; border-bottom: 2px solid transparent; }
 input:checked + label { border-color: var(--accent); }
-input:focus-visible + label { outline: 2px solid var(--accent); outline-offset: 2px; }.tabs input { position: absolute; opacity: 0; }
-.panel { display: none; }
-#t1:checked ~ .p1, #t2:checked ~ .p2 { display: block; }
-
-label { padding: .5rem 1rem; cursor: pointer; border-bottom: 2px solid transparent; }
-input:checked + label { border-color: var(--accent); }
 input:focus-visible + label { outline: 2px solid var(--accent); outline-offset: 2px; }
+```
+
+#### Modals / Lightboxes
+Use the `:target` pseudo-class for overlays.
+*Note: Without JS, you cannot trap focus inside the modal. Keep modals non-critical (e.g., "About this image") and prefer inline `<details>` for important flows.*
+
+#### Autocomplete (Categories, Search Terms)
+Use `<input list>` and `<datalist>`. It is natively supported and requires no JS.
+
+#### Star-Rating Input
+Use the reverse-ordered radio button technique. Hide the actual radio buttons with `opacity: 0` and style the `label`s using CSS gradients or `clip-path`.
+
+#### Dark Mode Toggle
+Use a `POST` form that sets a theme cookie, and have the server render `<html data-theme="dark">`. Alternatively, rely purely on `@media (prefers-color-scheme: dark)`.
+
+#### Site Search from Address Bar
+Ship an `opensearch.xml` and `<link rel="search">`. Tor Browser/Firefox will natively pick it up, giving users a free UX win with zero JS.
+
+### 4.3. Bootstrap Options
+Rather than hand-rolling from zero, consider vendoring a small classless CSS base locally (no CDNs allowed per `AGENTS.md` §1).
+- **Pico.css:** (~10KB, MIT, semantic HTML, automatic dark mode, excellent forms).
+- **Water.css:** Extremely lightweight, classless.
+
+*Tor Constraints:* Avoid `backdrop-filter`-heavy "glassmorphism" as it can be resource-intensive or glitchy at the "Safest" security slider level. Test every pattern at all three Tor Browser security levels.
+
+---
+
+## 5. Recommended Action Sequence
+
+1. **Stabilize the Foundation:** Fix the 4 ship-blocking config contradictions (HSTS, Port Mapping, Container Binding, CSP).
+2. **Add CI Smoke Test:** Ensure `docker compose up` actually serves the site and enforces the unified headers.
+3. **Resolve Auth/Authenticity:** Decide on the TLS/SPKI story, implement the two-step personal phrase login, and add TOTP 2FA.
+4. **Database Hardening:** Revoke `UPDATE/DELETE` on the ledger, rename Redis `CONFIG`, and enable Tor PoW.
+5. **Feature & Test Parity:** Write tests for the existing Phase 4 catalog code, document the image pipeline, and begin building Phase 5 (Cart/Checkout).
