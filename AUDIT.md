@@ -92,6 +92,8 @@ Use radio inputs + labels + sibling selectors for bookmarkable, accessible tabs.
   <section class="panel p1">…</section>
   <section class="panel p2">…</section>
 </div>
+
+```css
 .tabs input { position: absolute; opacity: 0; }
 .panel { display: none; }
 #t1:checked ~ .p1, #t2:checked ~ .p2 { display: block; }
