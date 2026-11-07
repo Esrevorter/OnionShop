@@ -29,21 +29,102 @@
   - **Caveat:** anonymous attackers can mint fresh sessions to reset session-keyed limits. Wherever possible, key limits to the authenticated `user_id`; for pre-auth endpoints (login, registration, CAPTCHA), layer cheap friction first (image CAPTCHA + honeypot + global throughput cap — see AGENTS.md §3) so session-minting stays uneconomical.
 - **Time Synchronization:** Do not implement custom NTP logic. Rely on the host OS. Do not leak timezones in HTTP headers. All logs, tokens, and cron decisions use UTC end-to-end.
 - **Header Hygiene:** Strip/genericize the `Server:` header, never expose stack traces in error pages (render a generic template), and never register `pprof` or `expvar` routes. Serve uniform static assets (one CSS file, one font set, one image style) so per-page fingerprinting yields nothing.
-- **HTTPS / Onion TLS (defense-in-depth):** Terminate TLS at nginx using a **self-signed certificate
-  for the `.onion` hostname** (Let's Encrypt cannot validate .onion names via HTTP-01/DNS-01 in a
-  way that adds real trust; a CA-signed cert would falsely imply third-party attestation).
-  - Generate the key on the encrypted host, permission `0600`, owned by `root`, mode-readable only
-    by the nginx user via group.
-  - Pin the certificate **fingerprint (SPKI SHA-256)** in the PGP-signed announcement post and in
-    `pgp.txt`/help-center documentation so users can verify what they should expect in Tor Browser's
-    security info. Document clearly that this is authenticity-of-config, not identity-of-operator.
-  - If a future release ships a client (CLI/desktop) that consumes the API, enforce SPKI pinning in
-    that client and enable HSTS *there* — but keep browser-facing behavior conservative because
-    browsers treat self-signed + HSTS as a permanent lockout footgun.
-  - TLS config: minimum TLS 1.3 preferred, TLS 1.2 fallback with AEAD suites only
-    (`TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384`, `TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305`);
-    disable compression, renegotiation, and CBC padding paths; no OCSP stapling (leaks to CAs).
+- **HTTPS / Onion TLS — self-authenticating certificate, no certificate pinning, defense-in-depth**
 
+Terminate TLS at nginx using a **self-authenticating `.onion` TLS certificate**, not a public CA certificate. Public CAs such as Let’s Encrypt do not add meaningful trust for `.onion` names via HTTP-01/DNS-01, and a CA-signed `.onion` certificate can falsely imply third-party attestation. For `.onion` services, the authoritative trust anchor is the **v3 onion address itself**, because the address is derived from the service’s Ed25519 public key.
+
+Use an onion-bound certificate chain rather than a manually self-signed certificate:
+
+- The leaf certificate must contain the service’s `.onion` hostname in the Subject Alternative Name extension:  
+  `DNS:examplev3...onion`
+- The leaf certificate must include `EKU: TLS Web Server Authentication` and `CA:FALSE`.
+- Prefer an **Ed25519 leaf certificate** where client support is guaranteed. For broader browser/client compatibility, use an **ECDSA P-256 leaf certificate** signed by an Ed25519 onion-bound issuer.
+- The leaf certificate must be signed by an onion TLS issuer whose authority is certified by the onion service’s long-term Ed25519 key, or by a fresh Ed25519 subkey explicitly authorized by the onion key. This avoids unnecessary reuse of the long-term onion key while preserving the cryptographic binding to the `.onion` address.
+- Clients validate the certificate by verifying that the chain resolves to the public key encoded in the `.onion` hostname. They must not rely on public CA paths.
+- Certificates may be rotated freely. Do not publish, hard-code, or enforce SPKI fingerprint pins.
+
+Generate the leaf private key on the encrypted production host. The private key must never be imported from another machine, committed to source control, or exposed to unnecessary services. If nginx starts as root, use:
+
+```text
+owner: root
+group: root
+mode:  0600
+```
+
+If a non-root nginx worker must read the key directly, use a dedicated group and the least privilege necessary:
+
+```text
+owner: root
+group: nginx
+mode:  0640
+directory: 0750
+```
+
+Prefer TPM/HSM-backed key generation and storage where available. If software keys are used, keep them on an encrypted filesystem with strict access controls.
+
+Do not publish certificate fingerprints in the PGP-signed announcement, `pgp.txt`, help-center documentation, or client configuration. Instead, publish:
+
+- the canonical `.onion` URL,
+- the operator PGP key,
+- the statement that TLS authenticity is derived from the `.onion` address itself,
+- and a clear note that this authenticates the onion endpoint / possession of the onion key, not the real-world identity of the operator.
+
+Do not use SPKI pinning, HPKP-style pinning, or hard-coded certificate hashes. Certificate pinning is incompatible with safe rotation and creates unnecessary lockout risk. If a future CLI or desktop client consumes the API, it should implement **onion self-authentication validation**:
+
+1. Parse the requested `.onion` hostname.
+2. Derive or obtain the expected onion public key from the hostname.
+3. Verify that the presented TLS certificate chain is authorized by that onion key.
+4. Accept certificate rotation automatically as long as the onion-key binding remains valid.
+
+Do not enable HSTS for browser-facing self-authenticating onion endpoints unless clients fully support onion-native validation and have a safe recovery path for certificate rotation. For native API clients, HSTS may be used only if trust metadata is updateable and no permanent lockout can occur.
+
+**TLS configuration**
+
+Use the strongest practical TLS configuration:
+
+```text
+Preferred protocol: TLS 1.3 only
+Fallback: TLS 1.2 only if legacy compatibility is unavoidable
+```
+
+TLS 1.3 cipher suites:
+
+```text
+TLS_AES_256_GCM_SHA384
+TLS_CHACHA20_POLY1305_SHA256
+```
+
+If TLS 1.2 fallback is required, allow only forward-secret AEAD suites:
+
+```text
+TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384
+TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256
+```
+
+Key exchange preferences:
+
+```text
+Prefer: X25519
+Preferred post-quantum hybrid, if supported by OpenSSL/nginx: X25519MLKEM768 or X25519Kyber768
+Compatibility fallback: P-256
+```
+
+Disable all insecure or unnecessary TLS features:
+
+```text
+Disable TLS compression
+Disable legacy renegotiation
+Disable client-initiated renegotiation
+Disable static RSA key exchange
+Disable CBC-mode cipher suites
+Disable 3DES, RC4, NULL, EXPORT, and anonymous suites
+Disable SHA-1 certificate signatures
+Disable OCSP stapling
+Disable CRL fetching
+Disable Certificate Transparency expectations for onion certificates
+```
+
+OCSP, CRL, and CT mechanisms are unnecessary for self-authenticating onion certificates and can create metadata leaks or external dependencies. Trust is derived from the `.onion` address itself, not from a CA.
 - **Tor Daemon Hardening (`torrc`) — operational recap:** one public onion service per host role, `HiddenServiceDir` at `0700` owned by `tor`, `SocksPort 0` (or loopback-bound with `SocksPolicy reject *`), `HiddenServiceStatistics 0`, unprivileged systemd sandbox for the daemon, and updates only from the key-pinned torproject repository. The onion's `hs_ed25519_secret_key` lives on the encrypted volume (§5.5) and is backed up encrypted; rotation happens only with a PGP-signed migration announcement (§8).
 
 ## 2. Data Minimization & Privacy
