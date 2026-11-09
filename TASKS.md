@@ -98,15 +98,15 @@ egress are mandatory.)
       `TestLoginRecordsHistoryWithUTCTimeAndHost` / `TestLoginHistoryWriteErrorDoesNotBlockLogin`.
 
 ## Phase 4: Catalog & Vendors
-- [ ] Vendor registration and Admin approval flow (writes to audit log).
-- [ ] Product CRUD for vendors.
-- [ ] Public storefront, search, and category browsing.
-- [ ] Vendor profile pages (`/u/<handle>`): rating, sales count, ETA badge, "message vendor".
-- [ ] Order reviews/ratings (one per order line, editable window, plain forms).
-- [ ] Top-Vendors leaderboard cron snapshot + homepage widget.
+- [x] Vendor registration and Admin approval flow (writes to audit log).
+- [x] Product CRUD for vendors.
+- [x] Public storefront, search, and category browsing.
+- [x] Vendor profile pages (`/u/<handle>`): rating, sales count, ETA badge, "message vendor".
+- [x] Order reviews/ratings (one per order line, editable window, plain forms).
+- [x] Top-Vendors leaderboard cron snapshot + homepage widget.
 
 ## Phase 5: Cart, Checkout & BTCPay
-- [ ] Server-side session cart (Redis).
+- [x] Server-side session cart (Redis).
 - [ ] BTCPay API client + invoice-status **poller** goroutine (no webhooks — localhost-only
       hidden service is unreachable inbound; see ARCHITECTURE.md §2). Idempotent event application.
 - [ ] Checkout flow and QR code generation.
