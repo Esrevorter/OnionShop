@@ -52,7 +52,6 @@ services:
       dockerfile: Dockerfile
     <<: *default-hardening
     user: "1000:1000"                  # unprivileged app user
-    cap_add: [NET_RAW]                 # required for ping/curl health probes on alpine (no NET_ADMIN)
     environment:
       - ONIONSHOP_ADDR=0.0.0.0:8080    # contained-namespace bind
       - ONIONSHOP_NET_NEVER=1          # declares the NET_NEVER sandbox
@@ -107,7 +106,7 @@ services:
       --maxmemory 256mb --maxmemory-policy noeviction
       --bind 0.0.0.0
       --save "" --appendonly no
-      --rename-command FLUSHALL "" --rename-command DEBUG ""
+      --rename-command FLUSHALL "" --rename-command DEBUG "" --rename-command CONFIG ""
     networks: [internal_net]
     tmpfs: [/tmp]
     healthcheck:

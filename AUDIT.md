@@ -36,16 +36,16 @@ These items represent conflicts where the documentation explicitly forbids a con
   - **Action:** Implement a two-step login. `GET /login` takes a username; the server renders the user's personal phrase alongside the password field.
 - [ ] **Publish Both Certificate Fingerprints:** Tor Browser's cert viewer shows the *certificate's* SHA-256 fingerprint, not the Subject Public Key Info (SPKI) hash. Ordinary users cannot verify the SPKI pin.
   - **Action:** Update `pgp.txt` and announcements to include **both** the Cert SHA-256 and the SPKI SHA-256, with a screenshot guide for Tor Browser users.
-- [ ] **Enable Tor Proof-of-Work (PoW) DoS Defense:** Onion services are vulnerable to rendezvous circuit exhaustion.
+- [x] **Enable Tor Proof-of-Work (PoW) DoS Defense:** Onion services are vulnerable to rendezvous circuit exhaustion.
   - **Action:** Add `HiddenServicePoWDefensesEnabled 1`, `HiddenServicePoWQueueRate 25`, and `HiddenServicePoWQueueBurst 50` to `deploy/torrc` (requires Tor >= 0.4.8).
 - [ ] **Enforce Ledger Immutability at the DB Layer:** The ledger is described as "append-only," but the application user currently has `UPDATE`/`DELETE` privileges on ledger tables.
   - **Action:** `REVOKE UPDATE, DELETE ON ledger_lines FROM onionshop_app;`. Add a Postgres trigger to assert that debits equal credits for every transaction.
 - [ ] **Improve CAPTCHA Accessibility & Honeypot Security:** Visual-only CAPTCHAs exclude users. The honeypot field name (`sta`) is public in the open-source repo.
   - **Action:** Add a text/logic alternative to the CAPTCHA. Randomize the honeypot field name per-deployment via `.env` at install time, and add `aria-hidden="true" tabindex="-1" autocomplete="off"`.
 - [ ] **Prevent Username Enumeration on `/register`:** Ensure the registration endpoint returns a uniform success/error message (or uses email/PGP verification links) so attackers cannot harvest valid usernames via timing or error responses.
-- [ ] **Remove Unnecessary Linux Capabilities:** The `app` container has `cap_add: [NET_RAW]`. Busybox `wget` does not require raw sockets for TCP healthchecks.
+- [x] **Remove Unnecessary Linux Capabilities:** The `app` container has `cap_add: [NET_RAW]`. Busybox `wget` does not require raw sockets for TCP healthchecks.
   - **Action:** Remove `NET_RAW` to maintain the strict `cap_drop: [ALL]` baseline.
-- [ ] **Rename Redis `CONFIG` Command:** `SECURITY_AND_OPSEC.md` §6 requires dangerous commands to be disabled. The compose file renames `FLUSHALL` and `DEBUG` but misses `CONFIG`.
+- [x] **Rename Redis `CONFIG` Command:** `SECURITY_AND_OPSEC.md` §6 requires dangerous commands to be disabled. The compose file renames `FLUSHALL` and `DEBUG` but misses `CONFIG`.
   - **Action:** Add `--rename-command CONFIG ""` to the Redis entrypoint.
 
 ## 3. Functionality & Architecture Drift

@@ -16,6 +16,11 @@ HiddenServicePort 443 127.0.0.1:8443     # .onion:443 -> local HTTPS (TLS termin
 # If you also run a plain-HTTP fallback during migration ONLY (discouraged):
 # HiddenServicePort 8080 127.0.0.1:8080
 
+# Tor Proof-of-Work (PoW) DoS defense (requires Tor >= 0.4.8)
+HiddenServicePoWDefensesEnabled 1
+HiddenServicePoWQueueRate 25
+HiddenServicePoWQueueBurst 50
+
 # Do not advertise or accept exit traffic; this box serves one onion and nothing else.
 ORPort 0
 ExitRelay 0
