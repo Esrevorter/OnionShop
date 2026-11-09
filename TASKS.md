@@ -109,7 +109,7 @@ egress are mandatory.)
 - [x] Server-side session cart (Redis).
 - [x] BTCPay API client + invoice-status **poller** goroutine (no webhooks — localhost-only
       hidden service is unreachable inbound; see ARCHITECTURE.md §2). Idempotent event application.
-- [ ] Checkout flow and QR code generation.
+- [x] Checkout flow and QR code generation.
 - [ ] Multi-vendor order splitting (N vendor-scoped orders per checkout).
 - [ ] Wallets page: per-currency available balance + in-escrow total, deposit/withdraw UI
       (XMR support gated on BTCPay store config; ledger accounts per currency).
