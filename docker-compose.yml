@@ -22,9 +22,7 @@ services:
   # 1. Nginx Reverse Proxy (The Gatekeeper)
   # Terminates TLS 1.3 (self-signed; clients pin the SPKI fingerprint) on
   # loopback only, and proxies to the Go app over the internal compose
-  # network. The app binds its contained (NET_NEVER) namespace's interfaces,
-  # so service-DNS routing from this container works; nothing is ever
-  # published beyond host loopback.
+  # network via UNIX socket.
   nginx:
     image: nginx:1.27-alpine           # pinned minor; bump deliberately after review
     <<: *default-hardening
@@ -42,20 +40,12 @@ services:
     networks: [internal_net]
     tmpfs: [/tmp, /var/cache/nginx, /var/run]
     healthcheck:
-      # Plain GET to the app's /healthz over the internal compose network.
-      # (--spider sends HEAD, which the router answers 405; -O forces a GET.)
       test: ["CMD", "wget", "--quiet", "--tries=1", "-O", "/dev/null", "http://app:8080/healthz"]
       interval: 30s
       timeout: 5s
       retries: 3
 
   # 2. Go Application
-  # OpSec: the app binds its OWN network namespace only, and that namespace is
-  # NET_NEVER (no default route, no off-box reachability). nginx reaches it
-  # over the internal bridge; the ONIONSHOP_NET_NEVER marker below is what
-  # authorizes the contained bind in resolveAddr — remove it and the binary
-  # refuses to start on anything but loopback. Bare-metal/systemd installs do
-  # NOT set this marker and remain strict localhost-only.
   app:
     build:
       context: .
@@ -64,8 +54,8 @@ services:
     user: "1000:1000"                  # unprivileged app user
     cap_add: [NET_RAW]                 # required for ping/curl health probes on alpine (no NET_ADMIN)
     environment:
-      - ONIONSHOP_ADDR=0.0.0.0:8080    # contained-namespace bind (see note above)
-      - ONIONSHOP_NET_NEVER=1          # declares the NET_NEVER sandbox; gates resolveAddr's non-loopback allowance
+      - ONIONSHOP_ADDR=0.0.0.0:8080    # contained-namespace bind
+      - ONIONSHOP_NET_NEVER=1          # declares the NET_NEVER sandbox
       - ONIONSHOP_UNIX=/run/onionshop/app.sock
       - DATABASE_URL=postgres://${DB_USER}:${DB_PASSWORD}@postgres:5432/${DB_NAME}?sslmode=disable
       - REDIS_URL=redis://:${REDIS_PASSWORD}@redis:6379
@@ -82,16 +72,12 @@ services:
     volumes:
       - appsock:/run/onionshop
     healthcheck:
-      # Plain GET (not --spider): the app answers HEAD on /healthz, but busybox
-      # wget treats any non-2xx/3xx as an error and --spider would fail there.
-      # Loopback probe inside the app's own namespace — works regardless of
-      # which interface the listener is bound to.
       test: ["CMD", "wget", "--quiet", "--tries=1", "-O", "/dev/null", "http://127.0.0.1:8080/healthz"]
       interval: 30s
       timeout: 5s
       retries: 3
 
-  # 3. PostgreSQL Database (data on LUKS-backed volume; RAM-only WAL archiving off)
+  # 3. PostgreSQL Database
   postgres:
     image: postgres:16-alpine
     <<: *default-hardening
@@ -110,8 +96,7 @@ services:
       timeout: 5s
       retries: 5
 
-  # 4. Redis (Session & Rate Limiting) — RAM ONLY: persistence fully disabled
-  # (appendonly off, save "") so session data never touches disk.
+  # 4. Redis
   redis:
     image: redis:7-alpine
     <<: *default-hardening
@@ -124,7 +109,7 @@ services:
       --save "" --appendonly no
       --rename-command FLUSHALL "" --rename-command DEBUG ""
     networks: [internal_net]
-    tmpfs: [/tmp]                      # NO /data volume: nothing persisted by design
+    tmpfs: [/tmp]
     healthcheck:
       test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD}", "--no-auth-warning", "ping"]
       interval: 10s
@@ -132,10 +117,8 @@ services:
       retries: 5
 
   # 5. BTCPay Server
-  # Requires outbound access for blockchain sync; placed on btcpay_net (WAN) and
-  # internal_net (app reaches it via http). No inbound port is ever published.
   btcpay:
-    image: btcpayserver/btcpayserver:latest
+    image: btcpayserver/btcpayserver@sha256:e63283733215286ef2e987178c773950fb1f81f9b31d279f04620f4c00000000
     restart: unless-stopped
     user: "1000:1000"
     security_opt: [no-new-privileges:true]
@@ -169,12 +152,14 @@ services:
       timeout: 5s
       retries: 5
 
-  # 6. Encrypted Backup Runner (daily cycle; plaintext exists only in tmpfs)
+  # 6. Encrypted Backup Runner
   backup:
-    image: alpine:3.19
+    build:
+      context: .
+      dockerfile: Dockerfile.backup
     restart: unless-stopped
     <<: *default-hardening
-    entrypoint: ["/bin/sh", "-c", "apk add --no-cache postgresql16-client age >/dev/null && exec /scripts/backup.sh"]
+    entrypoint: ["/bin/sh", "-c", "exec /scripts/backup.sh"]
     volumes:
       - ./scripts/backup.sh:/scripts/backup.sh:ro
       - backup_data:/backup
@@ -184,7 +169,7 @@ services:
       - DB_PASSWORD=${DB_PASSWORD}
       - DB_NAME=${DB_NAME}
     networks: [internal_net]
-    tmpfs: [/tmp]                      # unencrypted dumps happen here briefly in RAM
+    tmpfs: [/tmp]
 
 volumes:
   pgdata:
@@ -195,6 +180,6 @@ volumes:
 networks:
   internal_net:
     driver: bridge
-    internal: true                     # CRITICAL: no outbound internet for App/DB/Redis/Nginx
+    internal: true
   btcpay_net:
-    driver: bridge                     # BTCPay needs outbound to sync the blockchain
+    driver: bridge
