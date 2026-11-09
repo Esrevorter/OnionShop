@@ -7,7 +7,6 @@ import (
 	"html/template"
 	"net"
 	"net/http"
-	"net_unix "net"
 	"strings"
 	"time"
 
@@ -197,7 +196,7 @@ func (a *App) Serve(ctx context.Context) error {
 		err     error
 	)
 	if a.cfg.UnixSocket != "" {
-		listener, err = netUnix.Listen("unix", a.cfg.UnixSocket)
+		listener, err = net.Listen("unix", a.cfg.UnixSocket)
 	} else {
 		listener, err = net.Listen("tcp", a.cfg.Addr)
 	}
