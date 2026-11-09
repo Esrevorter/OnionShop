@@ -69,10 +69,9 @@ const netNeverEnv = "ONIONSHOP_NET_NEVER"
 // allowContainerBind reports whether binding outside loopback is safe in the
 // current environment. It returns true only when ONIONSHOP_NET_NEVER is set
 // to a truthy value ("1", "true", "yes"): the compose stack sets it on the
-// app container, which runs with `network_mode: "container:tor"`-equivalent
-// isolation (NET_NEVER network + internal-only bridge), so a non-loopback
-// bind cannot be reached off-box. Everywhere else (bare metal, systemd,
-// misconfigured hosts) the strict localhost-only rule still applies.
+// app container, which runs with NET_NEVER network + internal-only bridge, so
+// a non-loopback bind cannot be reached off-box. Everywhere else (bare metal,
+// systemd, misconfigured hosts) the strict localhost-only rule still applies.
 func allowContainerBind() bool {
 	switch strings.ToLower(envOr(netNeverEnv, "")) {
 	case "1", "true", "yes":
@@ -117,6 +116,8 @@ func resolveAddr(raw string) (string, error) {
 func main() {
 	addr := flag.String("addr", envOr("ONIONSHOP_ADDR", ""),
 		"TCP listen address (loopback only, unless ONIONSHOP_NET_NEVER=1 in a contained network namespace; defaults to $ONIONSHOP_ADDR, then "+defaultAddr+")")
+	unixSock := flag.String("unix-socket", envOr("ONIONSHOP_UNIX", ""),
+		"UNIX domain socket path (compose/nginx deployment; empty defaults to TCP -addr)")
 	flag.Parse()
 
 	target, err := resolveAddr(*addr)
@@ -164,6 +165,7 @@ func main() {
 
 	app, err := server.New(server.Config{
 		Addr:          target,
+		UnixSocket:    *unixSock,
 		SecureCookies: envOr("ONIONSHOP_SECURE_COOKIES", "true") != "false",
 	}, deps, sessionStore)
 	if err != nil {

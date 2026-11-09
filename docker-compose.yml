@@ -35,6 +35,7 @@ services:
       - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
       - ./nginx/ssl:/etc/nginx/ssl:ro
       - ./web/static:/var/www/static:ro
+      - appsock:/run/onionshop
     depends_on:
       app:
         condition: service_healthy
@@ -65,6 +66,7 @@ services:
     environment:
       - ONIONSHOP_ADDR=0.0.0.0:8080    # contained-namespace bind (see note above)
       - ONIONSHOP_NET_NEVER=1          # declares the NET_NEVER sandbox; gates resolveAddr's non-loopback allowance
+      - ONIONSHOP_UNIX=/run/onionshop/app.sock
       - DATABASE_URL=postgres://${DB_USER}:${DB_PASSWORD}@postgres:5432/${DB_NAME}?sslmode=disable
       - REDIS_URL=redis://:${REDIS_PASSWORD}@redis:6379
       - BTCPAY_API_URL=http://btcpay:49392
@@ -77,6 +79,8 @@ services:
       redis:    { condition: service_healthy }
     networks: [internal_net]
     tmpfs: [/tmp]
+    volumes:
+      - appsock:/run/onionshop
     healthcheck:
       # Plain GET (not --spider): the app answers HEAD on /healthz, but busybox
       # wget treats any non-2xx/3xx as an error and --spider would fail there.
@@ -186,6 +190,7 @@ volumes:
   pgdata:
   btcpay_pgdata:
   backup_data:
+  appsock:
 
 networks:
   internal_net:

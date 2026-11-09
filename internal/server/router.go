@@ -7,6 +7,7 @@ import (
 	"html/template"
 	"net"
 	"net/http"
+	"net_unix "net"
 	"strings"
 	"time"
 
@@ -25,6 +26,10 @@ type Config struct {
 	// port 0 are refused at construction (AGENTS.md §1, SECURITY_AND_OPSEC.md
 	// §4). Sourced from -addr / ONIONSHOP_ADDR.
 	Addr string
+	// UnixSocket is the optional UNIX domain socket path. When set, Serve
+	// listens on this socket instead of TCP. Used by the compose/nginx
+	// deployment via the shared appsock volume.
+	UnixSocket string
 	// SecureCookies mirrors ONIONSHOP_SECURE_COOKIES (false only for local dev).
 	SecureCookies bool
 	// Sessions overrides DefaultSessionConfig() when non-nil.
@@ -33,27 +38,34 @@ type Config struct {
 
 // Validate enforces the bind-address rule in code so a mistyped env var can
 // never silently expose the app off-box. Loopback is always allowed; an
-// any-interface (":port" / "0.0.0.0:port") bind is accepted only because the
-// single authoritative guard — cmd/onionshop's resolveAddr, gated on
-// ONIONSHOP_NET_NEVER inside a container namespace with no off-box route —
-// already vetted it before the Config reaches this layer. Anything else
-// (e.g. a routable interface IP handed straight to server.New) stays refused.
+	// any-interface (":port" / "0.0.0.0:port") bind is accepted only because the
+	// single authoritative guard — cmd/onionshop's resolveAddr, gated on
+	// ONIONSHOP_NET_NEVER inside a container namespace with no off-box route —
+	// already vetted it before the Config reaches this layer. Anything else
+	// (e.g. a routable interface IP handed straight to server.New) stays refused.
 func (c Config) Validate() error {
-	if c.Addr == "" {
+	if c.Addr == "" && c.UnixSocket == "" {
 		return errors.New("server: empty listen address")
 	}
-	host, port, err := net.SplitHostPort(c.Addr)
-	if err != nil {
-		return fmt.Errorf("server: invalid listen address %q: %w", c.Addr, err)
+	if c.Addr != "" {
+		host, port, err := net.SplitHostPort(c.Addr)
+		if err != nil {
+			return fmt.Errorf("server: invalid listen address %q: %w", c.Addr, err)
+		}
+		switch host {
+		case "127.0.0.1", "::1", "localhost", "", "0.0.0.0":
+			// loopback: always fine; wildcard: only via the main.go container gate.
+		default:
+			return errors.New("server: refusing to bind " + c.Addr + " (loopback TCP only)")
+		}
+		if port == "0" {
+			return errors.New("server: refusing to bind port 0")
+		}
 	}
-	switch host {
-	case "127.0.0.1", "::1", "localhost", "", "0.0.0.0":
-		// loopback: always fine; wildcard: only via the main.go container gate.
-	default:
-		return errors.New("server: refusing to bind " + c.Addr + " (loopback TCP only)")
-	}
-	if port == "0" {
-		return errors.New("server: refusing to bind port 0")
+	if c.UnixSocket != "" {
+		if c.UnixSocket == "\x00" || len(c.UnixSocket) == 0 {
+			return errors.New("server: invalid unix socket path")
+		}
 	}
 	return nil
 }
@@ -173,13 +185,33 @@ func (a *App) Router() chi.Router { return a.router }
 // Handler returns the composed http.Handler (used by httptest suites).
 func (a *App) Handler() http.Handler { return a.router }
 
-// Serve runs the HTTP server over TCP until ctx is cancelled, then drains
-// gracefully. OnionShop serves TCP only (loopback-enforced via Config.Validate);
-// CI and Docker assume a plain -addr/ONIONSHOP_ADDR TCP listener.
+// Serve runs the HTTP server over TCP or UNIX until ctx is cancelled, then
+// drains gracefully. OnionShop serves TCP only (loopback-enforced via
+// Config.Validate); CI and Docker assume a plain -addr/ONIONSHOP_ADDR TCP
+// listener, or the UNIX socket path when configured for the compose/nginx
+// deployment.
 func (a *App) Serve(ctx context.Context) error {
-	errCh := make(chan error, 1)
+	var (
+		errCh   chan error = make(chan error, 1)
+		listener net.Listener
+		err     error
+	)
+	if a.cfg.UnixSocket != "" {
+		listener, err = netUnix.Listen("unix", a.cfg.UnixSocket)
+	} else {
+		listener, err = net.Listen("tcp", a.cfg.Addr)
+	}
+	if err != nil {
+		return err
+	}
+	a.srv.Addr = a.cfg.UnixSocket
+	if a.srv.TLSConfig != nil {
+		// TLS is terminated at nginx; the app never speaks TLS itself.
+		a.srv.TLSConfig = nil
+	}
+
 	go func() {
-		errCh <- a.srv.ListenAndServe()
+		errCh <- a.srv.Serve(listener)
 	}()
 
 	select {
@@ -276,4 +308,5 @@ func (a *App) handleNotFound(w http.ResponseWriter, r *http.Request) {
 	_, _ = w.Write([]byte("404 not found\n"))
 }
 
+var _ chi.Router // reserved: route mounting stays chi-typed (AGENTS.md §2)
 var _ = middleware.RequestID // reserved: request IDs arrive with structured logs in Phase 3
