@@ -122,19 +122,19 @@ egress are mandatory.)
 - [x] Vendor withdrawal requests and Admin approval (audit-logged).
 
 ## Phase 7: Support Ticketing & Messaging (ARCHITECTURE.md §7–8)
-- [ ] Migrations: `tickets`, `ticket_messages`, `threads`, `messages` (+ indexes, FKs).
-- [ ] Support ticket CRUD: categories, statuses (`open/answered/user_replied/resolved/closed`),
+- [x] Migrations: `tickets`, `ticket_messages`, `threads`, `messages` (+ indexes, FKs).
+- [x] Support ticket CRUD: categories, statuses (`open/answered/user_replied/resolved/closed`),
       order linking, priority; create form with CSRF + honeypot + rate limit per `user_id`.
-- [ ] Staff queue UI: filter/claim/reply/resolve with mandatory reason → audit log.
-- [ ] Ticket ↔ dispute escalation (ticket → dispute; dispute resolution closes ticket).
-- [ ] Private messaging: thread list, conversation view, unread-count nav badge (server-side).
-- [ ] Image CAPTCHA service: local PNG generation, single-use tokens bound to session+thread,
+- [x] Staff queue UI: filter/claim/reply/resolve with mandatory reason → audit log.
+- [x] Ticket ↔ dispute escalation (ticket → dispute; dispute resolution closes ticket).
+- [x] Private messaging: thread list, conversation view, unread-count nav badge (server-side).
+- [x] Image CAPTCHA service: local PNG generation, single-use tokens bound to session+thread,
       ~5 min expiry; required on every message POST (anti-phishing friction).
-- [ ] Message abuse controls: inert-text URLs, no attachments, "report message" → ticket.
-- [ ] Audited staff access to threads related to disputes/tickets.
+- [x] Message abuse controls: inert-text URLs, no attachments, "report message" → ticket.
+- [x] Audited staff access to threads related to disputes/tickets.
 
 ## Phase 8: Community & Content (ARCHITECTURE.md §9; optional)
-- [ ] News/announcements board (admin-authored, PGP-signable) + maintenance banner mode.
+- [x] News/announcements board (admin-authored, PGP-signable) + maintenance banner mode.
 - [ ] Help center pages: phishing education, harm reduction, bug bounty, canary.txt, pgp.txt.
 - [ ] Account upgrade flow (tiers gating features).
 - [ ] Raffle system (ledger-backed entries, audited `crypto/rand` draws) — only if demand.
