@@ -5,7 +5,7 @@ Status legend: `[x]` done and committed; `[ ]` not started.
 repository. Corrected 2026-10-31; documentation contradictions flagged during that review
 were also fixed: Django-style CSRF syntax, `Secure` cookie requirement, HSTS, and BTCPay
 webhooks. Superseded 2026-11-01 by the hardened OpSec baseline (SECURITY_AND_OPSEC.md):
-nginx reverse proxy + self-signed SPKI-pinned TLS on the onion is now the design, so cookies
+nginx reverse proxy + self-signed and self authenticated TLS on the onion is now the design, so cookies
 DO carry `Secure` and CSP includes `upgrade-insecure-requests`; browser-facing HSTS remains
 prohibited. OpenSSH is replaced by Dropbear over a private onion; tmpfs/LUKS2/default-deny
 egress are mandatory.)
