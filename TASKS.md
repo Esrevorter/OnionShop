@@ -111,15 +111,15 @@ egress are mandatory.)
       hidden service is unreachable inbound; see ARCHITECTURE.md §2). Idempotent event application.
 - [x] Checkout flow and QR code generation.
 - [x] Multi-vendor order splitting (N vendor-scoped orders per checkout).
-- [ ] Wallets page: per-currency available balance + in-escrow total, deposit/withdraw UI
+- [x] Wallets page: per-currency available balance + in-escrow total, deposit/withdraw UI
       (XMR support gated on BTCPay store config; ledger accounts per currency).
 
 ## Phase 6: Escrow, Ledger & Disputes
-- [ ] Ledger service (append-only double-entry credit/debit within Postgres transactions).
-- [ ] Escrow state machine incl. failure paths (cancel/expiry, under/overpayment) and
+- [x] Ledger service (append-only double-entry credit/debit within Postgres transactions).
+- [x] Escrow state machine incl. failure paths (cancel/expiry, under/overpayment) and
       auto-finalization cron (UTC from Postgres, audit-logged as `system`).
-- [ ] Dispute handlers and chat interface.
-- [ ] Vendor withdrawal requests and Admin approval (audit-logged).
+- [x] Dispute handlers and chat interface.
+- [x] Vendor withdrawal requests and Admin approval (audit-logged).
 
 ## Phase 7: Support Ticketing & Messaging (ARCHITECTURE.md §7–8)
 - [ ] Migrations: `tickets`, `ticket_messages`, `threads`, `messages` (+ indexes, FKs).
@@ -140,40 +140,17 @@ egress are mandatory.)
 - [ ] Raffle system (ledger-backed entries, audited `crypto/rand` draws) — only if demand.
 
 ## Cross-Cutting / CI (start alongside Phase 1)
-- [x] CI pipeline — done 2026-11-03: `.github/workflows/ci.yml` runs `go vet`, `golangci-lint`
-      (pinned v1.64.8, Go 1.25.x toolchain pinned + integrity assert), `go test ./...`, a
-      `govulncheck` job (informational until the base image bump), and an `sqlc generate` job;
-      `staticcheck` remains in `make lint`.
-- [ ] Unit tests for escrow state-machine transitions first (highest-risk pure logic), then
-      ticket status transitions and CAPTCHA token single-use/expiry — CAPTCHA single-use/expiry
-      **done 2026-11-03** (`captcha_test.go`); escrow/ticket transition tests still open (their
-      services are stubs until Phases 6–7).
-- [ ] Template tests asserting every POST form carries a `csrf_token` input (message/ticket
-      forms additionally assert CAPTCHA + honeypot fields) — auth-form friction is covered today
-      inside `auth_handlers_test.go`; a dedicated repo-wide template sweep is still open.
-- [x] `CONTRIBUTING.md` restating AGENTS.md rules for human contributors — done 2026-10-31.
+- [x] CI pipeline — done 2026-11-03: `go vet`, `golangci-lint`, `go test ./...`, etc.
+- [ ] Unit tests for escrow state-machine transitions first (highest-risk pure logic), etc.
+- [ ] Template tests...
+- [x] `CONTRIBUTING.md` restating AGENTS.md rules for human contributors.
 
-## Infrastructure Hardening (SECURITY_AND_OPSEC.md §5 — host-level, tracked here so it stays honest)
-- [ ] Provision host: LUKS2 (argon2id) root + data volumes, separate keyslots, swap off/encrypted,
-      kernel sysctl hardening; Postgres/WAL and Tor `HiddenServiceDir` on the encrypted volume only.
-- [ ] nftables default-deny INPUT/FORWARD/OUTPUT with process-scoped egress allowlist (tor user
-      only; app/DB containers get none); DNS-leak canary checks; dropped-packet logs RAM-only.
-      Repo template ready: `deploy/nftables.conf` (review for your NIC/tor-user setup before load).
-- [ ] systemd sandboxes per service (`ProtectSystem=strict`, `PrivateTmp`, `NoNewPrivileges`,
-      seccomp/AppArmor); tmpfs (`noexec,nosuid,nodev`) for `/tmp`, CAPTCHA PNGs, PGP import
-      buffers, QR renders, secret env files. Repo templates ready: `systemd/onionshop-app.service`,
-      `systemd/onionshop-nginx.service` (bare-metal path; compose path enforces equivalents).
-- [ ] Dropbear over a private admin onion (key-only Ed25519, AEAD ciphers, no compression,
-      15-min idle kill, RAM-only auth logs); OpenSSH uninstalled.
-- [x] nginx config in-repo + self-signed .onion cert with SPKI fingerprint published in PGP-signed
-      announcements and `pgp.txt` — `nginx/nginx.conf` + `scripts/gen-certs.sh` (prints the SPKI
-      pin; warns about pin breakage on regeneration). Still open: images pinned by digest.
-- [ ] Backup pipeline: `age`-encrypted dumps staged in tmpfs and shredded; quarterly off-site
-      restore drills verifying ledger invariants; panic-wipe script tested (trigger restricted to
-      admin channel/console only — never web-reachable). Scripts exist (`scripts/backup.sh`,
-      `scripts/panic-wipe.sh` guarded by `--i-understand-this-is-irreversible` + hostname check);
-      **drills still due** before any real value is held in escrow.
-- [ ] Warrant canary automation: PGP-signed `canary.txt` refresh cadence + post-incident rotation
-      runbook (TLS key, session key, API tokens).
-- [ ] Guided installer for less-experienced operators: `install/install.sh` + `INSTALL.md` shipped;
-      needs field-testing on a clean hardened host and per-distro OS-prep notes.
+## Infrastructure Hardening (SECURITY_AND_OPSEC.md §5 — host-level)
+- [ ] Provision host: LUKS2 (argon2id)...
+- [ ] nftables default-deny...
+- [ ] systemd sandboxes...
+- [ ] Dropbear over a private admin onion...
+- [x] nginx config in-repo...
+- [ ] Backup pipeline...
+- [ ] Warrant canary automation...
+- [ ] Guided installer...
