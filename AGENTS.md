@@ -1,63 +1,27 @@
 # AI Agent Rules & Constraints
 
-## 1. Absolute Prohibitions
-- **NO JAVASCRIPT:** Do not write, suggest, or import ANY JavaScript, TypeScript, React, Vue, Alpine, or HTMX. 
-- **NO CDNs:** All CSS, fonts, and images must be served locally.
-- **NO IP TRACKING:** Never log, store, or use the client IP address. All traffic comes from `127.0.0.1` via Tor.
+## 1. Absolute prohibitions
+- **No JavaScript:** Do not write, suggest, or import JavaScript, TypeScript, React, Vue, Alpine, or HTMX.
+- **No CDNs:** Serve CSS, fonts, and images locally.
+- **No IP tracking:** Never log, store, or use the client IP address.
 
-## 2. Go & Backend Standards
-- **Toolchain: go.mod requires Go 1.25; CI pins 1.25.x** (golangci-lint v1.64.8 can only parse
-  export data from a matching compiler — see `.github/workflows/ci.yml`). Routing stays on
-  `chi`: even though modern stdlib `http.ServeMux` supports method-prefixed patterns
-  (`"GET /healthz"`) and `r.PathValue()`, this project routes via `chi` patterns + explicit
-  `r.Method`/middleware checks. Do not reintroduce stdlib-only routing assumptions.
-- Use `html/template` for all rendering (never `text/template`) to ensure automatic XSS escaping.
-- Use `golang.org/x/crypto/argon2` for password hashing.
-- Use `jackc/pgx` or `sqlc` for database interactions. Do not use GORM.
-- Handle all errors explicitly. Do not use `_ =` to ignore errors in production code.
-- Use `context.Context` for all database and external API calls to prevent goroutine leaks.
+## 2. Go and backend standards
+- Go toolchain is pinned by `go.mod` and CI. The current Go 1.25.x pin is a project/tooling decision; do not claim individual dependencies require that version unless verified from their module metadata.
+- Keep routing on chi and use explicit method/middleware checks.
+- Use `html/template` for HTML rendering, Argon2id for password hashing, and pgx/sqlc for database work. Do not use GORM.
+- Handle errors explicitly; use context for database and external API calls.
 
-## 3. Frontend & UI Standards
-- Use semantic HTML5.
-- Use standard HTML forms (`method="POST"`) for all state-changing actions.
-- Use URL query parameters (`?page=2&sort=price`) for filtering and pagination.
-- Include a CSRF hidden input in every POST form using Go template syntax —
-  `{{/* html/template, NOT Django syntax */}}`:
-  ```html
-  <form method="POST" action="/cart/add">
-    <input type="hidden" name="csrf_token" value="{{.CsrfToken}}">
-    ...
-  </form>
-  ```
-  Never write `{% csrf_token %}`; that is Django template syntax and does not exist in `html/template`.
-- Use CSS `:checked` or `<details>/<summary>` for any UI interactivity (dropdowns, accordions).
-- **CAPTCHA without JavaScript:** challenges are server-rendered — a locally generated image
-  (`/captcha/<token>.png`, served from `img-src 'self'`) plus a form answer; tokens are
-  single-use, bound to the session, and expire in minutes. Never embed external CAPTCHA
-  services (hCaptcha/reCAPTCHA/Turnstile) — they are CDNs and deanonymizing. Honeypot text
-  inputs (`name="sta"`, hidden via CSS only) accompany registration, support-ticket, and
-  message forms as cheap secondary friction.
-- **Messaging & ticketing forms:** every message/ticket-reply `POST` carries CSRF token +
-  CAPTCHA + honeypot; message bodies render as escaped plain text; user-posted URLs must be
-  output as inert text (never auto-linked) to resist phishing lures. Unread-count badges are
-  computed server-side per page render (no polling, no JS).
+## 3. Frontend and UI standards
+- Use semantic HTML and standard POST forms for state changes.
+- Include CSRF hidden inputs in every POST form using Go template syntax.
+- Use CSS `:checked` or `<details>/<summary>` for interactivity.
+- CAPTCHA challenges are locally generated, single-use, session-bound, and short-lived. Do not use external CAPTCHA/CDN services. Registration, ticket, and message forms use the documented honeypot field.
+- Ticket/message content is escaped plain text; user URLs remain inert. Unread badges are rendered server-side.
 
-## 4. Security & Tor OpSec
-- Never use `fmt.Println` or `log.Printf` to log sensitive user data, passwords, or PGP keys.
-- Always validate and sanitize inputs on the server side.
-- **Cookie flags:** Set `HttpOnly`, `Secure`, and `SameSite=Strict` on every cookie. The onion
-  serves HTTPS terminated at nginx with a self-signed, SPKI-pinned certificate
-  (SECURITY_AND_OPSEC.md §1), so the `Secure` flag is required — it guarantees cookies never
-  travel over the plain-HTTP redirect port even if a user types a bare `http://` URL. Do **not**
-  emit browser-facing HSTS (self-signed + HSTS is a permanent lockout footgun); authenticity is
-  established by SPKI-fingerprint pinning in PGP-signed announcements instead.
-- Session IDs: generate with ≥128 bits of entropy from `crypto/rand`, rotate the session on
-  login and on privilege change, and enforce both idle and absolute expiry.
-- Password hashing: `argon2id` with a per-user random salt; baseline parameters
-  `time=3, memory=64MB, threads=4, keyLen=32`. Store parameters alongside the hash so they can
-  be upgraded over time. Hash nonexistent users too (dummy verify) to equalize login timing.
-- PGP: the server stores only **public** keys. Decryption of shipping addresses happens
-  client-side (vendor's own machine); private key material must never touch the server.
-- **Local sockets only:** the app listens on a UNIX socket (or loopback TCP) behind nginx; never
-  bind any public interface, and never reintroduce OpenSSH on clearnet — remote admin rides the
-  Dropbear-over-private-onion channel (SECURITY_AND_OPSEC.md §5.4).
+## 4. Security and Tor operations
+- Never log passwords, private PGP keys, or sensitive user data.
+- Set `HttpOnly`, `Secure`, and `SameSite=Strict` on cookies. Do not emit browser-facing HSTS without a safe, tested onion TLS recovery path.
+- Session IDs require at least 128 bits of CSPRNG entropy; rotate on login/privilege change and enforce idle and absolute expiry.
+- The server stores PGP public keys only; private key material must never touch the server.
+- App listeners must use a UNIX socket or loopback TCP except an explicitly reviewed contained namespace. Never bind a public host interface.
+- TLS identity policy: do not claim or implement SPKI pinning. The current cert script generates a generic self-signed test certificate, not an onion-authenticated certificate. Do not describe it as production-authenticating or ask users to bypass certificate warnings. Production requires a separately verified onion-authenticated trust mechanism.

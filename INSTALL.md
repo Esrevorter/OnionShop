@@ -1,137 +1,52 @@
 # Installation & Operations Guide
 
-Audience: operators deploying the full OnionShop stack. The guided installer
-(`install/install.sh`) automates everything that is **safe to automate**; destructive or
-irreversible host-level hardening stays a **manual gate** by design — an installer that silently
-encrypts disks or loads firewall rules is a footgun, not a feature (SECURITY_AND_OPSEC.md §5).
+This repository includes a development compose stack and a guided installer, but they are **not a certification of production readiness**. Read `PRODUCTION_READINESS.md` and resolve every production gate before handling real users, credentials, or funds. The current TLS generator makes a generic self-signed certificate; it is not onion-bound and its SPKI output is not an authentication mechanism.
 
-If you are only *developing*, you don't need this file: `make up && make run` is enough.
+## Development prerequisites
 
----
+- Go toolchain matching `go.mod` (Go 1.25.x for the current CI configuration)
+- sqlc v1.27.0 (`go install github.com/sqlc-dev/sqlc/cmd/sqlc@v1.27.0`)
+- Docker Engine with Compose v2 for the compose stack
 
-## 1. Prerequisites (manual — verify BEFORE installing)
+Run tests and build with:
 
-| # | Requirement | Why / how to check |
-|---|---|---|
-| 1 | **LUKS2 full-disk encryption** (argon2id), separate keyslots for root vs data; swap off or encrypted | Postgres data dir, WAL, and Tor `HiddenServiceDir` must live on the encrypted volume only. `lsblk -f` should show `crypto_LUKS` under every data mount. |
-| 2 | **nftables default-deny** loaded from `deploy/nftables.conf` (adapt NIC name & tor uid first) | INPUT/FORWARD/OUTPUT all default-drop; egress allowed **only** for the `tor` user. Verify: `nft list ruleset \| head -30`. |
-| 3 | **Tor daemon** running with the hidden service from `deploy/torrc` (HSv3, port 80→`127.0.0.1:8443`, no exit relay) | `tor --verify-config`; `HiddenServiceDir` on the LUKS volume. |
-| 4 | **Dropbear over a private admin onion** installed & tested; OpenSSH server uninstalled | Remote admin path per SECURITY_AND_OPSEC.md §5.4. Do NOT rely on this installer to open your admin channel — test it first. |
-| 5 | Kernel sysctl hardening applied (`SECURITY_AND_OPSEC.md` §sysctl block) | `sysctl kernel.kptr_restrict=2` etc. |
-| 6 | Docker Engine + **compose v2 plugin**, `git`, `openssl` | `docker compose version` must succeed. (`age` is only needed once you enable the backup sidecar; busybox `nc` ships inside the images.) |
-| 7 | tmpfs mounts: `/tmp` (`noexec,nosuid,nodev`); compose adds RAM-only volumes itself | `mount \| grep tmpfs`. |
-
-The installer enforces these gates mechanically — it **aborts** (exit 1) unless:
-- you run under `sudo` (root) with `docker`, `openssl`, and the compose v2 plugin present (§6 deps);
-- the host-hardening marker `/.onionshop-host-hardened` exists, which you may only `touch` after
-  items **1–4** are verifiably done (LUKS2, nftables, Tor hidden service, Dropbear admin onion);
-- `web/static/` is present (sanity check before images are built).
-
-`--check-only` runs the phase-0 preflight audit only (deps + git provenance) and exits without any
-side effects; everything past that point is gated. Note `.env` needs no pre-existing setup — the
-installer creates it at mode 600 and never overwrites values already in it.
-
-## 2. Quick start (compose path — recommended)
-
-```bash
-git clone <your-verified-source> onionshop && cd onionshop
-git log --oneline -1                 # verify provenance against signed announcements
-make install                         # == sudo ./install/install.sh — creates .env (mode 600),
-                                     #    generating any missing secrets; edit DB_USER/DB_NAME
-                                     #    in .env first if the defaults don't fit your Postgres
+```sh
+make test
+make build
 ```
 
-What `install.sh` does, phase by phase (all idempotent — existing values are never overwritten):
+`make build` and `make test` invoke `sqlc generate`; generated code is ignored in Git. Compose interpolation requires a private `.env` file. Use non-production credentials and do not expose development services to a public interface.
 
-1. **Preflight** — dependency checks (`docker`, `openssl`, compose v2), git-provenance warning;
-   with `--check-only` it stops here after the audit.
-2. **Host-hardening gate** — aborts unless `/.onionshop-host-hardened` exists (you create it only
-   after §1 items 1–4; the file's absence is deliberate friction, its presence your attestation).
-3. **Secrets** — generates `DB_PASSWORD`, `REDIS_PASSWORD`, `SESSION_HASH_KEY` (64 hex from
-   `openssl rand`) and defaults `DB_USER`/`DB_NAME`, appending them to `.env` (mode 600) while
-   keeping every pre-existing value; warns loudly if a `GITHUB_PAT` line exists (remove it).
-   Note: `SESSION_HASH_KEY` is dual-purpose — besides session handling it also derives the
-   CAPTCHA HMAC key at boot (`SHA-256("onionshop:captcha:" + SESSION_HASH_KEY)`), so rotating
-   it additionally invalidates any outstanding CAPTCHA challenges (users simply re-solve a
-   fresh puzzle; no data loss). The template directory defaults to `web/templates` inside the
-   image; set `ONIONSHOP_TEMPLATE_DIR` in `.env` only if you ship templates elsewhere — a bad
-   path fails the boot loudly rather than serving half-rendered auth forms.
-4. **Certificates** — runs `scripts/gen-certs.sh` *only if* `nginx/ssl/onion.crt` is absent:
-   self-signed **Ed25519** cert for the onion, key in `nginx/ssl/` (mode 600, gitignored), prints
-   the **SPKI fingerprint** and saves it to `/tmp/onionshop-spki.txt` (RAM only) — record it now.
-   An existing cert is left untouched so published pins stay valid.
-5. **Static assets sanity** — refuses to proceed if `web/static/` is missing.
-6. **Build & start** — `docker compose build && docker compose up -d`, then polls until the app
-   answers `/healthz` over the UNIX socket inside the container (up to ~60 s).
-7. **Post-install checklist** — prints the remaining manual steps (§4 below).
+## Deployment order (review-only until production gates are resolved)
 
-Useful variants:
-```bash
-sudo ./install/install.sh --check-only   # dry-run: preflight + what WOULD change, no side effects
-make compose-config                      # render merged compose file for review
-make certs                               # regenerate cert alone (breaks SPKI pins! see script warning)
+1. **Prepare the host.** Design and verify LUKS2, swap, nftables, Tor, and admin access on a disposable system first. Do not blindly apply `deploy/nftables.conf`, `deploy/torrc`, or the systemd units to a remote host.
+2. **Prepare secrets offline.** Generate an age keypair off-host; put only the recipient/public key in `AGE_PUBLIC_KEY`. Keep the identity/private key offline. Configure unique database, Redis, session, and BTCPay credentials in a mode-0600 `.env`. The compose file includes a backup sidecar, so the public age recipient is required for it to function.
+3. **Review and validate configuration.** Confirm the onion hostname, host-to-container port mappings, storage mounts, network egress, users/groups, and every image digest against authoritative registry metadata. `docker compose config --quiet` validates syntax/interpolation only; it does not validate security or service compatibility.
+4. **Provide TLS material.** The current `scripts/gen-certs.sh` output is self-signed and has no onion hostname SAN or onion-key authorization. It is suitable only for local testing. Production needs a supported, browser-compatible onion-authentication plan and matching certificate provisioning before nginx is exposed. Do not publish or pin the generated SPKI hash.
+5. **Build and test on an isolated host.** Run migrations, verify the application socket and proxy path, exercise payment polling against a test BTCPay instance, and verify backups/restores before any real value is introduced.
+6. **Bring up Tor only after checks pass.** Tor port 80 should reach nginx's HTTP redirect listener (host loopback port 8080); onion port 443 should reach nginx TLS (host loopback port 8443). Verify both paths from Tor Browser and verify certificate behavior without bypassing browser warnings.
+7. **Verify and monitor.** Inspect published listeners and routes, test that application/Postgres/Redis have no unintended egress, run a complete restore drill, and keep operational/canary procedures current.
+
+The sequence above documents required operator work; it does not claim all these controls are currently automated or fully implemented. The current installer must not be used to bypass these gates.
+
+## Compose validation
+
+With a complete `.env`:
+
+```sh
+docker compose config --quiet
+docker compose build
+docker compose ps
 ```
 
-## 3. Bare-metal path (no Docker)
+`docker compose config` may print a warning/error for missing environment values; fix those rather than treating successful parsing as evidence of a safe deployment.
 
-For operators who want systemd instead of containers (same threat model, more work):
+## Backup and restore
 
-1. Build: `make build` → copy `./onionshop` binary to `/usr/local/bin/`.
-2. Install units: `systemd/onionshop-app.service` and `systemd/onionshop-nginx.service` →
-   `/etc/systemd/system/`. They already carry the sandboxing baseline (`ProtectSystem=strict`,
-   `PrivateTmp`, `NoNewPrivileges`, `SystemCallFilter`, `MemoryMax`, `RuntimeDirectory=` providing
-   the tmpfs socket dir) — review `User=`/paths for your layout.
-3. Run migrations against your local Postgres (`make migrate`), point `DATABASE_URL`/`REDIS_URL`
-   env at localhost, and pass `--unix-socket /run/onionshop/app.sock` (units do this).
-4. nginx: install `nginx/nginx.conf` as a site config; ensure `ssl/` paths and the static mount
-   match, and that nginx's user is in the group owning the socket (gid 101 convention).
-5. Tor: `deploy/torrc` HiddenServicePort already targets `127.0.0.1:8443`.
+Backups are encrypted to the configured age recipient. Keep the corresponding private identity offline and separate from the backup host. A successful backup command alone does not prove recoverability: periodically decrypt and restore into an isolated throwaway database and verify application data and ledger invariants.
 
-## 4. After installation (mandatory)
+The backup runner accepts `AGE_PRIVATE_KEY_PATH` only for an optional local decryptability check; do not put the private key in the compose environment or on the backup host. If unset, that check is skipped and a restore drill remains mandatory.
 
-- [ ] Point Tor at nginx and reload: `HiddenServicePort 80 127.0.0.1:8443` → `systemctl reload tor`.
-- [ ] Publish the **onion hostname + SPKI fingerprint** through your authenticated channel and add
-      the fingerprint to `pgp.txt`/PGP-signed announcements (SECURITY_AND_OPSEC.md §1). Clients pin
-      the fingerprint; regenerating the cert breaks every existing pin.
-- [ ] Audit listeners: `ss -tulpn | grep -v 127.0.0.1` must return **nothing**.
-- [ ] DNS-leak canary: from the app container, any attempt to resolve externally must fail
-      (egress is tor-uid only): `docker compose exec app nslookup example.com || true` → expect failure.
-- [ ] **Restore drill**: run `scripts/backup.sh`, copy the `.age` file off-host, restore into a
-      throwaway compose project, and verify ledger invariants before holding real value.
-- [ ] Test `scripts/panic-wipe.sh` in dry mode (`make panic-wipe-dry`); understand that the real
-      trigger is restricted to the admin channel/console — it is never web-reachable.
-- [ ] Schedule backups + warrant-canary refresh (cron/timer; see TASKS.md §Infrastructure Hardening).
-- [ ] Remove any leftover credentials from `.env` that the deployment does not need (the installer
-      warns about `GITHUB_PAT`; same rule as AGENTS.md — secrets are generated, never pasted in).
+## Panic procedure
 
-## 5. Operations runbook
-
-| Task | Command |
-|---|---|
-| Status / logs | `docker compose ps`, `docker compose logs -f app nginx` |
-| Backup now | `./scripts/backup.sh` (age-encrypted dump staged in tmpfs, plaintext shredded) |
-| Restore | decrypt with the **offline** age private key, load into a throwaway DB, verify ledger invariants, only then consider a production restore (see `scripts/backup.sh` header for the exact dump format; drill first!) |
-| Rotate session keys | bump `SESSION_HASH_KEY`, `docker compose up -d app` (sessions invalidate — acceptable; also invalidates outstanding CAPTCHA challenges, which is harmless: forms simply re-render a fresh puzzle) |
-| Update images | edit tags deliberately, `docker compose pull`, `up -d`, re-audit §4 checklist |
-| Emergency | `./scripts/panic-wipe.sh --i-understand-this-is-irreversible` (console/admin-onion only) |
-| Uninstall (soft) | `docker compose down -v` — removes RAM-only state; disk artifacts remain |
-
-## 6. Troubleshooting
-
-- **"app never became healthy"** — `docker compose logs app`. Most common cause: the shared
-  `appsock` volume isn't mounted at `/run/onionshop` in both containers, or the app uid/gid
-  (1000:101) can't write the socket dir.
-- **nginx 502** — socket missing or wrong gid; check `ls -l` inside the nginx container:
-  `docker compose exec nginx ls -l /run/onionshop`.
-- **Cookie dropped / login loop** — you're browsing plain HTTP. The onion serves HTTPS only;
-  cookies are `Secure` by policy (AGENTS.md §4). For local dev without TLS set
-  `ONIONSHOP_SECURE_COOKIES=false` — **never** in production.
-- **Healthcheck flapping** — busybox `nc -U` needed inside the image; rebuild after Dockerfile
-  changes (`docker compose build --no-cache app`).
-
-## 7. Supply chain
-
-- Build images from this repo yourself (`make install` does); do not pull third-party app images.
-- Base images are tag-pinned by minor version; moving to digest pinning is tracked in TASKS.md.
-- Verify the checkout against signed release announcements before installing (installer warns when
-  provenance can't be checked).
+`scripts/panic-wipe.sh` is irreversible. It removes project secrets and volumes, but `rm`/`shred` cannot guarantee erasure from SSDs, snapshots, copy-on-write filesystems, or journaled storage. Persistent data denial depends on LUKS key destruction or an appropriate cryptographic erase performed through a separately tested manual procedure. Test only on a throwaway host.

@@ -11,19 +11,19 @@ down: ## stop the stack (keeps volumes)
 compose-config: ## validate docker-compose.yml after edits
 	docker compose config >/dev/null && echo OK
 
-build: ## build the Go binary locally
+build: sqlc ## build the Go binary locally
 	go build -o bin/onionshop ./cmd/onionshop
 
 run: ## run locally against loopback TCP (dev only)
 	ONIONSHOP_SECURE_COOKIES=false go run ./cmd/onionshop -addr 127.0.0.1:8080
 
-test:
+test: sqlc
 	go test ./...
 
 vet:
 	go vet ./...
 
-lint: vet
+lint: sqlc vet
 	staticcheck ./...
 	golangci-lint run
 
@@ -33,7 +33,7 @@ migrate:
 migrate-down:
 	migrate -path db/migrations -database "$(DATABASE_URL)" down 1
 
-sqlc:
+sqlc: ## generate sqlc bindings from db/schema.sql and db/query/**
 	sqlc generate
 
 certs: ## generate nginx self-signed cert + print SPKI pin to record (scripts/gen-certs.sh)

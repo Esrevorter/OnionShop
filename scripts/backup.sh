@@ -8,7 +8,7 @@
 set -eu
 
 RETENTION_DAYS="${RETENTION_DAYS:-14}"
-INTERVAL="${INTERBACK_INTERVAL_SECONDS:-${INTERVAL_SECONDS:-86400}}"
+INTERVAL="${INTERVAL_SECONDS:-86400}"
 BACKUP_DIR="${BACKUP_DIR:-/backup}"
 PGHOST="${PGHOST:-postgres}"
 
@@ -23,8 +23,18 @@ run_once() {
   log "encrypting with age"
   age -r "$AGE_PUBLIC_KEY" -o "$ENC.tmp" "$PLAIN"
   mv "$ENC.tmp" "$ENC"; sync
-  # Verify decryptability before wiping the plaintext (a corrupt backup is no backup)
-  age -d -i /nonexistent "$ENC" >/dev/null 2>&1 || log "WARN: decryption check needs the private key; skipping (verify during restore drills)"
+  # Verify decryptability when a private key is available; don't ever block a run
+  # on a missing offline key. The real validation happens during the restore drill.
+  AGE_KEY_PATH="${AGE_PRIVATE_KEY_PATH:-}"
+  if [ -n "$AGE_KEY_PATH" ] && [ -f "$AGE_KEY_PATH" ]; then
+    if age -d -i "$AGE_KEY_PATH" "$ENC" >/dev/null 2>&1; then
+      log "decryptability check passed"
+    else
+      log "WARN: decryptability check failed for $ENC; verify key material before restore"
+    fi
+  else
+    log "WARN: AGE_PRIVATE_KEY_PATH unset; skipping decryptability check (verify in restore drill)"
+  fi
   shred -u "$PLAIN" 2>/dev/null || rm -f "$PLAIN"
   log "pruning archives older than ${RETENTION_DAYS} days"
   find "$BACKUP_DIR" -name '*.sql.age' -mtime "+$RETENTION_DAYS" -delete

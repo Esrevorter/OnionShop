@@ -1,12 +1,17 @@
 #!/usr/bin/env bash
-# Panic wipe — immediate denial of data under coercion (SECURITY_AND_OPSEC.md
-# §Incident Response). TRIGGER ONLY FROM YOUR AUTHENTICATED PRIVATE CHANNEL.
+# Panic wipe — removes OnionShop secrets and data on this host.
+# TRIGGER ONLY FROM YOUR AUTHENTICATED PRIVATE CHANNEL.
 # Irreversible. Test the procedure quarterly against a THROWAWAY host, never prod.
+#
+# IMPORTANT: rm removes directory entries; it is NOT a secure erase on SSDs,
+# copy-on-write filesystems, snapshots, or journaled storage. Encryption at rest
+# and offline destruction of the LUKS keyslots are the meaningful data-denial
+# controls. This script deliberately does not attempt to re-key a live system.
 set -uo pipefail
 
 usage() {
   cat >&2 <<'USAGE'
-panic-wipe.sh — destroys ALL OnionShop secrets and data on this host.
+panic-wipe.sh — stops OnionShop and removes its secrets and Docker volumes.
 Refuses to run without explicit confirmation flags:
   --i-understand-this-is-irreversible   required human authorization
   --host=<expected-hostname-or-onion>   guard against running on the wrong box
@@ -36,25 +41,27 @@ for u in onionshop-app onionshop-nginx onionshop-postgres onionshop-redis onions
   systemctl stop "$u" 2>/dev/null || true
 done
 
-log "2/6 shredding app/nginx secrets"
-shred -fu nginx/ssl/onion.key 2>/dev/null || rm -f nginx/ssl/onion.key
-shred -fu .secrets/* 2>/dev/null || rm -rf .secrets
-shred -fu .env 2>/dev/null || rm -f .env
+log "2/6 removing app/nginx secret files (not a secure erase on persistent storage)"
+rm -f -- nginx/ssl/onion.key .env
+rm -rf -- .secrets
 
-log "3/6 destroying Tor hidden-service private keys"
+log "3/6 removing Tor hidden-service private keys"
+# Tor v3 keys include hs_ed25519_secret_key; remove the entire service dirs
+# rather than relying on guessed key filenames. Ensure the Tor service is stopped.
 for d in /var/lib/tor/onionshop /var/lib/tor/data/onionshop; do
-  [[ -d $d ]] && { shred -fu "$d"/hostname "$d"/private_key 2>/dev/null || rm -rf "$d"; }
+  [[ -d "$d" ]] && rm -rf -- "$d"
 done
 
-log "4/6 wiping tmpfs logs/sockets"
-rm -rf /run/onionshop/* /dev/shm/onionshop* 2>/dev/null || true
+log "4/6 removing tmpfs logs/sockets and pruning volatile journal"
+rm -rf -- /run/onionshop /dev/shm/onionshop* 2>/dev/null || true
 journalctl --rotate >/dev/null 2>&1 || true
 journalctl --vacuum-size=1 >/dev/null 2>&1 || true
 
-log "5/6 removing database volumes (LUKS volume stays; keys destroyed above)"
-docker volume ls -q | grep -E 'onionshop|pgdata|btcpay' | xargs -r docker volume rm -f 2>/dev/null || true
+log "5/6 removing this Compose project's database volumes"
+# `compose down -v` above removes volumes declared by this project. Do not
+# pattern-match and delete arbitrary host Docker volumes: names are not ownership.
 
-log "6/6 final: verify nothing recoverable remains, then power off."
-log "NOTE: full-disk LUKS header re-key or secure-erase is a MANUAL next step;"
-log "this script cannot safely re-key a live encrypted root by itself."
+log "6/6 final: verify remaining artifacts and power off."
+log "LUKS keyslot/header destruction or cryptographic erase is a MANUAL next step."
+log "rm is not secure erase; rely on LUKS key destruction for persistent data."
 log "PANIC WIPE COMPLETE"

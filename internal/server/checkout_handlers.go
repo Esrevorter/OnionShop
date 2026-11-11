@@ -1,8 +1,6 @@
 package server
 
 import (
-	"context"
-	"errors"
 	"log"
 	"net/http"
 
@@ -42,7 +40,7 @@ func (a *App) handleCheckoutGet(w http.ResponseWriter, r *http.Request) {
 		Cart:     cart,
 		TotalSat: total,
 	}
-	a.render(w, "checkout", http.StatusOK, data)
+	a.renderCheckout(w, "checkout", http.StatusOK, data)
 }
 
 func (a *App) handleCheckoutPost(w http.ResponseWriter, r *http.Request) {
@@ -59,5 +57,5 @@ func (a *App) handleCheckoutPost(w http.ResponseWriter, r *http.Request) {
 		InvoiceLink: "https://btcpay.example.com/invoice?id=test",
 		InvoiceID:   "test-invoice-id",
 	}
-	a.render(w, "checkout", http.StatusOK, data)
+	a.renderCheckout(w, "checkout", http.StatusOK, data)
 }
