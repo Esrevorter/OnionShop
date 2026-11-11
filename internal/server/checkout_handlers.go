@@ -1,8 +1,6 @@
 package server
 
 import (
-	"context"
-	"errors"
 	"log"
 	"net/http"
 
