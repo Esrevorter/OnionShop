@@ -1,18 +1,29 @@
 {{template "layout" .}}
 
-{{define "title"}}{{if .Product}}{{.Product.Title}}{{else}}Listing{{end}} &middot; OnionShop{{end}}
+{{define "title"}}{{if .Product}}{{.Product.Title}}{{else}}Listing{{end}} · OnionShop{{end}}
 
 {{define "body"}}
 {{with .Product}}
-<h1>{{.Title}}</h1>
-<p>{{$.SatToBTC}} BTC &middot; {{.PriceSat}} sat &middot; {{.Stock}} in stock</p>
-<p>Vendor: <a href="/u/{{.VendorUsername}}">{{.ShopName}}</a>{{if .Eta}} &middot; ships {{.Eta}}{{end}}</p>
-{{if .ImagePath}}<p><img src="{{.ImagePath}}" alt="" style="max-width:100%"></p>{{end}}
-<div class="description">{{inertURL .Description}}</div>
-{{if $.CsrfToken}}
-<p><a href="/account/reviews?vendor={{.VendorUsername}}">Review this vendor</a></p>
-{{end}}
+<nav class="breadcrumbs" aria-label="Breadcrumb"><a href="/">Marketplace</a><span aria-hidden="true">/</span><a href="/u/{{.VendorUsername}}">{{.ShopName}}</a><span aria-hidden="true">/</span><span>Listing</span></nav>
+<article class="product-detail">
+  <div class="product-detail-media">
+    {{if .ImagePath}}<img src="{{.ImagePath}}" alt="Product photo for {{.Title}}" width="960" height="720">{{else}}<div class="product-placeholder" role="img" aria-label="No product image">◈</div>{{end}}
+  </div>
+  <div class="product-copy">
+    <p class="eyebrow">{{.ShopName}}</p>
+    <h1>{{.Title}}</h1>
+    <p class="muted">Sold by <a href="/u/{{.VendorUsername}}">@{{.VendorUsername}}</a>{{if .Eta}} · {{.Eta}} dispatch{{end}}</p>
+    <div class="description">{{inertURL .Description}}</div>
+    <aside class="price-panel">
+      <p class="eyebrow">Price</p>
+      <p class="price-large">{{$.SatToBTC}} BTC</p>
+      <p class="muted">{{.PriceSat}} satoshis</p>
+      <p>{{if gt .Stock 0}}In stock: {{.Stock}}{{else}}Currently out of stock{{end}}</p>
+      <p class="muted">Confirm product details and seller information before placing an order.</p>
+    </aside>
+  </div>
+</article>
 {{else}}
-<p>No such listing.</p>
+<section class="empty-state"><h1>Listing unavailable</h1><p>It may have been removed or is no longer available.</p><a class="button secondary" href="/">Return to marketplace</a></section>
 {{end}}
 {{end}}

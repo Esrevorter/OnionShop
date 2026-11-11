@@ -1,18 +1,17 @@
 {{template "layout" .}}
 
-{{define "title"}}Register &middot; OnionShop{{end}}
+{{define "title"}}Create account · OnionShop{{end}}
 
 {{define "body"}}
-<h1>Create account</h1>
-<form method="post" action="/register" autocomplete="off">
-{{template "friction" .}}
-<label>Username (3-32 chars: lowercase letters, digits, underscore)
-<input type="text" name="username" minlength="3" maxlength="32" required></label>
-<label>Password (at least 10 characters)
-<input type="password" name="password" minlength="10" maxlength="128" required></label>
-<label>Confirm password
-<input type="password" name="password_confirm" minlength="10" maxlength="128" required></label>
-<p><button type="submit">Register</button></p>
-</form>
-<p><a href="/login">Already have an account?</a></p>
+<section class="auth-layout">
+  <div class="auth-intro"><p class="eyebrow">Join the marketplace</p><h1>A calmer way to trade.</h1><p class="lede">Create a username and a strong, unique password. Keep credentials private and only use OnionShop through Tor Browser.</p><div class="notice"><strong>Privacy first</strong><br>We do not ask for email or phone details. Keep your recovery and authentication material somewhere safe.</div></div>
+  <form method="post" action="/register" autocomplete="off" class="auth-card">
+    <h2>Create your account</h2>
+    {{template "friction" .}}
+    <label for="register-username">Username</label><span class="form-help">3–32 lowercase letters, digits, or underscores.</span><input id="register-username" type="text" name="username" minlength="3" maxlength="32" autocomplete="username" required>
+    <label for="register-password">Password</label><span class="form-help">Use a unique password with at least 10 characters.</span><input id="register-password" type="password" name="password" minlength="10" maxlength="128" autocomplete="new-password" required>
+    <label for="register-confirm">Confirm password</label><input id="register-confirm" type="password" name="password_confirm" minlength="10" maxlength="128" autocomplete="new-password" required>
+    <div class="form-actions"><button type="submit">Create account</button><a href="/login">Already registered?</a></div>
+  </form>
+</section>
 {{end}}

@@ -1,25 +1,24 @@
-{{/*
-Shared product grid for catalog_home / search / category / shop pages — all
-four render []StorefrontProduct (via .Products on *CatalogData). Kept as one
-partial so listing markup lives in exactly one place. Prices stay raw integer
-satoshis: the sat -> BTC text conversion is a server-side formatting concern
-(satToBTC) and list rows never re-derive it per request. Vendor copy renders
-through html/template's automatic escaping like everywhere else.
-*/}}
+{{/* Shared product cards. All text is escaped by html/template. */}}
 {{define "productgrid"}}
 {{if .Products}}
-<ul class="products">
+<ul class="product-grid">
 {{range .Products}}
-<li>
-  <a href="/product/{{.ID}}">{{.Title}}</a>
-  &mdash; {{.PriceSat}} sat
-  <span title="stock">({{.Stock}})</span>
-  <br><small>{{.ShopName}}{{if .Eta}} &middot; {{.Eta}}{{end}}
-  &middot; <a href="/u/{{.VendorUsername}}">{{.VendorUsername}}</a></small>
+<li class="product-card">
+  <a class="product-card-link" href="/product/{{.ID}}">
+    <div class="product-media">
+      {{if .ImagePath}}<img src="{{.ImagePath}}" alt="" width="640" height="480" loading="lazy">{{else}}<span class="product-placeholder" aria-hidden="true">◈</span>{{end}}
+    </div>
+    <div class="product-info">
+      <h3>{{.Title}}</h3>
+      <span class="product-price">{{.PriceSat}} sat</span>
+      <div class="product-meta"><span>{{.ShopName}}</span><span>{{if gt .Stock 0}}In stock{{else}}Out of stock{{end}}</span></div>
+      <div class="product-meta"><a href="/u/{{.VendorUsername}}">@{{.VendorUsername}}</a>{{if .Eta}}<span>{{.Eta}} dispatch</span>{{end}}</div>
+    </div>
+  </a>
 </li>
 {{end}}
 </ul>
 {{else}}
-<p>No listings here yet.</p>
+<div class="empty-state"><h3>No listings found</h3><p class="muted">Try a different search or browse another category.</p><a class="button secondary" href="/">Browse marketplace</a></div>
 {{end}}
 {{end}}

@@ -1,22 +1,24 @@
 {{template "layout" .}}
 
-{{define "title"}}Search &middot; OnionShop{{end}}
+{{define "title"}}Search · OnionShop{{end}}
 
 {{define "body"}}
-<h1>Search</h1>
-<form method="get" action="/search">
-<label>Keywords
-<input type="text" name="q" value="{{.Query}}" maxlength="200"></label>
-<p><button type="submit">Search</button></p>
+<header class="page-heading">
+  <p class="eyebrow">Marketplace</p>
+  <h1>Search listings</h1>
+  <p class="lede">Search product titles and descriptions. Results are ordered by relevance, then newest first.</p>
+</header>
+<form method="get" action="/search" role="search" class="search-panel">
+  <label for="search-query">Keywords</label>
+  <div class="search-row"><input id="search-query" type="search" name="q" value="{{.Query}}" maxlength="200" placeholder="What are you looking for?"><button type="submit">Search</button></div>
 </form>
-{{if .Query}}
-<p>{{len .Products}} result(s) shown for <em>{{.Query}}</em>{{if gt .Total 0}} &middot; {{.Total}} total{{end}}</p>
-{{end}}
+{{if .Query}}<p class="results-summary"><strong>{{len .Products}}</strong> shown{{if gt .Total 0}} of {{.Total}}{{end}} for <q>{{.Query}}</q></p>{{end}}
 {{template "productgrid" .}}
 {{if gt .Total 0}}
-<nav>
-{{if gt .Offset 0}}<a href="/search?q={{.Query}}&offset={{.PrevOffset}}">&larr; previous</a>{{end}}
-{{if lt .NextOffset .Total}}<a href="/search?q={{.Query}}&offset={{.NextOffset}}">next &rarr;</a>{{end}}
+<nav class="pagination" aria-label="Search result pages">
+  {{if gt .Offset 0}}<a class="button secondary" href="/search?q={{.Query}}&amp;offset={{.PrevOffset}}">← Previous</a>{{else}}<span></span>{{end}}
+  <span class="muted">{{if gt .Total 0}}Showing {{.Offset}}–{{.NextOffset}} of {{.Total}}{{end}}</span>
+  {{if lt .NextOffset .Total}}<a class="button secondary" href="/search?q={{.Query}}&amp;offset={{.NextOffset}}">Next →</a>{{end}}
 </nav>
 {{end}}
 {{end}}

@@ -3,7 +3,8 @@
 {{define "title"}}OnionShop{{end}}
 
 {{define "body"}}
-<h1>OnionShop</h1>
-<p>A marketplace reachable only over Tor.</p>
-<p><a href="/register">Create an account</a> &middot; <a href="/login">Log in</a></p>
+<section class="hero" aria-labelledby="welcome-title">
+  <div><p class="eyebrow">Private by design</p><h1 id="welcome-title">A marketplace, thoughtfully built for Tor.</h1><p class="lede">Browse independent shops in a lightweight, server-rendered experience. No scripts, no trackers, no third-party assets.</p><div class="form-actions"><a class="button" href="/register">Create an account</a><a class="button secondary" href="/login">Sign in</a></div></div>
+  <aside class="hero-card"><strong>Before you begin</strong><p>Use Tor Browser and verify the full onion address through a trusted channel. Read seller listings carefully.</p></aside>
+</section>
 {{end}}

@@ -1,21 +1,20 @@
-# OnionShop repository audit — status as of the current remediation branch
+# OnionShop audit status
 
-This replaces the stale original audit checklist. Its old claims about Phases 3–8 being pending were inaccurate; those application features are present. Feature presence does not establish production readiness.
+`[x]` means application feature exists; it does not certify security or production operation. The initial audit's claims that Phases 3–8 were pending were stale.
 
 ## Remediated in this branch
 
-- BTCPay's placeholder digest was replaced with a digest reference. Verify its platform and digest against registry metadata before deployment; several other images are still tag-only.
-- Fixed the backup interval fallback typo and removed the guaranteed-failing `/nonexistent` private-key check. An optional decrypt check runs only when `AGE_PRIVATE_KEY_PATH` is set; keep the private identity offline and perform restore drills.
-- Added SQL generation prerequisites to Make build/test/lint targets.
-- Removed stale imports and corrected checkout page data rendering.
-- Replaced misleading panic-wipe `shred` claims with explicit limitations and ordinary file removal; use separately tested cryptographic key destruction for persistent data denial.
+- Replaced BTCPay placeholder digest (verify registry metadata/platform; other images remain tags).
+- Fixed backup interval fallback and removed guaranteed-failing private-key path check; offline restore drills remain required.
+- Added sqlc generation prerequisites to Make build/test/lint.
+- Fixed stale imports and checkout data rendering.
+- Corrected panic-wipe descriptions to avoid claims of secure overwrite.
+- Aligned Tor forwarding ports with nginx listeners and Compose health checks with app UNIX socket.
+- Certificate generator is being aligned to require a v3 onion hostname and create self-signed ECDSA P-384 with exact DNS SAN; TLS key remains separate from Tor Ed25519 key and no SPKI value should be published.
 
-## Production blockers and follow-ups
+## Remaining gates
 
-- The generated self-signed certificate is not onion-bound. Its SPKI hash is not an authentication mechanism. Production TLS identity and client-compatible rotation remain unresolved.
-- Confirm Tor port 80 goes to nginx's HTTP redirect listener, Tor port 443 to TLS, and nginx's app health check traverses the actual UNIX socket.
-- Several container image references are tags rather than immutable, verified digests.
-- CI vulnerability scanning currently tolerates errors; establish a supported toolchain/findings policy before making it a required gate.
-- Host firewall, LUKS, systemd/Dropbear, BTCPay egress, backup restore, and canary procedures require independent operator validation.
+- Test self-signed exact-SAN certificate behavior on clean supported Tor Browser profile; do not bypass any warning.
+- Independently verify host LUKS/firewall/systemd/Dropbear, egress, all image digests, BTCPay config, and an offline-key restore.
 
-See `TASKS.md` and `PRODUCTION_READINESS.md`. Do not use this audit summary as a substitute for deployment verification.
+Publicly CA-issued certificates and SPKI/hash pinning are not OnionShop policy.

@@ -1,27 +1,25 @@
-# OnionShop Tor hidden-service configuration (drop-in: copy to
-# /etc/tor/torrc.d/onionshop.conf or append to /etc/tor/torrc).
-# Assumes the nginx TLS endpoint on 127.0.0.1:8443 (SECURITY_AND_OPSEC.md).
+# OnionShop Tor hidden-service configuration template.
+# Review against the actual host port bindings and torrc syntax before use.
+# TLS authenticity is NOT provided by this file or by the development cert script.
 
 Sandbox 1
 KeepalivePeriod 60
 NewCircuitPeriod 30
 MaxCircuitDirtiness 600
 
-# Hidden service: v3 only. Keys live in the tor datadir (on the LUKS volume);
-# NEVER copy them off-host, and destroy them first in any panic procedure.
+# Hidden service: v3 only. Keep keys on encrypted storage with tor ownership.
 HiddenServiceDir /var/lib/tor/onionshop
 HiddenServiceVersion 3
-HiddenServicePort 80 127.0.0.1:8443      # .onion:80 -> local HTTPS; clients verify the self-signed certificate
-HiddenServicePort 443 127.0.0.1:8443     # .onion:443 -> local HTTPS (TLS termination)
-# If you also run a plain-HTTP fallback during migration ONLY (discouraged):
-# HiddenServicePort 8080 127.0.0.1:8080
+# Onion port 80 -> nginx cleartext listener, which must redirect to HTTPS.
+HiddenServicePort 80 127.0.0.1:8080
+# Onion port 443 -> nginx TLS listener.
+HiddenServicePort 443 127.0.0.1:8443
 
-# Tor Proof-of-Work (PoW) DoS defense (requires Tor >= 0.4.8)
+# Tor PoW options require a compatible Tor release; verify support before enabling.
 HiddenServicePoWDefensesEnabled 1
 HiddenServicePoWQueueRate 25
 HiddenServicePoWQueueBurst 50
 
-# Do not advertise or accept exit traffic; this box serves one onion and nothing else.
 ORPort 0
 ExitRelay 0
 SocksPort 0
