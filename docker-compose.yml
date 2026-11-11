@@ -1,8 +1,12 @@
 version: '3.8'
 
 # Development/preview stack; production use is gated by PRODUCTION_READINESS.md.
-# Secrets come from a private .env. Do not treat Compose network isolation as
-# a substitute for an audited host firewall and per-service egress policy.
+# TLS cert/key must be generated for the exact ONION_HOST using scripts/gen-certs.sh.
+# This is a self-signed ECDSA TLS key separate from Tor's Ed25519 key. Tor's
+# protocol authenticates the onion endpoint; the TLS certificate does not.
+# No CA-issued TLS certs or SPKI/hash pinning are used by project policy.
+# Secrets come from a private .env. Docker network isolation is not a substitute
+# for an audited host firewall and per-service egress policy.
 
 x-hardening: &default-hardening
   restart: unless-stopped
@@ -17,8 +21,6 @@ x-hardening: &default-hardening
     options: { max-size: "10m", max-file: "2" }
 
 services:
-  # One-shot owner/permission setup for the shared UNIX-socket volume.
-  # It has no network and only CAP_CHOWN; app and nginx run unprivileged.
   socket-init:
     image: onionshop-app:local
     entrypoint: ["/bin/sh", "-c"]
@@ -51,9 +53,9 @@ services:
     networks: [internal_net]
     tmpfs: [/tmp, /var/cache/nginx, /var/run]
     healthcheck:
-      # This reaches nginx over TLS and exercises the nginx->app UNIX socket.
-      # Certificate verification is intentionally skipped only for this local
-      # liveness probe; it does not authenticate the service.
+      # Local liveness only; certificate verification is disabled because this
+      # probe uses loopback IP rather than the onion hostname. This is NOT a
+      # client trust check and must not be copied into browser instructions.
       test: ["CMD", "wget", "--no-check-certificate", "--quiet", "--tries=1", "-O", "/dev/null", "https://127.0.0.1:8443/health"]
       interval: 30s
       timeout: 5s
@@ -65,9 +67,9 @@ services:
       context: .
       dockerfile: Dockerfile
     <<: *default-hardening
-    user: "1000:101" # app uid, nginx socket-access group
+    user: "1000:101"
     environment:
-      - ONIONSHOP_ADDR=127.0.0.1:8080 # unused when UNIX socket is selected
+      - ONIONSHOP_ADDR=127.0.0.1:8080
       - ONIONSHOP_UNIX=/run/onionshop/app.sock
       - DATABASE_URL=postgres://${DB_USER}:${DB_PASSWORD}@postgres:5432/${DB_NAME}?sslmode=disable
       - REDIS_URL=redis://:${REDIS_PASSWORD}@redis:6379
@@ -132,8 +134,7 @@ services:
       retries: 5
 
   btcpay:
-    # Digest reference reported for official stable 2.4.5 linux/amd64; verify
-    # registry metadata and platform independently before production use.
+    # Verify digest and platform against registry metadata before production.
     image: btcpayserver/btcpayserver@sha256:4c029e17e84600f740fb45652be5dfa906fe81e1c1a2789927e75954032f7c79
     restart: unless-stopped
     user: "1000:1000"
