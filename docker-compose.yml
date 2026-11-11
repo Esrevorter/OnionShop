@@ -15,7 +15,7 @@ x-hardening: &default-hardening        # shared per-service OpSec baseline
   tmpfs:
     - /tmp
   logging:                             # logs stay in RAM (json-file on the host
-    driver: json-file                  # is capped; journald forwarders must use volatile)
+    driver: json-file                  # is capped; journald forwarders must use volatile
     options: { max-size: "10m", max-file: "2" }
 
 services:
@@ -117,7 +117,8 @@ services:
 
   # 5. BTCPay Server
   btcpay:
-    image: btcpayserver/btcpayserver@sha256:e63283733215286ef2e987178c773950fb1f81f9b31d279f04620f4c00000000
+    # Immutable linux/amd64 manifest digest for the official stable 2.4.5 image.
+    image: btcpayserver/btcpayserver@sha256:4c029e17e84600f740fb45652be5dfa906fe81e1c1a2789927e75954032f7c79
     restart: unless-stopped
     user: "1000:1000"
     security_opt: [no-new-privileges:true]
