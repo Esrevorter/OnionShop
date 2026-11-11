@@ -1,35 +1,35 @@
 # Security & Operational Security (OpSec) Guidelines
 
-> **Threat model:** assume adversarial Tor relays, possible host seizure, and that operator network identity is sensitive. Controls are defense-in-depth; a checklist or successful compose start is not a security audit.
+> **Threat model:** assume adversarial Tor relays, possible host seizure, and sensitive operator network identity. A checklist is not a security audit.
 
-## 1. Onion service and application boundaries
+## 1. Onion service, browser, and TLS policy
 
-- Do not log, store, or use client IP addresses. Do not expose public app listeners. nginx should be reachable only via host loopback and should proxy to the app over the shared UNIX socket.
-- Tor service identity must be protected on encrypted storage and backed up only in encrypted form. Keep public storefront and private admin onion identities separate.
-- Rate limits must not key on client IP. Use authenticated identities where available and CAPTCHA/honeypot friction on pre-auth actions.
-- Use UTC and minimize logs; never ship sensitive logs off-host.
+- Do not log, store, or use client IP addresses. Keep public app listeners off routable interfaces; nginx should be host-loopback-only and proxy to app via UNIX socket.
+- Protect Tor v3 identity on encrypted storage; keep public storefront and private admin onion identities separate.
+- Rate limits must not use client IP. Use authenticated identities and CAPTCHA/honeypot friction as appropriate.
+- Use UTC, minimize logs, and do not ship sensitive logs off-host.
+- **Supported browser:** Tor Browser only. This is a project policy, not an enforceable client restriction; other browsers can be proxied and user-agent strings spoofed.
+- **Certificate format:** self-signed ECDSA P-384 TLS leaf, exact DNS SAN equal to the service's v3 `.onion` hostname. Generate with `scripts/gen-certs.sh <hostname>.onion` after onion creation. Use the private key only at nginx.
+- The TLS public/private key is separate and random, not the Tor Ed25519 key and not cryptographically onion-key-bound. Onion protocol authenticates the endpoint independently. SAN matching validates hostname identity under certificate rules, but does not make an arbitrary self-signed certificate trusted.
+- **Never use public CA-issued certificates for this project. Never publish or enforce SPKI/certificate-hash pins.** No CA trust and no brittle pins are part of OnionShop policy.
+- Never advise users to bypass certificate warnings or import an unverified trust root. Test the exact supported Tor Browser version/profile. If it displays a certificate warning, do not deploy until the Tor Browser behavior is understood and a compatible trust path meets policy.
+- Do not enable HSTS for this deployment; retain safe recovery/rotation options.
 
-## 2. TLS identity: implementation limitation
+## 2. Network and host controls
 
-The intended design is onion-authenticated TLS, without SPKI pins. The current `scripts/gen-certs.sh` does **not** implement that design: it creates a generic self-signed certificate with loopback IP SANs and no onion-key authorization. It is for local testing only. It does not authenticate a `.onion` hostname. Do not publish its SPKI value or tell users to bypass certificate warnings.
+- Review nginx, Tor, Docker, and host firewall together. Tor port 80 maps to nginx redirect listener 8080; onion port 443 maps to TLS listener 8443.
+- App/nginx uses the shared UNIX socket; health checks should exercise the actual proxy/socket route.
+- Docker internal networks do not by themselves prove host firewall safety, DNS policy, or Tor-only egress. Audit each service, especially BTCPay.
+- Apply LUKS2, swap, nftables, systemd, and private-onion Dropbear through host-specific reviewed procedures and test recovery first.
+- Verify external container image digest/platform against upstream metadata.
 
-Before production, implement and independently verify an onion-authenticated certificate chain and a supported client validation/rotation path, or select another reviewed, browser-compatible trust design. Until then this is a production blocker. Onion service encryption does not make the generic certificate onion-bound.
+## 3. Data, payments, and recovery
 
-## 3. Network and host controls
+- Do not commit or bake secrets. Verify database grants and Redis policy against actual code/config.
+- Poll BTCPay; do not add inbound webhooks. Verify ledger transactions/idempotency and financial workflows.
+- Encrypt backups with age to an offline-generated public recipient; keep private identity offline and run restore drills.
+- `rm`/`shred` are not reliable erasure on SSDs, snapshots, copy-on-write or journaled filesystems. Persistent denial requires tested cryptographic key destruction.
 
-- Review nginx, Tor, Docker, and host-firewall routes together. Host-exposed ports should bind to `127.0.0.1`; onion port 80 should reach nginx's HTTP redirect listener and onion port 443 its TLS listener.
-- The app/nginx hop is a UNIX socket. Health checks must test the actual socket/proxy path rather than assume the app accepts TCP.
-- Docker internal networks prevent direct external routing for attached containers but do not prove the host firewall or other networks are safe. Audit DNS behavior and egress per service, especially BTCPay's peer connectivity.
-- Apply LUKS2, swap, nftables, systemd sandboxing, and Dropbear private-onion administration through host-specific reviewed procedures. Test recovery before enforcing firewall rules remotely.
-- Pin external container images by verified digest/platform. Tags are mutable. Review upstream metadata before updates.
+## 4. Production readiness
 
-## 4. Data, payments, and recovery
-
-- Database secrets and application secrets must not be committed or baked into images. Use unique credentials and least privilege; verify actual grants and Redis commands against production code.
-- Payment status is polled; do not add inbound BTCPay webhooks. Ledger entries must be append-only and movements transactional/idempotent. Verify financial workflows and invariants with tests.
-- Back up with `age` to an offline-generated public recipient. The private age identity stays offline and away from the backup host. Run restore drills and verify ledger and audit continuity.
-- `rm` and `shred` are not reliable secure erase on SSDs, snapshots, copy-on-write or journaled filesystems. Persistent data denial depends on tested cryptographic key destruction/erase; panic procedures must say exactly what they do and do not erase.
-
-## 5. Production readiness
-
-`PRODUCTION_READINESS.md` is the authoritative operator review sequence. Infrastructure files and this document describe intended controls, not evidence that a production host meets them. Do not label the deployment production-ready until the TLS identity blocker, host/network controls, backup restore, and service integration have been independently tested.
+Follow `PRODUCTION_READINESS.md`. Production requires actual Tor Browser TLS behavior testing, host/network verification, integration checks, and successful backup restoration; docs do not substitute for evidence.

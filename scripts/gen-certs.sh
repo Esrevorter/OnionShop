@@ -1,43 +1,88 @@
 #!/usr/bin/env bash
-# Generates the self-signed TLS 1.3 certificate nginx terminates with, and
-# prints the SPKI fingerprint users must pin (SECURITY_AND_OPSEC.md §TLS).
-# Idempotent: refuses to overwrite an existing cert unless --force (changing
-# the key silently breaks every client's SPKI pin — distribute deliberately).
+# Create a self-signed HTTPS leaf certificate whose DNS SAN is exactly the
+# OnionShop v3 onion hostname. The private key is a separate ECDSA P-384 key;
+# it is NOT the Tor onion-service Ed25519 key and does NOT prove onion identity.
+# Tor authenticates the onion endpoint; this certificate adds a TLS layer.
+# No SPKI hash is printed or intended to be pinned.
 set -euo pipefail
 umask 077
 cd "$(dirname "$0")/.."
 
+usage() {
+  echo "Usage: $0 <service-v3-onion-hostname> [--force]" >&2
+  echo "Set ONIONSHOP_NGINX_GID if nginx uses a host-mapped group other than 101." >&2
+  exit 2
+}
+
+[[ $# -ge 1 && $# -le 2 ]] || usage
+HOST=${1,,}
+FORCE=0
+if [[ $# -eq 2 ]]; then
+  [[ "$2" == "--force" ]] || usage
+  FORCE=1
+fi
+if [[ ! "$HOST" =~ ^[a-z2-7]{56}\.onion$ ]]; then
+  echo "ERROR: expected a v3 onion hostname (56 lowercase base32 chars plus .onion)" >&2
+  exit 1
+fi
+
 CERT_DIR="nginx/ssl"
 KEY="$CERT_DIR/onion.key"
 CRT="$CERT_DIR/onion.crt"
-DAYS=825          # < 2 years; rotate on a planned schedule with advance notice
-FORCE=0
-[[ "${1:-}" == "--force" ]] && FORCE=1
+NGINX_GID=${ONIONSHOP_NGINX_GID:-101}
 
 if [[ -e "$KEY" || -e "$CRT" ]]; then
-  if [[ $FORCE -eq 0 ]]; then
-    echo "ERROR: $KEY/$CRT already exist. Re-run with --force to replace." >&2
-    echo "WARNING: replacing the key changes the SPKI fingerprint — every pinned" >&2
-    echo "client must be notified BEFORE you do this." >&2
+  if [[ $FORCE -ne 1 ]]; then
+    echo "ERROR: certificate or key already exists; refusing to overwrite." >&2
+    echo "Use --force only for a planned rotation after reviewing deployment impact." >&2
     exit 1
   fi
-  shred -u "$KEY" 2>/dev/null || rm -f "$KEY"
+  echo "WARNING: replacing TLS key/certificate; no SPKI pinning is used." >&2
+  rm -f -- "$KEY" "$CRT"
 fi
 
-mkdir -p "$CERT_DIR"; chmod 700 "$CERT_DIR"
-openssl req -x509 -newkey ed25519 -keyout "$KEY" -out "$CRT" \
-  -days "$DAYS" -nodes -subj "/CN=onionshop" \
-  -addext "subjectAltName=IP:127.0.0.1,IP:::1" 2>/dev/null
-chmod 600 "$KEY"; chmod 644 "$CRT"
+mkdir -p "$CERT_DIR"
+# nginx runs as uid/gid 101 in the supplied compose configuration. The
+# directory and key are group-readable only to that group. Adjust the group id
+# to match a reviewed host/container mapping if yours differs.
+chmod 0750 "$CERT_DIR"
+TMP_KEY="$CERT_DIR/onion.key.tmp"
+TMP_CRT="$CERT_DIR/onion.crt.tmp"
+trap 'rm -f -- "$TMP_KEY" "$TMP_CRT"' EXIT
 
-SPKI=$(openssl x509 -in "$CRT" -pubkey -noout \
-  | openssl pkey -pubin -outform der \
-  | openssl dgst -sha256 -binary | openssl base64)
+openssl req -x509 -newkey ec -pkeyopt ec_paramgen_curve:secp384r1 \
+  -sha256 -days 825 -nodes \
+  -keyout "$TMP_KEY" -out "$TMP_CRT" \
+  -subj "/CN=$HOST" \
+  -addext "subjectAltName=DNS:$HOST" \
+  -addext "basicConstraints=critical,CA:FALSE" \
+  -addext "keyUsage=critical,digitalSignature" \
+  -addext "extendedKeyUsage=serverAuth"
 
-echo "OK: certificate written to $CRT"
-echo "OK: private key at $KEY (mode 600, never copy off-host, never commit)"
-echo
-echo "Pin this SPKI SHA-256 fingerprint in your client configuration:"
-echo "  sha256/${SPKI}"
-echo
-echo "Record it alongside the .onion address in your vendor notes."
+openssl x509 -in "$TMP_CRT" -noout -checkhost "$HOST" >/dev/null
+cert_pub=$(openssl x509 -in "$TMP_CRT" -pubkey -noout | openssl pkey -pubin -outform DER | openssl dgst -sha256)
+key_pub=$(openssl pkey -in "$TMP_KEY" -pubout -outform DER | openssl dgst -sha256)
+[[ "$cert_pub" == "$key_pub" ]] || { echo "ERROR: generated certificate/key mismatch" >&2; exit 1; }
+
+mv -- "$TMP_KEY" "$KEY"
+mv -- "$TMP_CRT" "$CRT"
+chgrp "$NGINX_GID" "$CERT_DIR" "$KEY"
+chmod 0750 "$CERT_DIR"
+chmod 0640 "$KEY"
+chmod 0644 "$CRT"
+trap - EXIT
+
+cat <<EOF
+Created self-signed TLS certificate:
+  certificate: $CRT
+  private key: $KEY (group $NGINX_GID, mode 0640)
+  exact DNS SAN: $HOST
+
+This TLS key is a separate ECDSA P-384 key, not the Tor Ed25519 identity key.
+The SAN matches the onion hostname, but the certificate is self-signed. Tor
+Browser-only support is a project policy, not an enforceable browser check.
+Test the exact supported Tor Browser release. If it displays a certificate
+warning, STOP: do not click through, import an unverified root, or substitute a
+CA certificate or SPKI pin. Tor's onion protocol authenticates the endpoint
+independently of this TLS certificate.
+EOF

@@ -36,13 +36,14 @@ migrate-down:
 sqlc: ## generate sqlc bindings from db/schema.sql and db/query/**
 	sqlc generate
 
-certs: ## generate nginx self-signed cert + print SPKI pin to record (scripts/gen-certs.sh)
-	./scripts/gen-certs.sh
+certs: ## Generate self-signed ECDSA P-384 TLS cert with exact onion DNS SAN; NO SPKI pin
+	@test -n "$(ONION_HOST)" || (echo "Usage: make certs ONION_HOST=<v3-onion-hostname>.onion" >&2; exit 2)
+	./scripts/gen-certs.sh "$(ONION_HOST)"
 
 check: ## installer dry-run: verify host dependencies only
 	./install/install.sh --check-only
 
-install: ## guided one-shot deployment for less-experienced operators (INSTALL.md)
+install: ## guided preview deployment; see TLS/production gates in INSTALL.md
 	sudo ./install/install.sh
 
 panic-wipe-dry: ## show what scripts/panic-wipe.sh would do (no execution)

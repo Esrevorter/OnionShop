@@ -1,157 +1,25 @@
 # System Architecture
 
-## 1. Request Flow
-1. User (Tor Browser) -> Tor Network -> Tor Daemon (v3 Hidden Service).
-2. Tor Daemon -> forwards to `127.0.0.1:8080` / `127.0.0.1:8443` (**nginx reverse proxy** —
-   TLS termination, header stripping, static files, slow-client buffering; see
-   SECURITY_AND_OPSEC.md §5.1). The Go app is never directly reachable from outside localhost,
-   and nginx is the only thing Tor talks to.
-3. nginx -> proxies to the Go web server over a **UNIX socket** (`app.sock`) — no TCP hop
-   between proxy and app.
-4. Go Web Server -> renders HTML via `html/template` -> sends back through nginx -> Tor.
+## 1. Request flow
+1. User (supported browser: Tor Browser) -> Tor network -> Tor daemon hosting the v3 onion service.
+2. Tor forwards onion port 80 to host loopback `127.0.0.1:8080` (nginx redirects to HTTPS), and onion port 443 to `127.0.0.1:8443` (nginx TLS).
+3. nginx presents a self-signed ECDSA P-384 certificate with the exact service `.onion` hostname in DNS SAN. This is a TLS key separate from the Tor Ed25519 service identity; the Tor onion protocol authenticates the endpoint independently.
+4. nginx proxies to the Go app over the shared UNIX socket (`/run/onionshop/app.sock`).
+5. Go renders HTML via `html/template`; responses return through nginx and Tor.
 
-## 2. Component Interaction
-- **nginx:** front-facing reverse proxy on loopback only (8080 HTTP → redirect, 8443 TLS with a
-  self-signed .onion cert, SPKI-pinned — SECURITY_AND_OPSEC.md §1/§5.1). Serves `/static/*`
-  read-only; strips inbound forwarding headers; emits security headers in agreement with the
-  Go middleware.
-- **Go Backend:** Handles routing (`chi`), business logic, and rendering. Listens ONLY on a
-  UNIX socket (or `127.0.0.1`) inside its sandboxed container; binds no public interface.
-- **PostgreSQL:** Stores persistent data (Users, Products, Orders, Ledger). Data + WAL live on
-  the LUKS-encrypted volume — never tmpfs (crash = loss); only sockets/runfiles are tmpfs.
-- **Redis:** Stores ephemeral data (Rate Limit counters, Shopping Carts). Sessions are stored
-  via `scs` in Redis with a Postgres fallback table so an eviction/restart cannot log everyone
-  out or, worse, resurrect stale carts. Redis must run with `maxmemory-policy noeviction` for
-  session keys (carts/rate-limits may use `volatile-lru` in a separate logical DB if needed).
-  Persistence is OFF (`save ""` + `appendonly no`) — the dataset is intentionally RAM-only, so
-  the `redisdata` volume holds nothing sensitive.
-- **BTCPay Server:** Runs as a separate service on the same host, on its own egress network
-  (blockstream via Tor where feasible); the internal network (`internal: true`) keeps every
-  other container default-deny on egress.
-- **Dropbear SSH (host-level):** admin access rides a private onion service
-  (`HiddenServicePort 22 127.0.0.1:2222`), key-only Ed25519 auth — replaces OpenSSH entirely
-  (SECURITY_AND_OPSEC.md §5.4). Not part of the compose stack; runs on the hardened host.
+## 2. Component interaction
 
-### BTCPay payment notifications (no webhooks!)
-**Webhooks are impossible here.** A hidden service is reachable only via the Tor network;
-BTCPay (running on clearnet or a different hidden service) cannot POST to our localhost-only
-server, and exposing a public callback URL would deanonymize the deployment. Instead:
-- The Go backend **polls** BTCPay's REST API (`GET /api/v1/invoices/{id}`) on a short interval
-  (e.g., every 15s for pending invoices, backed off for older ones) from a background goroutine.
-- Invoice creation is idempotent: we store BTCPay's `invoiceId` and a unique `outOrderRef`
-  per order; poll results are applied through the escrow state machine with an idempotency key
-  so duplicate/late updates can never double-credit.
-- If a future build colocates BTCPay behind the *same* hidden service under `/notify/...`,
-  signed webhooks (`BTCPay-Sig` HMAC) may be added as an optimization — polling remains the
-  source of truth regardless.
+- **nginx:** loopback-only reverse proxy, TLS termination, static assets, and UNIX-socket proxy to Go. The product policy is Tor Browser only with self-signed exact-onion-SAN TLS; no publicly CA-issued certs or SPKI pinning. Browser warning behavior is version-sensitive and must be tested before deployment.
+- **Go backend:** chi routing and server-rendered business logic. Compose uses a UNIX socket; no public host interface.
+- **PostgreSQL:** persistent application data on encrypted storage; never put DB/WAL on tmpfs.
+- **Redis:** ephemeral sessions/rate/cart data with persistence disabled in current configuration; verify fallback behavior.
+- **BTCPay:** application polls invoice status; network/wallet policy requires independent review.
+- **Dropbear:** intended host-level admin over a separate private onion, outside Compose.
 
-## 3. Security Headers
-Applied by middleware on every response **and** re-asserted at the nginx layer (both layers must
-agree — belt-and-suspenders; see SECURITY_AND_OPSEC.md §5.1). Traffic reaches users over HTTPS on
-the onion via a self-signed, SPKI-pinned cert terminated at nginx (SECURITY_AND_OPSEC.md §1).
-**No browser-facing HSTS**: browsers treat self-signed + HSTS as a permanent lockout footgun;
-SPKI pinning in announcements/pgp.txt is our authenticity mechanism instead. A pinned client
-(CLI/desktop), if ever shipped, enforces SPKI pinning and HSTS itself.
-- `Content-Security-Policy: default-src 'self'; script-src 'none'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; form-action 'self'; frame-ancestors 'none'; base-uri 'none'; upgrade-insecure-requests`
-  (`script-src 'none'` and `base-uri 'none'` are mandatory — there is no JS anywhere;
-  `style-src 'unsafe-inline'` is required because templates ship small inline styles; if we
-  move all CSS to static files, tighten to `style-src 'self'`; `upgrade-insecure-requests`
-  pairs with the HTTPS rollout.)
-- `X-Content-Type-Options: nosniff`
-- `X-Frame-Options: DENY`
-- `Referrer-Policy: no-referrer`
-- Strip the `Server:` header (or set a generic value); never register `pprof`/`expvar`. No OCSP
-  stapling (leaks to CAs).
+## 3. Security headers
 
-## 4. Escrow State Machine
-- `awaiting_payment` -> (payment confirmed via BTCPay poll) -> `in_escrow`
-- `in_escrow` -> (Vendor marks shipped) -> `shipped`
-- `shipped` -> (Customer confirms OR 14-day cron) -> `released` (Credits Vendor Ledger)
-- `shipped` -> (Dispute opened) -> `disputed` -> (Mod resolves) -> `released` OR `refunded`
+Go and nginx emit security headers. No HSTS or TLS pinning is configured. A certificate SAN match and Tor onion endpoint authentication are distinct checks; a self-signed certificate may still trigger browser certificate UI. Test Tor Browser; never advise bypassing warnings.
 
-Failure / edge paths:
-- `awaiting_payment` -> (expiry timer, e.g. 30 min unpaid) -> `cancelled` (cart restored).
-- `awaiting_payment` -> (underpayment) -> stays `awaiting_payment` with delta invoice option;
-  (overpayment) -> flag for manual review, never auto-release.
-- `in_escrow` -> (customer cancels before shipment) -> `refunded`.
-- Missed/lost poll updates are safe: state transitions are driven by comparing current DB state
-  against BTCPay's authoritative status, not by event delivery.
-- Auto-release cron uses UTC timestamps stored in Postgres (`now()`), never client clocks, and
-  writes an audit-log row for every automated transition.
+## 4. Escrow, ledger, support, and community
 
-## 5. Multi-Vendor Orders
-One customer checkout containing items from N vendors creates **N vendor-scoped orders**
-sharing one payment intent; BTCPay tracks settlement per split. Shipping addresses are
-encrypted per-order with the vendor's PGP public key (see SECURITY_AND_OPSEC.md). Each order
-runs its own independent escrow state machine so one bad vendor cannot freeze unrelated funds.
-
-## 6. Ledger
-Double-entry, append-only: every movement inserts immutable debit/credit rows (escrow account,
-vendor earnings account, platform fee account, refund account). Balances are derived
-(`SUM`) or maintained in a materialized summary updated inside the same transaction. Every
-external event (payment confirmation, withdrawal payout) carries a unique idempotency key
-enforced by a `UNIQUE` constraint.
-
-Wallets page shows per-currency **available balance** and **in-escrow total**, plus deposit /
-withdraw flows (withdrawals are requests approved by an admin — see SECURITY_AND_OPSEC.md §3).
-
-## 7. Support Ticketing
-User-facing helpdesk, reachable from the header ("Support Ticket") and a Help page.
-- **Ticket model:** `tickets(id, user_id, category, order_ref NULL, subject, status,
-  priority, created_at, updated_at)`; status: `open → answered → user_replied → resolved →
-  closed`. Comments: `ticket_messages(id, ticket_id, author_id, body, is_staff, created_at)`.
-- **Categories:** general, order/escrow problem, vendor report (e.g., phishing/scam
-  accounts), payment/deposit issue, bug bounty, account recovery (lost PGP/PIN).
-- **Staff queue:** mods/admins see unassigned tickets filtered by role, claim them, reply,
-  resolve/closed with mandatory reason; every staff action writes the audit log.
-- **Escalation:** a ticket attached to an order can be escalated into a formal dispute
-  (state machine §4); resolving a dispute auto-resolves its linked ticket.
-- **Notifications:** new staff replies appear as site messages (§8) and bump the unread
-  badge; no email is ever sent (data minimization).
-- **Anti-abuse:** rate limit ticket creation per `user_id`; new accounts get a lower daily
-  cap; honeypot field on the create form.
-
-## 8. Private Messaging
-Direct user↔user messaging (buyer↔seller pre-sale, user↔staff), rendered server-side only.
-- **Model:** `threads(id, participant_a, participant_b, order_ref NULL)`,
-  `messages(id, thread_id, sender_id, body, read_at, created_at)`. Unread count is shown as
-  a nav badge (`Messages <count>`).
-- **Anti-phishing CAPTCHA (per-message):** every message form must solve a fresh, one-time
-  visual challenge served from a locally-generated image set (`img-src 'self'` only — never
-  external CAPTCHA services). The challenge answer is bound to the session + thread and
-  expires after ~5 minutes. Rationale: phishers clone markets and impersonate vendors/buyers
-  at scale; a cheap human-friction step throttles automated mass-messaging without JS.
-  A hidden honeypot field supplements it. Rate limits still apply per `user_id` (§1 of
-  SECURITY_AND_OPSEC.md).
-- **Content rules:** plain text only (auto-escaped by `html/template`); URLs posted by other
-  users are rendered as inert text, not links, to blunt phishing; users can report a message,
-  which opens a `category = vendor report / abuse` support ticket carrying the message link.
-- **Attachments:** none (no file upload surface). Images referenced only via market-hosted
-  product images.
-- **Moderation:** staff may read threads involved in disputes/tickets (audited access —
-  every staff view writes the audit log).
-
-## 9. Accounts, Profiles & Community Features
-- **Vendor storefronts:** public profile pages (`/u/<handle>`) with rating, sales count, ETA
-  badge, product listing link, and "message vendor" button. Vendor ratings live on completed
-  orders (one review per order line, editable window, no JS — plain forms).
-- **Top Vendors leaderboard:** homepage widget ranking vendors by rolling-window sales minus
-  disputes/chargebacks; computed by a cron query into a snapshot table (cheap to render).
-- **Account tiers:** Basic vs upgraded (verified/trusted) accounts — upgrade requires either
-  vendor approval flow or a paid/trust threshold; tier gates features (e.g., higher rate
-  limits, raffle entry, private mirror request). Stored as RBAC/flag on the user row.
-- **Personal phrase:** each user sets a secret phrase shown on login/account pages so they
-  can sanity-check they are on the genuine site (pairs with the anti-phishing CAPTCHA —
-  see SECURITY_AND_OPSEC.md §4).
-- **Login history:** last N logins (timestamp UTC + which mirror/host the request arrived
-  on — never client IPs) displayed in account settings; anomalies prompt support contact.
-- **PGP tool:** a self-service page where users paste armored text and the server performs
-  pure-Go public-key encrypt/verify (key import validation, fingerprint display). No private
-  keys, ever.
-- **News/announcements board:** admin-authored posts (maintenance, DDoS status, feature
-  notes) stored in Postgres, rendered on home; supports "under maintenance" banner mode.
-- **Raffles (optional, Phase 8):** entries purchased from wallet balance; draws executed by
-  cron with audited RNG (`crypto/rand`), prizes credited through the ledger like any other
-  movement.
-- **Help center:** static FAQ + policy pages (phishing education, harm reduction, bug bounty,
-  market verify instructions, canary, published PGP key fingerprint).
+Escrow and ledger operations are intended to be transactional/idempotent; verify their invariants and recovery through tests. Support, messaging, and community pages are server-rendered and use the anti-abuse/privacy controls documented in the code and `SECURITY_AND_OPSEC.md`.
