@@ -1,26 +1,16 @@
-{{/*
-Shared POST-form skeleton. AGENTS.md §3 mandates every state-changing form
-carry, in this exact order:
-  1. hidden csrf_token   (double-submit; name fixed by sessions.go)
-  2. hidden captcha_token + visible puzzle image/answer (captcha.go)
-  3. honeypot field "sta" — CSS-hidden (.hp), autofill-resistant attributes,
-     and it must stay EMPTY for a human submission.
-*/}}
 {{define "friction"}}
 <input type="hidden" name="csrf_token" value="{{.CsrfToken}}">
-{{/* Nil-guard: pages rendered WITHOUT a minted challenge (e.g. the account
-   page) share this partial; dereferencing a nil *CaptchaChallenge would make
-   template execution fail AFTER headers, i.e. a generic 500 on every render. */}}
 {{if .Captcha}}
-<input type="hidden" name="captcha_id" value="{{.Captcha.ID}}">
-<input type="hidden" name="captcha_token" value="{{.Captcha.Token}}">
-<label>CAPTCHA: {{.Captcha.Prompt}}
-<img class="captcha-img" src="/captcha/{{.Captcha.ID}}.png" alt="captcha puzzle">
-<input type="text" name="captcha_answer" autocomplete="off" maxlength="4" required></label>
+<div class="captcha-block" aria-label="Human verification">
+  <p><strong>Human verification</strong> <span class="form-help">Please solve this short challenge.</span></p>
+  <input type="hidden" name="captcha_id" value="{{.Captcha.ID}}">
+  <input type="hidden" name="captcha_token" value="{{.Captcha.Token}}">
+  <p>{{.Captcha.Prompt}}</p>
+  <img class="captcha-img" src="/captcha/{{.Captcha.ID}}.png" alt="Visual CAPTCHA challenge">
+  <label for="captcha-answer">Answer</label><input id="captcha-answer" type="text" name="captcha_answer" autocomplete="off" maxlength="4" inputmode="numeric" required>
+</div>
 {{end}}
 {{if .HoneypotHidden}}
-<div class="hp" aria-hidden="true">
-<label>leave blank <input type="text" name="sta" tabindex="-1" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"></label>
-</div>
+<div class="hp" aria-hidden="true"><label>Leave this field empty<input type="text" name="sta" tabindex="-1" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"></label></div>
 {{end}}
 {{end}}

@@ -1,15 +1,16 @@
 {{template "layout" .}}
 
-{{define "title"}}{{.CategoryName}} &middot; OnionShop{{end}}
+{{define "title"}}{{.CategoryName}} · OnionShop{{end}}
 
 {{define "body"}}
-<h1>Category: {{.CategoryName}}</h1>
-<p><a href="/">&larr; all categories</a></p>
+<nav class="breadcrumbs" aria-label="Breadcrumb"><a href="/">Marketplace</a><span aria-hidden="true">/</span><span>{{.CategoryName}}</span></nav>
+<header class="page-heading"><p class="eyebrow">Category</p><h1>{{.CategoryName}}</h1><p class="lede">Explore current listings in this category.</p></header>
 {{template "productgrid" .}}
 {{if gt .Total 0}}
-<nav>
-{{if gt .Offset 0}}<a href="/category/{{.CategoryName}}?offset={{.PrevOffset}}">&larr; previous</a>{{end}}
-{{if lt .NextOffset .Total}}<a href="/category/{{.CategoryName}}?offset={{.NextOffset}}">next &rarr;</a>{{end}}
+<nav class="pagination" aria-label="Category pages">
+  {{if gt .Offset 0}}<a class="button secondary" href="/category/{{.CategoryName}}?offset={{.PrevOffset}}">← Previous</a>{{else}}<span></span>{{end}}
+  <span class="muted">{{.Total}} listings</span>
+  {{if lt .NextOffset .Total}}<a class="button secondary" href="/category/{{.CategoryName}}?offset={{.NextOffset}}">Next →</a>{{end}}
 </nav>
 {{end}}
 {{end}}

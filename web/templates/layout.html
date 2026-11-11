@@ -3,28 +3,39 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark">
 <title>{{block "title" .}}OnionShop{{end}}</title>
-<style>
-body{font-family:monospace;max-width:640px;margin:2rem auto;padding:0 1rem;background:#111;color:#ddd}
-a{color:#7fb3ff}
-form{margin-top:1rem}
-label{display:block;margin:.75rem 0 .25rem}
-input{width:100%;padding:.4rem;background:#222;color:#eee;border:1px solid #444}
-.hp{position:absolute;left:-9999px;top:-9999px;width:1px;height:1px;overflow:hidden}
-.err{color:#ff8080}.flash{color:#80ffb0}
-.captcha-img{background:#fff;padding:.25rem;display:inline-block}
-nav a{margin-right:1rem}
-.inert-url{border-bottom:1px dotted #666;user-select:all}
-</style>
+<link rel="stylesheet" href="/static/main.css">
 </head>
 <body>
-<nav>
-<a href="/">Home</a>
-{{if .PersonalPhrase}}<span title="anti-phishing phrase">&#10003; {{.PersonalPhrase}}</span>{{end}}
-</nav>
-{{if .Error}}<p class="err">{{.Error}}</p>{{end}}
-{{if .Flash}}<p class="flash">{{.Flash}}</p>{{end}}
-{{block "body" .}}{{end}}
+<header class="site-header">
+  <div class="header-inner">
+    <a class="brand" href="/" aria-label="OnionShop home"><span class="brand-mark">◈</span> OnionShop</a>
+    <nav class="site-nav" aria-label="Main navigation">
+      <a href="/">Marketplace</a>
+      <a href="/search">Search</a>
+      {{if .PersonalPhrase}}<span class="phrase-badge" title="Your anti-phishing phrase">✓ {{.PersonalPhrase}}</span>{{end}}
+      {{if .CsrfToken}}
+        <a href="/account">Account</a>
+        <form method="post" action="/logout" class="nav-form">
+          <input type="hidden" name="csrf_token" value="{{.CsrfToken}}">
+          <button class="secondary" type="submit">Log out</button>
+        </form>
+      {{else}}
+        <a href="/login">Log in</a>
+        <a class="button" href="/register">Create account</a>
+      {{end}}
+    </nav>
+  </div>
+</header>
+<main class="page-shell">
+  {{if .Error}}<div class="error" role="alert"><strong>Something needs attention</strong><br>{{.Error}}</div>{{end}}
+  {{if .Flash}}<div class="flash" role="status">{{.Flash}}</div>{{end}}
+  {{block "body" .}}{{end}}
+</main>
+<footer class="site-footer">
+  <div class="footer-inner">OnionShop <span aria-hidden="true">·</span> Tor Browser experience <span aria-hidden="true">·</span> Verify the onion address before signing in.</div>
+</footer>
 </body>
 </html>
 {{end}}

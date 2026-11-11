@@ -1,37 +1,51 @@
 {{template "layout" .}}
 
-{{define "title"}}Marketplace &middot; OnionShop{{end}}
+{{define "title"}}Marketplace · OnionShop{{end}}
 
 {{define "body"}}
-<h1>OnionShop</h1>
-<p>A marketplace reachable only over Tor. Listings are vendor copy &mdash; verify, never trust.</p>
-
-<form method="get" action="/search">
-<label>Search listings
-<input type="text" name="q" placeholder="keywords" maxlength="200"></label>
-<p><button type="submit">Search</button></p>
-</form>
+<section class="hero" aria-labelledby="market-title">
+  <div>
+    <p class="eyebrow">A quieter way to shop</p>
+    <h1 id="market-title">Independent shops. One thoughtful marketplace.</h1>
+    <p class="lede">Browse vendor listings and compare details at your own pace. Always verify the onion address and read each listing carefully.</p>
+    <form method="get" action="/search" role="search">
+      <label for="market-search">Find a listing</label>
+      <div class="search-row">
+        <input id="market-search" type="search" name="q" placeholder="Search products and descriptions" maxlength="200">
+        <button type="submit">Search</button>
+      </div>
+    </form>
+  </div>
+  <aside class="hero-card">
+    <p class="eyebrow">Privacy by design</p>
+    <strong>Server-rendered. No JavaScript.</strong>
+    <p class="muted">A lightweight interface designed for Tor Browser and slower connections.</p>
+  </aside>
+</section>
 
 {{if .Categories}}
-<h2>Categories</h2>
-<ul>
-{{range .Categories}}
-<li><a href="/category/{{.Slug}}">{{.Name}}</a></li>
-{{end}}
-</ul>
+<section aria-labelledby="category-title">
+  <div class="section-heading"><h2 id="category-title">Browse categories</h2></div>
+  <ul class="category-list">
+  {{range .Categories}}<li><a href="/category/{{.Slug}}">{{.Name}}</a></li>{{end}}
+  </ul>
+</section>
 {{end}}
 
 {{if .TopVendors}}
-<h2>Top vendors</h2>
-<ol>
-{{range .TopVendors}}
-<li>{{.ShopName}} &middot; {{.VendorUsername}}{{if .Eta}} &middot; {{.Eta}}{{end}}
-&middot; {{.SalesCount}} sales &middot; <span title="average rating">{{printf "%.2f" .AvgRating}}/5</span></li>
-{{end}}
-</ol>
+<section aria-labelledby="vendor-title">
+  <div class="section-heading"><h2 id="vendor-title">Community favorites</h2><span class="muted">Based on completed sales</span></div>
+  <ol class="vendor-list">
+  {{range .TopVendors}}
+    <li class="vendor-row"><span class="rank">{{.Rank}}</span><div><strong>{{.ShopName}}</strong><div class="muted"><a href="/u/{{.VendorUsername}}">@{{.VendorUsername}}</a>{{if .Eta}} · {{.Eta}} dispatch{{end}}</div></div><span class="vendor-rating">{{printf "%.2f" .AvgRating}}/5 · {{.SalesCount}} sales</span></li>
+  {{end}}
+  </ol>
+</section>
 {{end}}
 
-<h2>Newest listings</h2>
-{{template "productgrid" .}}
-<p><a href="/vendor/apply">Become a vendor</a></p>
+<section aria-labelledby="listing-title">
+  <div class="section-heading"><h2 id="listing-title">Recently listed</h2><span class="muted">{{len .Products}} items</span></div>
+  {{template "productgrid" .}}
+</section>
+<p class="vendor-callout"><span>Have something to offer?</span> <a class="button secondary" href="/vendor/apply">Apply to become a vendor</a></p>
 {{end}}
