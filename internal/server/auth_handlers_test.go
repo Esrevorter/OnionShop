@@ -782,16 +782,4 @@ func extractInput(t *testing.T, body, want string) string {
 	return strings.NewReplacer("&amp;", "&", "&#43;", "+", "&#61;", "=", "&#47;", "/").Replace(s)
 }
 
-// extractText grabs the visible text right after a marker, up to the next tag.
-func extractText(t *testing.T, body, marker string) string {
-	t.Helper()
-	i := strings.Index(body, marker)
-	if i < 0 {
-		t.Fatalf("marker %q not found in body:\n%s", marker, truncate(body))
-	}
-	rest := body[i+len(marker):]
-	if j := strings.IndexAny(rest, "<"); j >= 0 {
-		rest = rest[:j]
-	}
-	return strings.TrimSpace(strings.ReplaceAll(rest, "\n", " "))
-}
+
