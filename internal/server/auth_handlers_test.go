@@ -384,6 +384,12 @@ func newAuthAppForTest(t *testing.T, store AuthStore) *App {
 // postForm runs one form POST through the whole router with the session
 // cookie captured from getTarget, solving the CAPTCHA embedded in that GET.
 // Returns the response recorder.
+//
+// The prompt is read from the CaptchaService, NOT scraped from the rendered
+// HTML: the visible label is user-facing copy that UI work rewords freely
+// (it was "CAPTCHA:" until the responsive redesign renamed it to "Human
+// verification" and moved the prompt into its own paragraph). Only the hidden
+// field NAMES are a contract; the prose is not.
 func postForm(t *testing.T, app *App, getTarget string, c *httpClient, path string, extra url.Values) (rec *httptest.ResponseRecorder, formBody string) {
 	t.Helper()
 	recGet, body := c.get(t, getTarget)
@@ -393,8 +399,17 @@ func postForm(t *testing.T, app *App, getTarget string, c *httpClient, path stri
 	csrf := extractInput(t, body, "csrf_token")
 	capID := extractInput(t, body, "captcha_id")
 	capTok := extractInput(t, body, "captcha_token")
-	prompt := extractText(t, body, "CAPTCHA:") // e.g. "7 + 4 ="
-	sum := parsePromptSum(t, prompt)
+
+	// Authoritative prompt straight from server-side state (memory mirror
+	// when rdb is nil, which is how newAuthAppForTest builds the service).
+	if app.captcha == nil {
+		t.Fatalf("app.captcha is nil after GET %s — auth routes did not register", getTarget)
+	}
+	ch, ok := app.captcha.Challenge(context.Background(), capID)
+	if !ok {
+		t.Fatalf("captcha challenge %q is not live after GET %s (expired or burned?)", capID, getTarget)
+	}
+	sum := parsePromptSum(t, ch.Prompt)
 
 	form := url.Values{}
 	form.Set("csrf_token", csrf)
