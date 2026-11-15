@@ -112,8 +112,13 @@ func resolveAddr(raw string) (string, error) {
 	log.Printf("%s=1: allowing non-loopback bind %q (contained network namespace)", netNeverEnv, net.JoinHostPort(host, port))
 	return net.JoinHostPort(host, port), nil
 }
-
 func main() {
+	// Container healthcheck mode: probe the live listener and exit. Runs
+	// before flag parsing so it never touches config, sessions or stores.
+	if len(os.Args) > 1 && os.Args[1] == "healthcheck" {
+		os.Exit(runHealthcheck())
+	}
+
 	addr := flag.String("addr", envOr("ONIONSHOP_ADDR", ""),
 		"TCP listen address (loopback only, unless ONIONSHOP_NET_NEVER=1 in a contained network namespace; defaults to $ONIONSHOP_ADDR, then "+defaultAddr+")")
 	unixSock := flag.String("unix-socket", envOr("ONIONSHOP_UNIX", ""),

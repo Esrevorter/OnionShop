@@ -1,5 +1,3 @@
-version: '3.8'
-
 # Development/preview stack; production use is gated by PRODUCTION_READINESS.md.
 # TLS cert/key must be generated for the exact ONION_HOST using scripts/gen-certs.sh.
 # This is a self-signed ECDSA TLS key separate from Tor's Ed25519 key. Tor's
@@ -21,27 +19,19 @@ x-hardening: &default-hardening
     options: { max-size: "10m", max-file: "2" }
 
 services:
-  socket-init:
-    image: onionshop-app:local
-    entrypoint: ["/bin/sh", "-c"]
-    command: ["chown 1000:101 /run/onionshop && chmod 0770 /run/onionshop"]
-    user: "0:0"
-    cap_add: [CHOWN]
-    cap_drop: [ALL]
-    security_opt: [no-new-privileges:true]
-    read_only: true
-    restart: "no"
-    network_mode: none
-    volumes:
-      - appsock:/run/onionshop
 
+  # 1. Nginx Reverse Proxy (The Gatekeeper)
+  # Terminates TLS 1.3 on loopback only and proxies to the Go app over the
+  # shared UNIX socket. group_add grants the socket's group (app gid 1000):
+  # the socket is 0770 app:app, and nginx runs as 101:101.
   nginx:
-    image: nginx:1.27-alpine # tag-only; verify/pin digest before production
+    image: nginx:1.27-alpine           # pinned minor; bump deliberately after review
     <<: *default-hardening
-    user: "101:101"
+    user: "101:101"                    # 'nginx' user in Alpine
+    group_add: ["1000"]                # supplementary access to app.sock (0770)
     ports:
-      - "127.0.0.1:8080:8080" # Tor onion port 80: HTTP->HTTPS redirect
-      - "127.0.0.1:8443:8443" # Tor onion port 443: TLS endpoint
+      - "127.0.0.1:8080:8080"          # Tor HiddenServicePort 80 target
+      - "127.0.0.1:8443:8443"          # Tor HiddenServicePort 443 target
     volumes:
       - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
       - ./nginx/ssl:/etc/nginx/ssl:ro
@@ -50,17 +40,14 @@ services:
     depends_on:
       app:
         condition: service_healthy
-    networks: [internal_net]
+    networks: [internal_net, edge_net]
     tmpfs: [/tmp, /var/cache/nginx, /var/run]
     healthcheck:
-      # Local liveness only; certificate verification is disabled because this
-      # probe uses loopback IP rather than the onion hostname. This is NOT a
-      # client trust check and must not be copied into browser instructions.
-      test: ["CMD", "wget", "--no-check-certificate", "--quiet", "--tries=1", "-O", "/dev/null", "https://127.0.0.1:8443/health"]
+      test: ["CMD", "wget", "--no-check-certificate", "--quiet", "--tries=1",
+             "-O", "/dev/null", "https://127.0.0.1:8443/health"]
       interval: 30s
       timeout: 5s
-      retries: 3
-
+      retries: 3  
   app:
     image: onionshop-app:local
     build:
@@ -79,8 +66,6 @@ services:
       - ONIONSHOP_SECURE_COOKIES=true
       - APP_ENV=production
     depends_on:
-      socket-init:
-        condition: service_completed_successfully
       postgres:
         condition: service_healthy
       redis:
@@ -90,12 +75,11 @@ services:
     volumes:
       - appsock:/run/onionshop
     healthcheck:
-      test: ["CMD-SHELL", "test -S /run/onionshop/app.sock"]
+      test: ["CMD", "/usr/local/bin/onionshop", "healthcheck"]
       interval: 10s
-      timeout: 3s
-      retries: 6
+      timeout: 5s
+      retries: 12
       start_period: 10s
-
   postgres:
     image: postgres:16-alpine # tag-only; verify/pin digest before production
     <<: *default-hardening
@@ -104,6 +88,7 @@ services:
       POSTGRES_USER: ${DB_USER}
       POSTGRES_PASSWORD: ${DB_PASSWORD}
       POSTGRES_DB: ${DB_NAME}
+      PGDATA: /var/lib/postgresql/data/pgdata
     volumes:
       - pgdata:/var/lib/postgresql/data
     networks: [internal_net]
@@ -136,6 +121,7 @@ services:
   btcpay:
     # Verify digest and platform against registry metadata before production.
     image: btcpayserver/btcpayserver@sha256:4c029e17e84600f740fb45652be5dfa906fe81e1c1a2789927e75954032f7c79
+    profiles: ["disabled"] 
     restart: unless-stopped
     user: "1000:1000"
     security_opt: [no-new-privileges:true]
@@ -153,6 +139,7 @@ services:
 
   btcpaydb:
     image: postgres:16-alpine # tag-only; verify/pin digest before production
+    profiles: ["disabled"] 
     <<: *default-hardening
     user: "999:999"
     environment:
@@ -197,5 +184,11 @@ networks:
   internal_net:
     driver: bridge
     internal: true
+  # edge_net exists ONLY so nginx has a default gateway: Docker publishes ports
+  # through the container's default-gateway network, and an internal-only
+  # container has none, so `ports:` is silently ignored without this. Required
+  # for host-side Tor (deploy/torrc) to reach 127.0.0.1:8443 in production too.
+  edge_net:
+    driver: bridge
   btcpay_net:
     driver: bridge
