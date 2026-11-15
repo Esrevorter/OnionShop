@@ -12,8 +12,22 @@ COPY web/ ./web/
 RUN CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags="-s -w" -o /out/onionshop ./cmd/onionshop
 
 FROM alpine:3.19
-RUN adduser -u 1000 -S app
+# /run/onionshop MUST exist in the image with the app's ownership: Docker seeds
+# an empty named volume from this directory, so the non-root app can create its
+# UNIX socket inside the shared appsock volume. Mode 0770 plus nginx's
+# supplementary group (docker-compose.yml group_add) is the socket-access
+# boundary, mirroring the systemd path's dedicated nginxsock group.
+RUN adduser -u 1000 -S app \
+ && mkdir -p /run/onionshop \
+ && chown 1000:1000 /run/onionshop \
+ && chmod 0770 /run/onionshop
 COPY --from=build /out/onionshop /usr/local/bin/onionshop
+# html/template parses from disk at boot: buildTemplates globs page_*.html under
+# web/templates RELATIVE to the working directory. The runtime stage must ship
+# them — copying web/ into the build stage alone is not enough.
+# web/static is NOT needed here: nginx serves it from a read-only bind mount.
+WORKDIR /app
+COPY --from=build /src/web/templates ./web/templates
 USER 1000:1000
 ENV ONIONSHOP_ADDR=127.0.0.1:8080
 EXPOSE 8080
