@@ -221,9 +221,17 @@ func main() {
 	// shutdown ctx as the listener.
 	board := cron.NewLeaderboard(catalogStore, cron.DefaultInterval, 0)
 	go board.Run(ctx)
+	
 	// Bind policy was already vetted by resolveAddr above: loopback, or a
-	// contained-namespace bind under ONIONSHOP_NET_NEVER=1.
-	log.Printf("onionshop listening on %s (TCP; bind policy enforced by resolveAddr)", target)
+	// contained-namespace bind under ONIONSHOP_NET_NEVER=1. Log the actual
+	// listener bound (UNIX socket if configured, otherwise TCP target) so
+	// operators aren't misled by a hardcoded "(TCP)" suffix when the
+	// compose deployment uses the socket.
+	if *unixSock != "" {
+		log.Printf("onionshop listening on unix:%s", *unixSock)
+	} else {
+		log.Printf("onionshop listening on %s (TCP; bind policy enforced by resolveAddr)", target)
+	}
 
 	<-ctx.Done()
 	log.Print("shutdown signal received")

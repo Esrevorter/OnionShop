@@ -73,7 +73,10 @@ func (c Config) Validate() error {
 // Deps carries the wired subsystems. Phase 3+ handlers receive *App and pull
 // their own dependencies off it; this is what keeps handler signatures uniform.
 type Deps struct {
-	Pool      interface{ Close() } // pgx pool handle kept for shutdown symmetry
+	// Pool is the Postgres connection pool. The interface includes Ping so
+	// the health endpoint can actively verify reachability (readiness)
+	// rather than just checking for a non-nil pointer.
+	Pool      interface{ Close(); Ping(context.Context) error }
 	RDB       *redis.Client
 	Sm        *scs.SessionManager
 	Limiters  map[string]*RateLimiter
@@ -285,9 +288,10 @@ func (a *App) recoverMiddleware() func(http.Handler) http.Handler {
 	}
 }
 
-// handleHealth answers the compose/docker healthcheck. Body stays "ok\n":
-// scripts/healthcheck.sh greps for it. It reports dependency reachability
-// without exposing which dependency failed.
+// handleHealth answers the compose/docker healthcheck. It acts as both a
+// liveness and readiness probe: it asserts the Postgres pool is wired and
+// actively reachable (not just non-nil), and that Redis is reachable if
+// configured. Body stays "ok\n" / "not ok\n" for scripts to grep.
 func (a *App) handleHealth(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), 2*time.Second)
 	defer cancel()
@@ -295,11 +299,25 @@ func (a *App) handleHealth(w http.ResponseWriter, r *http.Request) {
 	status := http.StatusOK
 	body := "ok\n"
 
-	if a.deps.RDB != nil {
+	// Readiness: assert Postgres pool is wired and reachable. Since main.go
+	// fatals if the pool cannot be opened, a.deps.Pool is non-nil when the
+	// app is running. We still type-assert and ping to catch connection
+	// drops post-startup.
+	if a.deps.Pool == nil {
+		status, body = http.StatusServiceUnavailable, "not ok\n"
+	} else if pinger, ok := a.deps.Pool.(interface{ Ping(context.Context) error }); ok {
+		if err := pinger.Ping(ctx); err != nil {
+			status, body = http.StatusServiceUnavailable, "not ok\n"
+		}
+	}
+
+	// Dependency: assert Redis is reachable if configured.
+	if status == http.StatusOK && a.deps.RDB != nil {
 		if err := a.deps.RDB.Ping(ctx).Err(); err != nil {
 			status, body = http.StatusServiceUnavailable, "not ok\n"
 		}
 	}
+
 	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 	w.WriteHeader(status)
 	_, _ = w.Write([]byte(body))
