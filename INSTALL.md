@@ -1,3 +1,5 @@
+# INSTALL.md
+
 # Installation & Operations Guide
 
 This repository includes a development compose stack and a guided preview installer. Neither certifies production readiness. OnionShop supports Tor Browser over a Tor v3 onion service only; mainstream browsers are unsupported by project policy (not technically enforceable).
@@ -26,6 +28,15 @@ openssl pkey -in nginx/ssl/onion.key -check -noout
 
 These checks verify certificate contents/key integrity; they do **not** prove Tor Browser acceptance or bind the TLS key to the onion identity. Complete the browser test on a clean, supported Tor Browser profile without exceptions or bypasses. If a browser warning appears, stop: the deployment is not ready under this policy.
 
+## Whonix Topology Setup
+
+OnionShop is designed to be deployed on a strict Whonix-Gateway / Whonix-Workstation (AppVM) split to guarantee network isolation.
+
+1. **Whonix-Gateway**: Provision a standard Whonix-Gateway VM. Configure the v3 onion service in its Tor configuration (`/etc/tor/torrc`), mapping onion ports 80 and 443 to the AppVM's internal static IP (e.g., `10.152.152.11:8080` and `10.152.152.11:8443`).
+2. **Whonix-Workstation (AppVM)**: Provision a Whonix-Workstation VM. Verify it has **no physical network adapters** and its default route is exclusively the Whonix-Gateway. This VM will host the Docker Compose stack (`app`, `postgres`, `nginx`, `redis`, `backup`).
+3. **Docker Installation**: Install Docker Engine and Compose v2 on the AppVM. Ensure the Docker daemon is configured to not expose any ports to external interfaces (the AppVM has none, but defense-in-depth applies).
+4. **Storage**: Ensure the AppVM's persistent storage (especially for PostgreSQL and backups) is encrypted (e.g., LUKS2) and that swap is disabled or encrypted.
+
 ## Development prerequisites
 
 - Go toolchain matching `go.mod` (Go 1.25.x for the current CI configuration)
@@ -45,10 +56,10 @@ make build
 
 1. Prepare and test host encryption, swap, firewall, Tor, and admin access on disposable infrastructure. Do not blindly apply host templates remotely.
 2. Prepare secrets with unique credentials and an age recipient whose private identity stays offline.
-3. Set up the Tor v3 service and record its hostname locally; keep public and private admin onion identities separate.
+3. Set up the Tor v3 service on the Whonix-Gateway and record its hostname locally; keep public and private admin onion identities separate.
 4. Generate the self-signed certificate with the exact onion SAN as above, verify file permissions, and test the exact Tor Browser release. No warning bypasses are permitted.
-5. Verify image digests/platforms and review Compose network, socket, database, Redis, and BTCPay configuration.
-6. Confirm onion port 80 reaches nginx's redirect listener on host loopback 8080, and onion port 443 reaches TLS on host loopback 8443. Check both endpoints in Tor Browser.
+5. Verify image digests/platforms and review Compose network, socket, database, Redis, and payment backend configuration.
+6. Confirm onion port 80 reaches the AppVM's nginx redirect listener on loopback 8080, and onion port 443 reaches TLS on loopback 8443. Check both endpoints in Tor Browser.
 7. Run migrations, application tests, payment/escrow workflow tests, egress checks, and a complete offline-key backup restore drill on disposable systems.
 8. Record results and operator sign-off. See `PRODUCTION_READINESS.md`; the installer is not a security certification.
 

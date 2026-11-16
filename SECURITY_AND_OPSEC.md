@@ -17,16 +17,17 @@
 
 ## 2. Network and host controls
 
-- Review nginx, Tor, Docker, and host firewall together. Tor port 80 maps to nginx redirect listener 8080; onion port 443 maps to TLS listener 8443.
+- **Whonix Topology:** The deployment strictly uses a Whonix-Gateway / Whonix-Workstation (AppVM) split. The AppVM hosts the entire application stack (`app`, `postgres`, `nginx`, `redis`, `backup`) and has **no direct physical network interface**. All network traffic is forcibly routed through the Whonix-Gateway's Tor daemon. This prevents any accidental clearnet leaks, DNS leaks, or direct IP exposure from the application stack.
+- Review nginx, Tor, Docker, and host firewall together. Tor port 80 maps to the AppVM's nginx redirect listener 8080; onion port 443 maps to TLS listener 8443.
 - App/nginx uses the shared UNIX socket; health checks should exercise the actual proxy/socket route.
-- Docker internal networks do not by themselves prove host firewall safety, DNS policy, or Tor-only egress. Audit each service, especially BTCPay.
+- Docker internal networks do not by themselves prove host firewall safety, DNS policy, or Tor-only egress. The Whonix topology enforces this at the hypervisor level, but audit each service configuration to ensure no internal bypasses are attempted.
 - Apply LUKS2, swap, nftables, systemd, and private-onion Dropbear through host-specific reviewed procedures and test recovery first.
 - Verify external container image digest/platform against upstream metadata.
 
 ## 3. Data, payments, and recovery
 
 - Do not commit or bake secrets. Verify database grants and Redis policy against actual code/config.
-- Poll BTCPay; do not add inbound webhooks. Verify ledger transactions/idempotency and financial workflows.
+- Poll payment backends; do not add inbound webhooks. Verify ledger transactions/idempotency and financial workflows.
 - Encrypt backups with age to an offline-generated public recipient; keep private identity offline and run restore drills.
 - `rm`/`shred` are not reliable erasure on SSDs, snapshots, copy-on-write or journaled filesystems. Persistent denial requires tested cryptographic key destruction.
 

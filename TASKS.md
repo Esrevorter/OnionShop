@@ -1,3 +1,5 @@
+# TASKS.md
+
 # Project status and roadmap
 
 `[x]` means an application feature exists, not that it is security-certified or production-operated.
@@ -9,15 +11,15 @@ Phases 1–8 application features are implemented. The initial FIXME checklist's
 ## Open engineering and production gates
 
 - [ ] Expand high-risk escrow transition/template coverage and complete isolated integration tests.
-- [ ] Verify external image digests/platforms; some compose images remain mutable tags (Phase 9.3 §5.6 partially addressed via resource limits; digest pinning remains).
+- [ ] Verify external image digests/platforms; some compose images remain mutable tags.
 - [ ] Keep Go toolchain rationale accurate: Go 1.25 is the repository's project pin, not an asserted pgx minimum.
 - [ ] Review ProtonMail go-crypto dependency maintenance/security posture.
 - [ ] Verify the self-signed ECDSA P-384 certificate has exact DNS SAN for actual v3 onion hostname; test exact supported Tor Browser version on clean profile. Never use a CA-issued cert, SPKI/hash pin, or warning bypass. Onion protocol provides onion identity; TLS key is separate.
-- [ ] Verify Tor/host/Compose port mapping, UNIX socket permissions/health checks, service egress/DNS. (BTCPay networking removed in Phase 10).
+- [ ] Verify Tor/host/Compose port mapping, UNIX socket permissions/health checks, service egress/DNS, and strict Whonix-Gateway/AppVM network isolation (ensuring the AppVM has no physical NIC and all traffic routes through the Gateway).
 - [ ] Complete disposable-host LUKS/firewall/systemd/Dropbear and recovery tests.
 - [ ] Complete offline-key backup restore and establish canary/incident ownership.
 
-## Phase 9: Reliability & Safety Net [COMPLETE]
+## Phase 9: Reliability & Safety Net
 
 > **Rationale.** Phase 10 (Monero settlement) is the single highest-consequence change in the
 > project — money flows, escrow state transitions, vendor payouts. It must ship on a foundation
@@ -35,65 +37,142 @@ Phases 1–8 application features are implemented. The initial FIXME checklist's
 > UX (defect 12: silent degradation after reboot) and end-user UX (uptime) are directly protected.
 >
 > **Relationship to existing gates.** This phase resolves defects 12–25 from DEVLOG.md §1 and
-> the §5.6 gaps (resource ceilings) noted earlier in that log. It does **not**
+> the §5.6 gaps (resource ceilings, image pinning) noted earlier in that log. It does **not**
 > touch any application logic from Phases 1–8; all fixes are in infrastructure, middleware and
 > observability.
 
 ### 9.0 P0 — Correctness (blocks everything)
-- [x] Confirm `go test ./...` is green. The five CAPTCHA-marker failures were resolved 
-      (`postForm` reads prompt via `CaptchaService.Challenge()`, `extractText` removed, 
-      `friction_contract_test.go` added).
-- [x] Add the CI smoke gate to `.github/workflows/ci.yml`: a fourth job, `smoke`, sibling to
+- [ ] Confirm `go test ./...` is green. The five CAPTCHA-marker failures
+      (`TestLoginRecordsHistoryWithUTCTimeAndHost`, `TestLoginHistoryWriteErrorDoesNotBlockLogin`,
+      `TestLoginHoneypotSilentlyRejected`, `TestPGPUploadAndClearFullChain`,
+      `TestPGPUploadStoreFailureRendersFreshChallenge`) are **likely still red** on `main` — the
+      fixes from DEVLOG.md §1 Defect 24 (`postForm` reads prompt via `CaptchaService.Challenge()`,
+      `extractText` removed, `friction_contract_test.go` added) need verification. If not landed,
+      apply them; nothing else in this phase matters while the suite is red.
+- [ ] Add the CI smoke gate to `.github/workflows/ci.yml`: a fourth job, `smoke`, sibling to
       `go`/`vuln`/`sqlc`. Boots the real compose stack, applies migrations against the container
-      IP, then asserts health, friction contract, static serving, redirect, header uniqueness, 
-      and TLS 1.3 enforcement.
-- [x] Add a regression test inside `smoke`: stop postgres, restart the app, assert the container
+      IP, then asserts:
+      - `curl -sfk https://127.0.0.1:8443/health` returns `ok`
+      - `GET /login` contains `name="captcha_token"` (friction contract)
+      - `/static/main.css` returns 200
+      - HTTP 8080 redirects to HTTPS 443
+      - `X-Frame-Options:` count on `/login` is exactly 1 (catches defect 16)
+      - TLS 1.2 is refused (catches defect 10 regression)
+      Uses an ephemeral `.env` generated with `{ echo …; } > .env` (not heredoc, to avoid
+      whitespace in secrets); placeholder TLS material with `sudo chgrp 101`; services named
+      explicitly so `backup`/`btcpay` never start. On failure: `docker compose logs --tail=100`.
+      On success: `docker compose down -v --remove-orphans`.
+- [ ] Add a regression test inside `smoke`: stop postgres, restart the app, assert the container
       becomes **unhealthy** rather than healthy-but-crippled. Catches defect 12 recurrence.
 
 ### 9.1 P1 — Resilience (uptime = user trust)
-- [x] Defect 12: fail fast on missing infrastructure. `main.go` now `log.Fatalf` when 
-      `OpenDBFromEnv` fails, letting `restart: unless-stopped` retry until dependencies are ready.
-- [x] Defect 13: make `/healthz` a genuine readiness probe. It now actively pings the Postgres 
-      pool via the `Ping()` method, ensuring the market only reports healthy when it can actually 
-      serve authenticated requests.
-- [x] Defect 15: stale socket unlink. `internal/server/router.go` `Serve` now removes pre-existing 
-      socket files (guarded by `ModeSocket`) before `net.Listen`, preventing `EADDRINUSE` crash-loops.
-- [x] Defect 14: misleading startup log. `main.go` now correctly logs the UNIX socket path when 
-      `ONIONSHOP_UNIX` is set, instead of unconditionally printing a hardcoded TCP message.
+- [ ] Defect 12: fail fast on missing infrastructure. `main.go` currently logs
+      `"postgres unavailable (degraded mode)"` and continues with a nil pool, which causes
+      `RegisterAuthRoutesFull` to silently skip mounting auth/catalog/vendor/admin routes. A
+      Docker daemon restart (which ignores `depends_on`) or a host reboot can leave the market
+      serving only anonymous 404 redirects indefinitely, with only a log line to indicate it.
+      Two acceptable fixes, pick one:
+      - **Fail fast:** `log.Fatal` when `OpenDBFromEnv` or `OpenRedisFromEnv` fails; let
+        `restart: unless-stopped` retry until dependencies are ready. Simplest; matches
+        "no silent degradation" from AGENTS.md §3.
+      - **Bounded retry:** loop for up to ~60s with backoff before giving up, then register
+        routes. Keeps the degraded-mode philosophy but bounds it.
+      I recommend fail-fast. A market that cannot authenticate anyone should not be reporting
+      healthy.
+- [ ] Defect 13: make `/healthz` a genuine readiness probe. Currently it pings Redis only. It
+      must also assert the Postgres pool is non-nil and the authenticated routes are mounted. The
+      latter is the meaningful check — when the pool fails, routes stay nil, and a market
+      reporting "healthy" while unable to log anyone in is worse than one reporting "unhealthy".
+- [ ] Defect 15: stale socket unlink. `net.Listen("unix", …)` does not remove a pre-existing
+      socket file; after any SIGKILL, daemon restart or host reboot the app fails with
+      `EADDRINUSE` and loops. In `internal/server/router.go` `Serve`, before `net.Listen`, add:
+      ```go
+      if fi, err := os.Stat(a.cfg.UnixSocket); err == nil && fi.Mode()&os.ModeSocket != 0 {
+          if err := os.Remove(a.cfg.UnixSocket); err != nil {
+              return fmt.Errorf("server: remove stale socket: %w", err)
+          }
+      }
+      ```
+      The `ModeSocket` guard is essential — without it a typo'd `ONIONSHOP_UNIX` pointing at a
+      real file would silently delete it. Needs `os` imported.
+- [ ] Defect 14: misleading startup log. `main.go` unconditionally prints
+      `onionshop listening on <TCP addr> (TCP; bind policy enforced by resolveAddr)` even when
+      `Serve` bound the UNIX socket. Replace with the actual listener: log the socket path when
+      `a.cfg.UnixSocket` is set, the TCP address otherwise.
 
 ### 9.2 P2 — Security config (zero UX cost)
-- [x] Defect 16: duplicate security headers. `nginx/nginx.conf` now uses `proxy_hide_header` for 
-      CSP, XFO, XCTO, Referrer-Policy, and Permissions-Policy to prevent duplication with Go middleware.
-- [x] Defect 17: `/static/` location inheritance. Security headers are now explicitly repeated 
-      inside the `/static/` location block to work around nginx's `add_header` inheritance rules.
-- [x] Defect 18: Server header documentation. Verified that `server_tokens off` and 
-      `proxy_hide_header Server` achieve the floor of `Server: nginx` (no version), and docs 
-      reflect this achievable limit.
+- [ ] Defect 16: duplicate security headers. Go middleware emits them, nginx `add_header`
+      appends — every response currently carries `X-Frame-Options`, `X-Content-Type-Options`,
+      `Referrer-Policy` and `Content-Security-Policy` **twice**. Duplicate `X-Frame-Options` has
+      undefined behaviour; some user agents ignore the header entirely, silently removing
+      clickjacking protection. In `nginx/nginx.conf` 8443 server block, before the `add_header`
+      lines:
+      ```nginx
+      proxy_hide_header Content-Security-Policy;
+      proxy_hide_header X-Frame-Options;
+      proxy_hide_header X-Content-Type-Options;
+      proxy_hide_header Referrer-Policy;
+      proxy_hide_header Permissions-Policy;
+      ```
+      Verify with `curl -sk -D - -o /dev/null https://127.0.0.1:8443/login | grep -ci
+      '^x-frame-options:'` — must print `1`, not `2`.
+- [ ] Defect 17: `/static/` location inheritance. nginx's `add_header` inheritance rule: a
+      `location` that defines any `add_header` does not inherit the parent's list. The
+      `/static/` block has `add_header Cache-Control "public, immutable"`, so it likely drops
+      CSP, XFO and the rest. Verify, then either repeat the security header set inside that
+      location or move the common set into an `include` fragment used by both.
+- [ ] Defect 18: correct the §5.1 claim about stripping `Server:`. `server_tokens off` hides the
+      version, not the header; `proxy_hide_header Server` strips only the upstream's header.
+      Responses still carry `Server: nginx`. Update SECURITY_AND_OPSEC.md §5.1 to state the
+      achievable floor — `Server: nginx` with no version — rather than implying full removal.
 
 ### 9.3 P3 — Toolchain & DX (prevents future drift)
-- [x] Defect 20 & 21: `make lint` now uses `go run ...@version` with `GOTOOLCHAIN=local` for both 
-      `staticcheck@v0.6.1` and `golangci-lint@v1.64.8`, perfectly matching CI and preventing PATH drift.
-- [x] Defect 22: Makefile `migrate` and `migrate-down` targets now explicitly check for and require 
-      `DATABASE_URL` from the environment, failing loudly with usage instructions if unset.
-- [x] Defect 23: `Dockerfile` build stage now downloads the pre-compiled `sqlc` v1.27.0 binary and 
-      runs `sqlc generate` before `go build`, making the image self-sufficient on a clean clone.
-- [x] §5.6 gaps: Added `mem_limit` and `pids_limit` to all compose services (matching systemd 
-      `MemoryMax`/`TasksMax`). Added necessary `cap_add` (CHOWN, DAC_OVERRIDE, FOWNER, SETUID, SETGID) 
-      to postgres to allow volume initialization under `read_only: true`.
+- [ ] Defect 20: pin staticcheck. `make lint` calls bare `staticcheck` from `$PATH`. Latest
+      staticcheck (`honnef.co/go/tools@v0.8.2`) requires Go ≥ 1.26; CI pins golangci-lint
+      v1.64.8 which bundles `honnef.co/go/tools v0.6.1`. Install `staticcheck@v0.6.1` locally
+      (matching what golangci-lint already runs) to make local lint agree with CI.
+- [ ] Defect 21: `make lint` uses the same
+      `go run github.com/golangci/golangci-lint/cmd/golangci-lint@v1.64.8 run --timeout 5m ./...`
+      invocation as CI, with `GOTOOLCHAIN=local` set. Removes the drift where a locally-installed
+      binary disagrees with CI.
+- [ ] Defect 22: reconcile Makefile `DATABASE_URL` default. Makefile hardcodes
+      `postgres://onionshop:onionshop_dev_only@127.0.0.1:5432/onionshop` while `install.sh`
+      generates a random `DB_PASSWORD` into `.env`. `make migrate` silently authenticates with a
+      credential that cannot work. Either:
+      - commit a `.env.dev` with the fixed `onionshop_dev_only` credentials for local work, or
+      - change the Makefile default to require `DATABASE_URL` from the environment and fail
+        loudly when unset.
+      The second option is more robust; the first preserves the current UX for developers who
+      don't want to source `.env` every time.
+- [ ] Defect 23: `make sqlc` is an undocumented prerequisite for `docker compose build app`.
+      `internal/store/gen/` is gitignored and the Dockerfile `COPY`s `internal/` — a clean clone
+      fails to build with undefined symbols. Either:
+      - document the prerequisite in INSTALL.md and AGENTS.md, or
+      - add `go install github.com/sqlc-dev/sqlc/cmd/sqlc@v1.27.0 && sqlc generate` to the build
+        stage of the Dockerfile so the image is self-sufficient.
+      The second option removes the failure mode; the first keeps the build fast on the host.
+- [ ] §5.6 gaps noted in DEVLOG.md: add `mem_limit`/`pids_limit` to every compose service
+      (matching the systemd units' `MemoryMax=1500M`/`TasksMax=256`); pin every base image by
+      digest (`sha256:…`) rather than mutable minor tag (`alpine:3.19`, `nginx:1.27-alpine`,
+      `postgres:16-alpine`, `redis:7-alpine`). Both are currently absent from the tracked
+      compose file.
 
-### 9.4 Definition of done [VERIFIED]
-- [x] `make test` green and CI smoke gate added and passing.
-- [x] The smoke gate fails if P1 fixes are reverted (reproduces degraded behaviour).
-- [x] `systemctl restart docker` (or a reboot) leaves the stack converging to `healthy` **unattended**.
-- [x] A fresh clone following INSTALL.md reaches `ok` on `/health` without tribal knowledge.
+### 9.4 Definition of done
+- [ ] `make test` green and CI green, including the five previously-failing full-chain tests
+      and the new smoke job.
+- [ ] The smoke gate fails if any of the P1 fixes are reverted (reproduces the degraded
+      behaviour and asserts the container goes unhealthy).
+- [ ] `systemctl restart docker` (or a reboot) leaves the stack converging to `healthy`
+      **unattended** — no manual `docker compose restart app` needed.
+- [ ] A fresh clone following INSTALL.md reaches `ok` on `/health` without any tribal knowledge
+      from this session.
 
 ### 9.5 What this phase explicitly does NOT do
-- [x] **Does not start Phase 10 (Monero settlement).** Phase 10 is the highest-consequence work
+- [ ] **Does not start Phase 10 (Monero settlement).** Phase 10 is the highest-consequence work
       in the project and must ship on a proven foundation. This phase is the gate for that.
-- [x] **Does not change any application feature from Phases 1–8.** No template, route, handler
+- [ ] **Does not change any application feature from Phases 1–8.** No template, route, handler
       or schema migration in this phase. End-user UX is untouched by design.
-- [x] **Does not add Whonix or multi-gateway topology.** That is a deliberate architecture choice
-      for Phase 10, not a reliability fix for the existing stack.
+- [ ] **Does not alter the baseline Whonix topology.** The Whonix-Gateway / Whonix-Workstation (AppVM) split fronting the `app`, `postgres`, `nginx`, `redis`, and `backup` servers is the established baseline architecture for strict network isolation, not a Phase 10 addition.
 
 ---
 
@@ -106,8 +185,9 @@ Phases 1–8 application features are implemented. The initial FIXME checklist's
 > entirely (unlinkable per-order subaddresses, confidential amounts, ring/FCMP sender privacy).
 > Secondary rationale: BTCPay's outbound calls (rate providers, GitHub release checks, remote
 > plugin builder, mempool.space explorer links) are clearnet correlation surfaces from the same
-> host as the market, and its 2026 hot-wallet incidents make it a poor custody neighbour for an 
-> onion service. See SECURITY_AND_OPSEC.md §3/§7 (to be rewritten by this phase).
+> host as the market, and its 2026 hot-wallet incidents (2.4.2 advisory Aug 7; second wave Nov 1
+> against ≤2.4.1, remediation = **fresh server + new seed**, not an update) make it a poor custody
+> neighbour for an onion service. See SECURITY_AND_OPSEC.md §3/§7 (to be rewritten by this phase).
 >
 > **Status of Phase 5 items superseded here:** "BTCPay API client + invoice-status poller",
 > "Checkout flow and QR code generation", and the XMR-gating clause on "Wallets page" are
@@ -126,13 +206,16 @@ Phases 1–8 application features are implemented. The initial FIXME checklist's
 
 ### 10.0 Remove the BTCPay placeholder (blocking — do first)
 - [ ] Delete the `btcpay` and `btcpaydb` services from `docker-compose.yml`. Current state is
-      non-functional and unsafe: image digest is a placeholder; there is **no `bitcoind` and no
-      NBXplorer** anywhere in the stack; `read_only: true` with only `/tmp` tmpfs gives BTCPay 
-      nowhere to write keys/plugins/logs.
+      non-functional and unsafe: image digest `sha256:e63283733215...f04620f4c00000000` is a
+      **placeholder, not a real digest** (pull will fail); there is **no `bitcoind` and no
+      NBXplorer** anywhere in the stack and no `BTCPAY_CHAINS`/`BTCPAY_BTCEXPLORERURL`, so it could
+      never detect a payment; `read_only: true` with only `/tmp` tmpfs gives BTCPay nowhere to
+      write keys/plugins/logs.
 - [ ] Close the egress hole: `btcpay_net` is currently `driver: bridge` with **no `internal: true`**,
       and `btcpay` is dual-homed onto it. This contradicts ARCHITECTURE.md §2 and
       SECURITY_AND_OPSEC.md §5.2. Removing the services removes the hole; assert afterwards that
-      **every** compose network is `internal: true` except the single deliberate node-egress path.
+      **every** compose network is `internal: true`. The AppVM itself has no physical NIC, so all
+      egress is naturally forced through the Whonix-Gateway.
 - [ ] Remove `BTCPAY_API_URL` / `BTCPAY_API_KEY` from the `app` environment and from
       `install/install.sh` secret generation; drop `btcpay_pgdata` from `volumes:`.
 - [ ] Note: `btcpaydb` reused `${DB_USER}`/`${DB_PASSWORD}` from the main app DB — one credential
@@ -161,9 +244,10 @@ Phases 1–8 application features are implemented. The initial FIXME checklist's
       timestamps can link an onion address to an IPv4 address (mitigate: accurate clock); running
       the daemon only when sending is itself a fingerprint (mitigate: always-on); Tor stream reuse
       can let a hidden-service operator link two of our broadcasts. Keep the node continuously up.
-- [ ] Egress isolation: the node is the **only** container with a route off-host, via a dedicated
-      Tor gateway (Whonix-Gateway/AppVM split per §5.3). Every other container stays default-deny.
-      Extend the §5.2 zero-DNS-egress canary to cover the node's resolver behaviour.
+- [ ] Egress isolation: The Monero node (`monerod`) resides in the AppVM but requires specific Tor
+      SOCKS proxy configuration (`--proxy 127.0.0.1:9050`) to sync via the Whonix-Gateway's Tor
+      daemon. Every other container stays default-deny. Extend the §5.2 zero-DNS-egress canary to
+      cover the node's resolver behaviour.
 - [ ] Container hygiene: image entrypoint starts as root briefly then drops privileges via
       `su-exec`; UID/GID are set with **`PUID`/`PGID` env vars, not `user:`** (a `user:` override no
       longer remaps the daemon UID). Data dir `/home/monero/.bitmonero`. Compatible with
@@ -342,8 +426,8 @@ Phases 1–8 application features are implemented. The initial FIXME checklist's
 - [ ] End-to-end on **stagenet** before any mainnet exposure: create order → pay from a second
       wallet → observe poll → escrow credit → ship → release → vendor withdrawal. Repeat for
       refund and dispute paths.
-- [ ] Host assertions in CI/installer: every compose network `internal: true` except the node
-      egress path; zero `ports:` on wallet-rpc/moneropay/moneropaydb; zero UDP/TCP 53 egress;
+- [ ] Host assertions in CI/installer: every compose network `internal: true`; zero `ports:` on
+      wallet-rpc/moneropay/moneropaydb; zero UDP/TCP 53 egress (enforced by Whonix topology);
       `swapon --show` empty or LUKS-backed.
 
 ### 10.9 Optional / deferred
