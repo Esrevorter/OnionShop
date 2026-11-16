@@ -7,6 +7,7 @@ import (
 	"html/template"
 	"net"
 	"net/http"
+	"os"
 	"strings"
 	"time"
 
@@ -37,11 +38,11 @@ type Config struct {
 
 // Validate enforces the bind-address rule in code so a mistyped env var can
 // never silently expose the app off-box. Loopback is always allowed; an
-	// any-interface (":port" / "0.0.0.0:port") bind is accepted only because the
-	// single authoritative guard — cmd/onionshop's resolveAddr, gated on
-	// ONIONSHOP_NET_NEVER inside a container namespace with no off-box route —
-	// already vetted it before the Config reaches this layer. Anything else
-	// (e.g. a routable interface IP handed straight to server.New) stays refused.
+// any-interface (":port" / "0.0.0.0:port") bind is accepted only because the
+// single authoritative guard — cmd/onionshop's resolveAddr, gated on
+// ONIONSHOP_NET_NEVER inside a container namespace with no off-box route —
+// already vetted it before the Config reaches this layer. Anything else
+// (e.g. a routable interface IP handed straight to server.New) stays refused.
 func (c Config) Validate() error {
 	if c.Addr == "" && c.UnixSocket == "" {
 		return errors.New("server: empty listen address")
@@ -69,8 +70,8 @@ func (c Config) Validate() error {
 	return nil
 }
 
-// Deps are the wired subsystems. Phase 3+ handlers receive *App and pull their
-// own dependencies off it — this is what keeps handler signatures uniform.
+// Deps carries the wired subsystems. Phase 3+ handlers receive *App and pull
+// their own dependencies off it; this is what keeps handler signatures uniform.
 type Deps struct {
 	Pool      interface{ Close() } // pgx pool handle kept for shutdown symmetry
 	RDB       *redis.Client
@@ -191,11 +192,21 @@ func (a *App) Handler() http.Handler { return a.router }
 // deployment.
 func (a *App) Serve(ctx context.Context) error {
 	var (
-		errCh   chan error = make(chan error, 1)
+		errCh    = make(chan error, 1)
 		listener net.Listener
-		err     error
+		err      error
 	)
 	if a.cfg.UnixSocket != "" {
+		// A hard kill (SIGKILL, docker stop, host reboot, daemon restart) leaves
+		// the socket inode behind in the shared volume; net.Listen does not
+		// unlink it and bind fails with EADDRINUSE. Remove only an actual socket
+		// (ModeSocket guard), never a regular file or directory, so a
+		// misconfigured ONIONSHOP_UNIX cannot delete real data.
+		if fi, statErr := os.Stat(a.cfg.UnixSocket); statErr == nil && fi.Mode()&os.ModeSocket != 0 {
+			if rmErr := os.Remove(a.cfg.UnixSocket); rmErr != nil {
+				return fmt.Errorf("server: remove stale socket: %w", rmErr)
+			}
+		}
 		listener, err = net.Listen("unix", a.cfg.UnixSocket)
 	} else {
 		listener, err = net.Listen("tcp", a.cfg.Addr)
@@ -229,7 +240,7 @@ func (a *App) Serve(ctx context.Context) error {
 // bucketForRequest maps path prefixes onto limiter buckets. The caller may
 // supply an override (Phase 3 registers richer tables); the defaults encode
 // the abuse surface we already know about.
-func bucketForRequest(custom func(r *http.Request, userID string) string) func(*http.Request, string) string {
+func bucketForRequest(custom func(*http.Request, string) string) func(*http.Request, string) string {
 	if custom != nil {
 		return custom
 	}
@@ -256,9 +267,9 @@ func bucketForRequest(custom func(r *http.Request, userID string) string) func(*
 }
 
 // recoverMiddleware converts panics into the generic 500 mandated by
-// SECURITY_AND_OPSEC.md §1 (never a stack trace, never internals). We keep our
-// own instead of chi's middleware.Recoverer because the stock one writes the
-// panic to stderr with the value — values can carry PII.
+// SECURITY_AND_OPSEC.md §1 (never a stack trace, never internals). We keep
+// our own instead of chi's middleware.Recoverer because the stock one writes
+// the panic value to stderr — values can carry PII.
 func (a *App) recoverMiddleware() func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
