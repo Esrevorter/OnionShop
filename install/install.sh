@@ -58,9 +58,6 @@ ensure_var SESSION_HASH_KEY gen64
 if ! grep -q '^AGE_PUBLIC_KEY=' .env 2>/dev/null; then
   die "AGE_PUBLIC_KEY is required by the configured backup sidecar; generate its private identity offline and set the public recipient in .env"
 fi
-if ! grep -q '^BTCPAY_API_KEY=' .env 2>/dev/null; then
-  warn "BTCPAY_API_KEY is unset; configure a test/production BTCPay credential as appropriate before using checkout"
-fi
 grep -q '^GITHUB_PAT=' .env && warn ".env contains GITHUB_PAT; remove this unrelated credential"
 
 log "phase 3: TLS material"

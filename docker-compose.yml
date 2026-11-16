@@ -27,8 +27,8 @@ services:
   nginx:
     image: nginx:1.27-alpine           # pinned minor; bump deliberately after review
     <<: *default-hardening
-    mem_limit: 200m       # <-- ADD THIS
-    pids_limit: 128       # <-- ADD THIS 
+    mem_limit: 200m
+    pids_limit: 128
     user: "101:101"                    # 'nginx' user in Alpine
     group_add: ["1000"]                # supplementary access to app.sock (0770)
     ports:
@@ -63,8 +63,6 @@ services:
       - ONIONSHOP_UNIX=/run/onionshop/app.sock
       - DATABASE_URL=postgres://${DB_USER}:${DB_PASSWORD}@postgres:5432/${DB_NAME}?sslmode=disable
       - REDIS_URL=redis://:${REDIS_PASSWORD}@redis:6379
-      - BTCPAY_API_URL=http://btcpay:49392
-      - BTCPAY_API_KEY=${BTCPAY_API_KEY}
       - SESSION_HASH_KEY=${SESSION_HASH_KEY}
       - ONIONSHOP_SECURE_COOKIES=true
       - APP_ENV=production
@@ -73,8 +71,8 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
-    mem_limit: 1500m      # <-- ADD THIS
-    pids_limit: 256       # <-- ADD THIS 
+    mem_limit: 1500m
+    pids_limit: 256
     networks: [internal_net]
     tmpfs: [/tmp]
     volumes:
@@ -89,8 +87,8 @@ services:
     image: postgres:16-alpine # tag-only; verify/pin digest before production
     <<: *default-hardening
     user: "999:999"
-    mem_limit: 2000m      # <-- ADD THIS
-    pids_limit: 256       # <-- ADD THIS 
+    mem_limit: 2000m
+    pids_limit: 256
     cap_add:
       - CHOWN
       - DAC_OVERRIDE
@@ -116,8 +114,8 @@ services:
   redis:
     image: redis:7-alpine # tag-only; verify/pin digest before production
     <<: *default-hardening
-    mem_limit: 512m       # <-- ADD THIS
-    pids_limit: 256       # <-- ADD THIS 
+    mem_limit: 512m
+    pids_limit: 256
     user: "999:999"
     command: >
       redis-server
@@ -134,52 +132,14 @@ services:
       timeout: 5s
       retries: 5
 
-  btcpay:
-    # Verify digest and platform against registry metadata before production.
-    image: btcpayserver/btcpayserver@sha256:4c029e17e84600f740fb45652be5dfa906fe81e1c1a2789927e75954032f7c79
-    profiles: ["disabled"] 
-    restart: unless-stopped
-    user: "1000:1000"
-    security_opt: [no-new-privileges:true]
-    cap_drop: [ALL]
-    read_only: true
-    tmpfs: [/tmp]
-    environment:
-      - BTCPAY_POSTGRES=User ID=${DB_USER};Password=${DB_PASSWORD};Host=btcpaydb;Port=5432;Database=btcpay
-      - BTCPAY_NETWORK=mainnet
-      - BTCPAY_BIND=0.0.0.0:49392
-      - BTCPAY_ROOTPATH=/
-    depends_on:
-      btcpaydb: { condition: service_healthy }
-    networks: [internal_net, btcpay_net]
-
-  btcpaydb:
-    image: postgres:16-alpine # tag-only; verify/pin digest before production
-    profiles: ["disabled"] 
-    <<: *default-hardening
-    user: "999:999"
-    environment:
-      POSTGRES_USER: ${DB_USER}
-      POSTGRES_PASSWORD: ${DB_PASSWORD}
-      POSTGRES_DB: btcpay
-    volumes:
-      - btcpay_pgdata:/var/lib/postgresql/data
-    networks: [btcpay_net]
-    tmpfs: [/var/run/postgresql, /tmp]
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${DB_USER} -d btcpay"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-
   backup:
     build:
       context: .
       dockerfile: Dockerfile.backup
     restart: unless-stopped
     <<: *default-hardening
-    mem_limit: 1500m      # <-- ADD THIS
-    pids_limit: 128       # <-- ADD THIS 
+    mem_limit: 1500m
+    pids_limit: 128
     entrypoint: ["/bin/sh", "-c", "exec /scripts/backup.sh"]
     volumes:
       - ./scripts/backup.sh:/scripts/backup.sh:ro
@@ -194,7 +154,6 @@ services:
 
 volumes:
   pgdata:
-  btcpay_pgdata:
   backup_data:
   appsock:
 
@@ -207,6 +166,4 @@ networks:
   # container has none, so `ports:` is silently ignored without this. Required
   # for host-side Tor (deploy/torrc) to reach 127.0.0.1:8443 in production too.
   edge_net:
-    driver: bridge
-  btcpay_net:
     driver: bridge
