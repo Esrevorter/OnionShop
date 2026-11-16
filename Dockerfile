@@ -5,10 +5,27 @@ FROM golang:1.25-alpine AS build
 WORKDIR /src
 COPY go.mod go.sum ./
 RUN go mod download
+
+# Download pre-compiled sqlc binary (avoids compiling from source, which fails
+# in alpine). internal/store/gen/ is gitignored, so the Dockerfile must
+# generate it before building the Go binary.
+RUN wget -qO /tmp/sqlc.tar.gz https://github.com/sqlc-dev/sqlc/releases/download/v1.27.0/sqlc_1.27.0_linux_amd64.tar.gz \
+ && tar -xzf /tmp/sqlc.tar.gz -C /usr/local/bin sqlc \
+ && rm /tmp/sqlc.tar.gz
+
+# Copy sqlc configuration (sqlc.yaml) before running sqlc generate.
+COPY sqlc.yaml ./
+
 COPY cmd/ ./cmd/
 COPY internal/ ./internal/
 COPY db/ ./db/
 COPY web/ ./web/
+
+# Generate sqlc bindings from db/schema.sql and db/query/*.sql before building.
+# This ensures the image builds correctly even on a clean clone where
+# internal/store/gen/ doesn't exist yet.
+RUN sqlc generate
+
 RUN CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags="-s -w" -o /out/onionshop ./cmd/onionshop
 
 FROM alpine:3.19
