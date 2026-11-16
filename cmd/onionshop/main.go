@@ -24,7 +24,6 @@ import (
 	"time"
 
 	"github.com/alexedwards/scs/v2"
-	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/redis/go-redis/v9"
 
 	"github.com/example/onionshop/internal/cron"
@@ -112,6 +111,7 @@ func resolveAddr(raw string) (string, error) {
 	log.Printf("%s=1: allowing non-loopback bind %q (contained network namespace)", netNeverEnv, net.JoinHostPort(host, port))
 	return net.JoinHostPort(host, port), nil
 }
+
 func main() {
 	// Container healthcheck mode: probe the live listener and exit. Runs
 	// before flag parsing so it never touches config, sessions or stores.
@@ -135,38 +135,36 @@ func main() {
 
 	deps := server.Deps{StartedAt: time.Now().UTC()}
 
-	// Infrastructure is best-effort at this stage: when Postgres/Redis are not
-	// configured or reachable we log the degradation and let the router's
-	// health endpoint report overall status (Phase 2 wiring, see TASKS.md).
-	var pool *pgxpool.Pool
-	if p, err := store.OpenDBFromEnv(ctx); err == nil {
-		pool = p
-		deps.Pool = pool
-		defer pool.Close() // pgxpool.Pool.Close() returns no value
-	} else {
-		log.Printf("postgres unavailable (degraded mode): %v", err)
+	// Postgres is mandatory: without it, no auth, no catalog, no orders, no
+	// escrow. A nil pool causes RegisterAuthRoutes to silently skip mounting
+	// the entire authenticated surface, leaving the market reporting "healthy"
+	// while unable to log anyone in. Fail fast and let restart: unless-stopped
+	// retry until the database is ready.
+	pool, err := store.OpenDBFromEnv(ctx)
+	if err != nil {
+		log.Fatalf("postgres unavailable — refusing to start without a database: %v", err)
 	}
+	deps.Pool = pool
+	defer pool.Close() // pgxpool.Pool.Close() returns no value
+
+	// Redis is used for rate limiting and the session fast path. The session
+	// store has a Postgres durable fallback, and rate limiting degrades to
+	// fail-open on reads. A missing Redis is survivable; log loudly but start.
 	var rdb *redis.Client
 	if c, err := store.OpenRedisFromEnv(ctx); err == nil {
 		rdb = c
 		deps.RDB = rdb
 		defer func() { _ = rdb.Close() }() // shutdown-time close; error is not actionable
 	} else {
-		log.Printf("redis unavailable (degraded mode): %v", err)
+		log.Printf("WARNING: redis unavailable (rate limiting degraded, sessions on postgres fallback): %v", err)
 	}
 
-	// Session backend selection: Redis fast path + Postgres durable mirror
-	// when either is configured; in-memory only when neither is available
-	// (dev/test — sessions cannot survive restarts, so production compose
-	// always wires Postgres).
-	var sessionStore scs.Store
-	switch {
-	case pool != nil || rdb != nil:
-		sessionStore = store.NewFallbackStore(rdb, store.NewSessionFallback(pool))
-	default:
-		log.Print("no session backend configured: using in-memory sessions (dev only)")
-		sessionStore = scs.New().Store
-	}
+	// Pool is guaranteed non-nil (we fatal'd above if postgres was unavailable).
+	// Redis may be nil; FallbackStore handles that by falling back to the
+	// Postgres durable mirror for all session operations. Type the variable
+	// explicitly as scs.Store so the SessionLinker/SessionInvalidator type
+	// assertions below remain valid.
+	var sessionStore scs.Store = store.NewFallbackStore(rdb, store.NewSessionFallback(pool))
 
 	app, err := server.New(server.Config{
 		Addr:          target,
@@ -178,17 +176,13 @@ func main() {
 	}
 
 	// Phase 3 auth surface. Templates are mandatory (a boot with unparseable
-	// or missing pages fails loudly here); the store and CAPTCHA service are
-	// gated on the same best-effort infrastructure as above — without them
-	// RegisterAuthRoutes logs the degradation and the app keeps serving
-	// /healthz in degraded mode rather than panicking mid-request.
+	// or missing pages fails loudly here). The store is guaranteed non-nil
+	// (we fatal'd above if postgres was unavailable), so auth and catalog
+	// routes always mount. The CAPTCHA service is always constructed.
 	templateDir := envOr(envTemplateDir, defaultTemplates)
-	var authStore server.AuthStore
-	var catalogStore server.VendorStore
-	if pool != nil {
-		authStore = server.NewPGAuthStore(pool)
-		catalogStore = server.NewPGCatalogStore(pool)
-	}
+	authStore := server.NewPGAuthStore(pool)
+	catalogStore := server.NewPGCatalogStore(pool)
+
 	captchaSecret, haveCaptchaKey := captchaKeyFromSessionHash(os.Getenv(envSessionHashKey))
 	if !haveCaptchaKey {
 		// Dev-only fallback: challenges then live solely for this process
@@ -209,7 +203,7 @@ func main() {
 	// linker (stamp sessions.user_id on login) and the invalidator (kill all
 	// sessions on role change); store.FallbackStore satisfies both roles and
 	// the in-memory scs store stays nil-safe inside the app. The catalog
-	// store mounts the Phase 4 storefront; nil keeps dev boots honest.
+	// store mounts the Phase 4 storefront.
 	sessionLinker, _ := sessionStore.(server.SessionLinker)
 	sessionInvalidator, _ := sessionStore.(server.SessionInvalidator)
 	if err := app.RegisterAuthRoutesFull(authStore, captchaSvc, sessionLinker, sessionInvalidator, catalogStore, templateDir); err != nil {
@@ -224,8 +218,7 @@ func main() {
 	// Phase 4 leaderboard worker (ARCHITECTURE.md §9): hourly snapshot
 	// rewrite into top_vendors_snapshot so the homepage widget renders a
 	// cheap read instead of an aggregate per request. Runs on the same
-	// shutdown ctx as the listener; skipped (with a loud log inside cron)
-	// when no Postgres pool is wired — dev boots stay honest.
+	// shutdown ctx as the listener.
 	board := cron.NewLeaderboard(catalogStore, cron.DefaultInterval, 0)
 	go board.Run(ctx)
 	// Bind policy was already vetted by resolveAddr above: loopback, or a
