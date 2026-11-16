@@ -80,3 +80,85 @@ jobs:
         with:
           sqlc-version: "1.27.0"
       - run: sqlc generate
+  smoke:
+    name: Stack smoke test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.25.12"
+
+      # internal/store/gen/ is gitignored; the Dockerfile COPYs internal/ and
+      # runs go build, so generation must happen before the image build.
+      - name: sqlc generate
+        uses: sqlc-dev/setup-sqlc@v4
+        with:
+          sqlc-version: "1.27.0"
+      - run: sqlc generate
+
+      - name: Ephemeral .env
+        run: |
+          umask 077
+          {
+            echo "DB_USER=onionshop"
+            echo "DB_NAME=onionshop"
+            echo "DB_PASSWORD=$(openssl rand -hex 32)"
+            echo "REDIS_PASSWORD=$(openssl rand -hex 32)"
+            echo "SESSION_HASH_KEY=$(openssl rand -hex 32)"
+            echo "AGE_PUBLIC_KEY=ci-placeholder"
+            echo "BTCPAY_API_KEY="
+          } > .env
+
+      - name: Self-signed TLS material
+        run: |
+          ONION_HOST="$(head -c 35 /dev/urandom | base32 | tr -d '=' | tr 'A-Z' 'a-z').onion"
+          sudo ONIONSHOP_NGINX_GID=101 bash ./scripts/gen-certs.sh "$ONION_HOST"
+          # gen-certs.sh only chgrps if GID 101 resolves in /etc/group; force it
+          # numerically so nginx (101:101) can read the key on any runner.
+          sudo chgrp 101 nginx/ssl nginx/ssl/onion.crt nginx/ssl/onion.key
+          sudo chmod 0750 nginx/ssl
+          sudo chmod 0640 nginx/ssl/onion.key
+
+      - name: Boot the stack
+        run: docker compose up -d --wait --wait-timeout 180 postgres redis app nginx
+
+      - name: Apply migrations
+        run: |
+          go install -tags 'postgres' github.com/golang-migrate/migrate/v4/cmd/migrate@v4.20.1
+          set -a; . ./.env; set +a
+          PG_IP=$(docker inspect onionshop-postgres-1 \
+            --format '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}')
+          "$(go env GOPATH)/bin/migrate" -path db/migrations \
+            -database "postgres://${DB_USER}:${DB_PASSWORD}@${PG_IP}:5432/${DB_NAME}?sslmode=disable" up
+
+      - name: Assertions
+        run: |
+          set -euo pipefail
+          curl -sfk https://127.0.0.1:8443/health | grep -qx 'ok'
+          curl -sfk https://127.0.0.1:8443/login | grep -q 'name="captcha_token"'
+          curl -sfk -o /dev/null -w '%{http_code}\n' \
+            https://127.0.0.1:8443/static/main.css | grep -qx 200
+          curl -s -o /dev/null -w '%{http_code}\n' \
+            http://127.0.0.1:8080/ | grep -qx 301
+          # NOTE: this assertion will FAIL until defect 16 (duplicate headers)
+          # is fixed in Phase 9.2. The correct behavior is exactly one header;
+          # currently nginx emits duplicates. Fix nginx/nginx.conf first or
+          # comment this line out temporarily.
+          test "$(curl -sk -D - -o /dev/null https://127.0.0.1:8443/login \
+            | grep -ci '^x-frame-options:')" -eq 1
+          if curl -sk --tlsv1.2 --tls-max 1.2 https://127.0.0.1:8443/health >/dev/null 2>&1; then
+            echo "::error::TLS 1.2 was accepted; ssl_protocols must be TLSv1.3 only"
+            exit 1
+          fi
+
+      - name: Logs on failure
+        if: failure()
+        run: |
+          docker compose ps
+          docker compose logs --tail=100 postgres redis app nginx
+
+      - name: Teardown
+        if: always()
+        run: docker compose down -v --remove-orphans
