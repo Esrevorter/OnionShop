@@ -23,9 +23,20 @@ test: sqlc
 vet:
 	go vet ./...
 
+# lint pins both tools to the exact versions used in CI (.github/workflows/ci.yml)
+# via `go run ...@version`, so no local installation is required and PATH drift
+# is impossible. GOTOOLCHAIN=local prevents silent toolchain switching.
+#
+# staticcheck: honnef.co/go/tools v0.6.1 matches what golangci-lint v1.64.8
+# bundles internally. Latest staticcheck (>= v0.7.0) requires Go >= 1.26, which
+# exceeds the project pin of Go 1.25.12.
+#
+# golangci-lint: v1.64.8 is the exact version pinned in CI. Running it via
+# `go run` ensures we always get the same binary regardless of what is
+# installed in /usr/local/bin or ~/go/bin.
 lint: sqlc vet
-	staticcheck ./...
-	golangci-lint run
+	GOTOOLCHAIN=local go run honnef.co/go/tools/cmd/staticcheck@v0.6.1 ./...
+	GOTOOLCHAIN=local go run github.com/golangci/golangci-lint/cmd/golangci-lint@v1.64.8 run --timeout 5m ./...
 
 migrate:
 	migrate -path db/migrations -database "$(DATABASE_URL)" up
