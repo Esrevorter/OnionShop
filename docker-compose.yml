@@ -27,6 +27,8 @@ services:
   nginx:
     image: nginx:1.27-alpine           # pinned minor; bump deliberately after review
     <<: *default-hardening
+    mem_limit: 200m       # <-- ADD THIS
+    pids_limit: 128       # <-- ADD THIS 
     user: "101:101"                    # 'nginx' user in Alpine
     group_add: ["1000"]                # supplementary access to app.sock (0770)
     ports:
@@ -71,6 +73,8 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+    mem_limit: 1500m      # <-- ADD THIS
+    pids_limit: 256       # <-- ADD THIS 
     networks: [internal_net]
     tmpfs: [/tmp]
     volumes:
@@ -85,6 +89,8 @@ services:
     image: postgres:16-alpine # tag-only; verify/pin digest before production
     <<: *default-hardening
     user: "999:999"
+    mem_limit: 2000m      # <-- ADD THIS
+    pids_limit: 256       # <-- ADD THIS 
     cap_add:
       - CHOWN
       - DAC_OVERRIDE
@@ -110,6 +116,8 @@ services:
   redis:
     image: redis:7-alpine # tag-only; verify/pin digest before production
     <<: *default-hardening
+    mem_limit: 512m       # <-- ADD THIS
+    pids_limit: 256       # <-- ADD THIS 
     user: "999:999"
     command: >
       redis-server
@@ -170,6 +178,8 @@ services:
       dockerfile: Dockerfile.backup
     restart: unless-stopped
     <<: *default-hardening
+    mem_limit: 1500m      # <-- ADD THIS
+    pids_limit: 128       # <-- ADD THIS 
     entrypoint: ["/bin/sh", "-c", "exec /scripts/backup.sh"]
     volumes:
       - ./scripts/backup.sh:/scripts/backup.sh:ro
