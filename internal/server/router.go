@@ -20,14 +20,29 @@ import (
 // Config carries everything main.go resolved from flags/env. Kept tiny and
 // explicit: no functional options, per AGENTS.md §3 ("constructor + setters").
 type Config struct {
-	Addr          string
-	UnixSocket    string
+	// Addr is the TCP listener address: loopback on bare metal, or the
+	// contained-namespace wildcard when cmd/onionshop's resolveAddr gate
+	// (ONIONSHOP_NET_NEVER=1) vetted it first. Routable interface IPs and
+	// port 0 are refused at construction (AGENTS.md §1, SECURITY_AND_OPSEC.md
+	// §4). Sourced from -addr / ONIONSHOP_ADDR.
+	Addr string
+	// UnixSocket is the optional UNIX domain socket path. When set, Serve
+	// listens on this socket instead of TCP. Used by the compose/nginx
+	// deployment via the shared appsock volume.
+	UnixSocket string
+	// SecureCookies mirrors ONIONSHOP_SECURE_COOKIES (false only for local dev).
 	SecureCookies bool
-	Sessions      *SessionConfig
+	// Sessions overrides DefaultSessionConfig() when non-nil.
+	Sessions *SessionConfig
 }
 
 // Validate enforces the bind-address rule in code so a mistyped env var can
-// never silently expose the app off-box.
+// never silently expose the app off-box. Loopback is always allowed; an
+// any-interface (":port" / "0.0.0.0:port") bind is accepted only because the
+// single authoritative guard — cmd/onionshop's resolveAddr, gated on
+// ONIONSHOP_NET_NEVER inside a container namespace with no off-box route —
+// already vetted it before the Config reaches this layer. Anything else
+// (e.g. a routable interface IP handed straight to server.New) stays refused.
 func (c Config) Validate() error {
 	if c.Addr == "" && c.UnixSocket == "" {
 		return errors.New("server: empty listen address")
@@ -55,8 +70,12 @@ func (c Config) Validate() error {
 	return nil
 }
 
-// Deps carries the wired subsystems.
+// Deps carries the wired subsystems. Phase 3+ handlers receive *App and pull
+// their own dependencies off it; this is what keeps handler signatures uniform.
 type Deps struct {
+	// Pool is the Postgres connection pool. The interface includes Ping so
+	// the health endpoint can actively verify reachability (readiness)
+	// rather than just checking for a non-nil pointer.
 	Pool      interface{ Close(); Ping(context.Context) error }
 	RDB       *redis.Client
 	Sm        *scs.SessionManager
@@ -72,18 +91,41 @@ type App struct {
 	router    chi.Router
 	srv       *http.Server
 	sm        *scs.SessionManager
-	auth      AuthStore
-	captcha   *CaptchaService
-	linker    SessionLinker
-	invalid   SessionInvalidator
-	vendor    VendorStore
+	auth      AuthStore          // set by RegisterAuthRoutes (nil-safe: routes skip)
+	captcha   *CaptchaService    // set by RegisterAuthRoutes (nil-safe: routes skip)
+	linker    SessionLinker      // set by RegisterAuthRoutes (optional: durable user_id stamp)
+	invalid   SessionInvalidator // set by RegisterCatalogRoutes (optional: role-change kill)
+	vendor    VendorStore        // set by RegisterCatalogRoutes (optional: catalog/vendor pages)
 	templates map[string]*template.Template
 }
 
+// New wires middleware in the mandated order and returns a ready-to-Serve App.
+// It is exactly newApp with rate limiting attached — production behavior,
+// unchanged by the test-composition refactor below.
+//
+// sessionStore is the scs backend (store.FallbackStore in production: Redis
+// fast path + Postgres durable mirror; an in-memory store in dev). It is
+// required — there is no silent default, per AGENTS.md §3.
 func New(cfg Config, deps Deps, sessionStore scs.Store) (*App, error) {
 	return newApp(cfg, deps, sessionStore, true)
 }
 
+// newApp composes the middleware stack. withRateLimit=false yields the same
+// chain minus the RateLimit hop — this is the ONLY sanctioned way to skip it,
+// and callers outside *_test.go must never set it (see
+// routerWithoutRateLimitForTest in testing_helpers_test.go, which wraps the
+// false path for the httptest suites).
+//
+// Middleware order (outermost first) — deliberate, do not reshuffle:
+//  1. StripForwardedHeaders  — kill client-supplied forwarding lies before anything reads them
+//  2. Recover                — chi panic catcher that emits our generic 500 (no stack leaks)
+//  3. SecurityHeaders        — CSP et al. on every response, including errors
+//  4. sessions.LoadAndSave   — establishes the session context used by everything below
+//  5. AbsoluteExpiry         — enforce hard lifetime cap on top of scs idle timeout
+//  6. CSRFLoad               — mint the double-submit token if absent
+//  7. RateLimit              — identity-aware sliding windows (reads session/user keys) [optional]
+//  8. CSRFProtect            — validate state-changing requests after throttling
+//  9. routes                 — Phase 3 handlers attach here
 func newApp(cfg Config, deps Deps, sessionStore scs.Store, withRateLimit bool) (*App, error) {
 	if err := cfg.Validate(); err != nil {
 		return nil, err
@@ -121,10 +163,12 @@ func newApp(cfg Config, deps Deps, sessionStore scs.Store, withRateLimit bool) (
 	r.Get("/healthz", a.handleHealth)
 	// CAPTCHA images ride the same router as the forms that embed them.
 	// The id contains a dot (nonce.mac), so the route is keyed on the whole
-	// segment ({id}) with NO trailing literal: a "{id}.png" pattern makes chi
-	// capture "nonce.mac.png" and the lookup misses. The handler sets
-	// Content-Type: image/png explicitly, so the extension is unnecessary.
+	// segment ({id}) with NO trailing literal.
 	r.Get("/captcha/{id}", a.handleCaptchaImage)
+
+	// Mount the Phase 5-8 UI pages (wallet, orders, disputes, etc.)
+	a.registerPageRoutes(r)
+
 	r.NotFound(a.handleNotFound)
 
 	a.router = r
@@ -134,13 +178,23 @@ func newApp(cfg Config, deps Deps, sessionStore scs.Store, withRateLimit bool) (
 		ReadTimeout:  15 * time.Second,
 		WriteTimeout: 30 * time.Second,
 		IdleTimeout:  75 * time.Second,
+		// No MaxHeaderBytes surprise: default 1MB is fine behind nginx.
 	}
 	return a, nil
 }
 
+// Router exposes the chi router so later phases mount route groups without
+// touching middleware order.
 func (a *App) Router() chi.Router { return a.router }
+
+// Handler returns the composed http.Handler (used by httptest suites).
 func (a *App) Handler() http.Handler { return a.router }
 
+// Serve runs the HTTP server over TCP or UNIX until ctx is cancelled, then
+// drains gracefully. OnionShop serves TCP only (loopback-enforced via
+// Config.Validate); CI and Docker assume a plain -addr/ONIONSHOP_ADDR TCP
+// listener, or the UNIX socket path when configured for the compose/nginx
+// deployment.
 func (a *App) Serve(ctx context.Context) error {
 	var (
 		errCh    = make(chan error, 1)
@@ -148,6 +202,11 @@ func (a *App) Serve(ctx context.Context) error {
 		err      error
 	)
 	if a.cfg.UnixSocket != "" {
+		// A hard kill (SIGKILL, docker stop, host reboot, daemon restart) leaves
+		// the socket inode behind in the shared volume; net.Listen does not
+		// unlink it and bind fails with EADDRINUSE. Remove only an actual socket
+		// (ModeSocket guard), never a regular file or directory, so a
+		// misconfigured ONIONSHOP_UNIX cannot delete real data.
 		if fi, statErr := os.Stat(a.cfg.UnixSocket); statErr == nil && fi.Mode()&os.ModeSocket != 0 {
 			if rmErr := os.Remove(a.cfg.UnixSocket); rmErr != nil {
 				return fmt.Errorf("server: remove stale socket: %w", rmErr)
@@ -162,6 +221,7 @@ func (a *App) Serve(ctx context.Context) error {
 	}
 	a.srv.Addr = a.cfg.UnixSocket
 	if a.srv.TLSConfig != nil {
+		// TLS is terminated at nginx; the app never speaks TLS itself.
 		a.srv.TLSConfig = nil
 	}
 
@@ -182,6 +242,9 @@ func (a *App) Serve(ctx context.Context) error {
 	}
 }
 
+// bucketForRequest maps path prefixes onto limiter buckets. The caller may
+// supply an override (Phase 3 registers richer tables); the defaults encode
+// the abuse surface we already know about.
 func bucketForRequest(custom func(*http.Request, string) string) func(*http.Request, string) string {
 	if custom != nil {
 		return custom
@@ -190,7 +253,7 @@ func bucketForRequest(custom func(*http.Request, string) string) func(*http.Requ
 		p := r.URL.Path
 		switch {
 		case p == "/healthz":
-			return ""
+			return "" // liveness must never be throttled into a false alarm
 		case strings.HasPrefix(p, "/login"), strings.HasPrefix(p, "/auth/"):
 			return "login"
 		case strings.HasPrefix(p, "/register"):
@@ -208,11 +271,17 @@ func bucketForRequest(custom func(*http.Request, string) string) func(*http.Requ
 	}
 }
 
+// recoverMiddleware converts panics into the generic 500 mandated by
+// SECURITY_AND_OPSEC.md §1 (never a stack trace, never internals). We keep
+// our own instead of chi's middleware.Recoverer because the stock one writes
+// the panic value to stderr — values can carry PII.
 func (a *App) recoverMiddleware() func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			defer func() {
 				if rec := recover(); rec != nil {
+					// Deliberately discard `rec`: logging it verbatim risks
+					// leaking user input into journald (SECURITY §1).
 					writeGenericError(w)
 				}
 			}()
@@ -221,6 +290,10 @@ func (a *App) recoverMiddleware() func(http.Handler) http.Handler {
 	}
 }
 
+// handleHealth answers the compose/docker healthcheck. It acts as both a
+// liveness and readiness probe: it asserts the Postgres pool is wired and
+// actively reachable (not just non-nil), and that Redis is reachable if
+// configured. Body stays "ok\n" / "not ok\n" for scripts to grep.
 func (a *App) handleHealth(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), 2*time.Second)
 	defer cancel()
@@ -228,6 +301,10 @@ func (a *App) handleHealth(w http.ResponseWriter, r *http.Request) {
 	status := http.StatusOK
 	body := "ok\n"
 
+	// Readiness: assert Postgres pool is wired and reachable. Since main.go
+	// fatals if the pool cannot be opened, a.deps.Pool is non-nil when the
+	// app is running. We still type-assert and ping to catch connection
+	// drops post-startup.
 	if a.deps.Pool == nil {
 		status, body = http.StatusServiceUnavailable, "not ok\n"
 	} else if pinger, ok := a.deps.Pool.(interface{ Ping(context.Context) error }); ok {
@@ -236,6 +313,7 @@ func (a *App) handleHealth(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// Dependency: assert Redis is reachable if configured.
 	if status == http.StatusOK && a.deps.RDB != nil {
 		if err := a.deps.RDB.Ping(ctx).Err(); err != nil {
 			status, body = http.StatusServiceUnavailable, "not ok\n"
@@ -247,6 +325,9 @@ func (a *App) handleHealth(w http.ResponseWriter, r *http.Request) {
 	_, _ = w.Write([]byte(body))
 }
 
+// handleNotFound renders the uniform 404. Anonymous visitors get redirected to
+// "/" as specified (ARCHITECTURE.md §1); authenticated users see the page so
+// they learn a typo cost them nothing operationally.
 func (a *App) handleNotFound(w http.ResponseWriter, r *http.Request) {
 	if CurrentUserID(r.Context(), a.sm) == "" {
 		http.Redirect(w, r, "/", http.StatusSeeOther)
@@ -257,5 +338,5 @@ func (a *App) handleNotFound(w http.ResponseWriter, r *http.Request) {
 	_, _ = w.Write([]byte("404 not found\n"))
 }
 
-var _ chi.Router
-var _ = middleware.RequestID
+var _ chi.Router // reserved: route mounting stays chi-typed (AGENTS.md §2)
+var _ = middleware.RequestID // reserved: request IDs arrive with structured logs in Phase 3
