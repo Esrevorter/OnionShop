@@ -79,8 +79,22 @@ button.danger { background: #522d2a; border-color: #9c5e56; color: #ffe2de; }
 }
 .header-inner, .page-shell, .footer-inner { width: min(72rem, calc(100% - 2rem)); margin-inline: auto; }
 .header-inner { min-height: 4.5rem; display: flex; align-items: center; justify-content: space-between; gap: 1rem; }
-.brand { color: var(--ink); font-size: 1.2rem; font-weight: 800; letter-spacing: -.03em; text-decoration: none; }
-.brand-mark { color: var(--accent-strong); }
+.brand {
+  display: inline-flex;
+  align-items: center;
+  gap: .5rem;
+  color: var(--ink);
+  font-size: 1.2rem;
+  font-weight: 800;
+  letter-spacing: -.03em;
+  text-decoration: none;
+}
+/* Inline vector onion: sized ~4x the old ◈ glyph, colored via theme vars.
+   No external file, no font, CSP-safe (markup only). */
+.brand-onion { display: block; flex: none; }
+.onion-bulb { fill: var(--accent-strong); fill-opacity: .22; stroke: var(--accent-strong); stroke-width: 2; }
+.onion-line { stroke: var(--accent-strong); stroke-width: 1.4; stroke-opacity: .7; }
+.onion-sprout { stroke: var(--accent); stroke-width: 2; }
 .site-nav { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: .45rem; }
 .site-nav a { padding: .45rem .7rem; border-radius: .55rem; text-decoration: none; color: var(--muted); }
 .site-nav a:hover, .site-nav a[aria-current="page"] { background: var(--surface-raised); color: var(--ink); }
