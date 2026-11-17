@@ -1089,31 +1089,17 @@ func (a *App) linkSessionUser(ctx context.Context) {
 	}
 }
 
-func (a *App) handleLogout(w http.ResponseWriter, r *http.Request) {
+        func (a *App) handleLogout(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	if err := a.sm.Destroy(ctx); err != nil {
 		writeGenericError(w)
 		return
 	}
-	// scs' RenewToken only flips status to Modified — the fresh identifier is
-	// committed lazily at response flush, AFTER this handler has already
-	// rendered. Minting the login-page challenge against that timeline leaves
-	// it bound to a token the next request cannot reproduce (the POST carries
-	// the new cookie, but requireFriction's ctx token is still "" until
-	// LoadAndSave populates it). Commit the rotated session NOW and stash the
-	// resulting identifier so issue-time and verify-time anchors agree.
-	if err := a.rotateToFreshToken(ctx); err != nil {
-		writeGenericError(w)
-		return
-	}
-	data := a.baseData(r)
-	data.Flash = "Signed out."
-	if data.Captcha = a.newChallenge(w, r, "login"); data.Captcha == nil {
-		return
-	}
-	a.render(w, "login", http.StatusOK, data)
+	// Redirect to /login to start a fresh session. Trying to render the login
+	// page directly after Destroy causes scs to panic when accessing session
+	// data (CSRF token, CAPTCHA binding) on a destroyed session.
+	http.Redirect(w, r, "/login", http.StatusSeeOther)
 }
-
 // ---- account / personal phrase ----------------------------------------------
 
 // PersonalPhraseLength bounds the anti-phishing phrase (migration 0006 CHECK
