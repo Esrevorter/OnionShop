@@ -1,0 +1,35 @@
+{{template "layout" .}}
+{{define "title"}}Reviews · OnionShop{{end}}
+{{define "body"}}
+<section class="auth-layout">
+  <div class="auth-intro">
+    <p class="eyebrow">Account</p>
+    <h1>Order Reviews</h1>
+    <p class="lede">Leave feedback for completed orders. Reviews can be edited within 30 days.</p>
+  </div>
+  {{if not .Reviews}}
+  <div class="auth-card"><p>You have no reviewable orders at this time.</p></div>
+  {{else}}
+  <div class="auth-card">
+    {{range .Reviews}}
+    <div style="border-bottom: 1px solid #333; padding: 1rem 0;">
+      <strong>{{.ProductTitle}}</strong> (Qty: {{.Qty}})<br>
+      <small>Status: {{.OrderStatus}} | Updated: {{.OrderUpdatedAt.Format "2006-01-02"}}</small>
+      {{if .Editable}}
+        <form method="post" action="/reviews/submit" style="margin-top: 0.5rem;">
+          {{template "friction" $}}
+          <input type="hidden" name="csrf_token" value="{{$.CsrfToken}}">
+          <input type="hidden" name="item_id" value="{{.ItemID}}">
+          <label>Rating (1-5): <input type="number" name="rating" min="1" max="5" value="{{if .HasReview}}{{.Rating}}{{else}}5{{end}}" required style="width: 60px;"></label>
+          <label>Comment: <textarea name="body" rows="3" maxlength="2000" style="width: 100%;">{{.Body}}</textarea></label>
+          <button type="submit">{{if .HasReview}}Update Review{{else}}Submit Review{{end}}</button>
+        </form>
+      {{else}}
+        <p><em>Review window closed.</em></p>
+      {{end}}
+    </div>
+    {{end}}
+  </div>
+  {{end}}
+</section>
+{{end}}

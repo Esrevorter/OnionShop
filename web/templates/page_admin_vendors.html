@@ -1,0 +1,49 @@
+{{template "layout" .}}
+
+{{define "title"}}Vendor Queue · OnionShop{{end}}
+
+{{define "body"}}
+<section class="auth-layout">
+  <div class="auth-intro">
+    <p class="eyebrow">Administration</p>
+    <h1>Vendor Applications</h1>
+    <p class="lede">Review and approve new vendor requests. Approving a request grants the user vendor privileges and kills their existing sessions.</p>
+  </div>
+
+  {{if .Flash}}
+  <div class="notice notice-success"><strong>Success</strong><br>{{.Flash}}</div>
+  {{end}}
+
+  {{if not .Pending}}
+  <div class="auth-card">
+    <p>There are no pending vendor applications at this time.</p>
+  </div>
+  {{else}}
+  <div class="auth-card">
+    <h2>Pending Queue ({{len .Pending}})</h2>
+    {{range .Pending}}
+    <div class="vendor-row" style="border-bottom: 1px solid #eee; padding: 1rem 0; display: flex; justify-content: space-between; align-items: center; gap: 1rem;">
+      <div>
+        <strong>{{.ShopName}}</strong><br>
+        <small>Requested: {{.CreatedAt.Format "2006-01-02 15:04 UTC"}}</small>
+      </div>
+      <div style="display: flex; gap: 0.5rem; align-items: flex-end;">
+        <form method="post" action="/admin/vendors/{{.ID}}/decision" style="margin: 0; display: flex; flex-direction: column; gap: 0.5rem; border: 1px solid #ddd; padding: 0.5rem; border-radius: 4px;">
+          {{template "friction" $}}
+          <input type="hidden" name="csrf_token" value="{{$.CsrfToken}}">
+          <input type="hidden" name="decision" value="approve">
+          <button type="submit">Approve</button>
+        </form>
+        <form method="post" action="/admin/vendors/{{.ID}}/decision" style="margin: 0; display: flex; flex-direction: column; gap: 0.5rem; border: 1px solid #ddd; padding: 0.5rem; border-radius: 4px;">
+          {{template "friction" $}}
+          <input type="hidden" name="csrf_token" value="{{$.CsrfToken}}">
+          <input type="hidden" name="decision" value="reject">
+          <button type="submit" style="background: #666;">Reject</button>
+        </form>
+      </div>
+    </div>
+    {{end}}
+  </div>
+  {{end}}
+</section>
+{{end}}

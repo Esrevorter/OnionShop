@@ -1,38 +1,53 @@
 {{template "layout" .}}
 
-{{define "title"}}Account &middot; OnionShop{{end}}
+{{define "title"}}Account · OnionShop{{end}}
 
 {{define "body"}}
-<h1>Your account</h1>
-<p>Your anti-phishing phrase is shown on every page of this site while you are
-signed in. If it is missing or wrong, leave immediately &mdash; the page is not ours.</p>
-<form method="post" action="/account/phrase" autocomplete="off">
-{{template "friction" .}}
-<label>Personal phrase (4-64 characters)
-<input type="text" name="personal_phrase" minlength="4" maxlength="64" value="{{.PersonalPhrase}}" required></label>
-<p><button type="submit">Save phrase</button></p>
-</form>
+<section class="auth-layout">
+  <div class="auth-intro">
+    <p class="eyebrow">Account Management</p>
+    <h1>Your Settings</h1>
+    <p class="lede">Your anti-phishing phrase is shown on every page while signed in. If it is missing or wrong, leave immediately.</p>
+  </div>
 
-<h2>PGP public key</h2>
-<p>Only <strong>public</strong> keys are accepted here. The server never holds
-private material and never decrypts anything &mdash; see the
-<a href="/pgp">PGP tool page</a> for how this works.</p>
-{{if .PGPPublicKey}}
-<p>Stored key fingerprint: <code>{{if .PGPFingerprint}}{{.PGPFingerprint}}{{else}}<span title="unparseable stored key">(stored key could not be parsed)</span>{{end}}</code></p>
-<pre>{{.PGPPublicKey}}</pre>
-<form method="post" action="/account/pgp/clear" autocomplete="off">
-{{template "friction" .}}
-<p><button type="submit">Remove public key</button></p>
-</form>
-{{end}}
-<form method="post" action="/account/pgp" autocomplete="off">
-{{template "friction" .}}
-<label>ASCII-armored PUBLIC key block
-<textarea name="pgp_public_key" rows="10" spellcheck="false">{{if .PGPPublicKey}}{{.PGPPublicKey}}{{end}}</textarea></label>
-<p><button type="submit">{{if .PGPPublicKey}}Replace key{{else}}Upload public key{{end}}</button></p>
-</form>
-<form method="post" action="/logout">
-<input type="hidden" name="csrf_token" value="{{.CsrfToken}}">
-<p><button type="submit">Log out</button></p>
-</form>
+  <div class="auth-card">
+    <h2>Quick Links</h2>
+    <div class="form-actions" style="justify-content: flex-start; gap: 1rem;">
+      <a href="/account/reviews" class="button">Manage Reviews</a>
+      <a href="/vendor/apply" class="button">Apply as Vendor</a>
+    </div>
+  </div>
+
+  <div class="auth-card">
+    <h2>Personal Phrase</h2>
+    <form method="post" action="/account/phrase" autocomplete="off">
+      {{template "friction" .}}
+      <input type="hidden" name="csrf_token" value="{{.CsrfToken}}">
+      <label for="personal_phrase">Personal phrase (4-64 characters)</label>
+      <input id="personal_phrase" type="text" name="personal_phrase" minlength="4" maxlength="64" value="{{.PersonalPhrase}}" required>
+      <div class="form-actions"><button type="submit">Save phrase</button></div>
+    </form>
+  </div>
+
+  <div class="auth-card">
+    <h2>PGP Public Key</h2>
+    <p>Only <strong>public</strong> keys are accepted. See the <a href="/pgp">PGP tool page</a> for details.</p>
+    {{if .PGPPublicKey}}
+      <p>Stored key fingerprint: <code>{{if .PGPFingerprint}}{{.PGPFingerprint}}{{else}}(unparseable){{end}}</code></p>
+      <pre style="background: #222; padding: 1rem; border-radius: 4px; overflow-x: auto;">{{.PGPPublicKey}}</pre>
+      <form method="post" action="/account/pgp/clear" autocomplete="off">
+        {{template "friction" .}}
+        <input type="hidden" name="csrf_token" value="{{.CsrfToken}}">
+        <div class="form-actions"><button type="submit" class="secondary">Remove Key</button></div>
+      </form>
+    {{end}}
+    <form method="post" action="/account/pgp" autocomplete="off">
+      {{template "friction" .}}
+      <input type="hidden" name="csrf_token" value="{{.CsrfToken}}">
+      <label for="pgp_public_key">ASCII-armored PUBLIC key block</label>
+      <textarea id="pgp_public_key" name="pgp_public_key" rows="8" spellcheck="false">{{.PGPPublicKey}}</textarea>
+      <div class="form-actions"><button type="submit">{{if .PGPPublicKey}}Replace Key{{else}}Upload Key{{end}}</button></div>
+    </form>
+  </div>
+</section>
 {{end}}

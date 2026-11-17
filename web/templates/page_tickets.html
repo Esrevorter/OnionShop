@@ -1,0 +1,23 @@
+{{template "layout" .}}
+{{define "title"}}Support Tickets · OnionShop{{end}}
+{{define "body"}}
+<section class="auth-layout">
+  <div class="auth-intro">
+    <p class="eyebrow">Support</p>
+    <h1>Support Tickets</h1>
+    <p class="lede">Contact site administration for general inquiries.</p>
+  </div>
+  <div class="auth-card">
+    <p>You have no open support tickets.</p>
+    <form method="post" action="/tickets" autocomplete="off" style="margin-top: 1rem;">
+      {{template "friction" .}}
+      <input type="hidden" name="csrf_token" value="{{.CsrfToken}}">
+      <label for="subject">Subject</label>
+      <input id="subject" type="text" name="subject" required>
+      <label for="body">Message</label>
+      <textarea id="body" name="body" rows="5" required></textarea>
+      <div class="form-actions"><button type="submit">Create Ticket</button></div>
+    </form>
+  </div>
+</section>
+{{end}}

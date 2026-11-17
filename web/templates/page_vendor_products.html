@@ -1,0 +1,28 @@
+{{template "layout" .}}
+{{define "title"}}Vendor Dashboard · OnionShop{{end}}
+{{define "body"}}
+<section class="auth-layout">
+  <div class="auth-intro">
+    <p class="eyebrow">Vendor</p>
+    <h1>Manage Products</h1>
+    <p class="lede">Create, edit, and remove your product listings.</p>
+  </div>
+  <div class="auth-card">
+    <p>You have no products listed yet.</p>
+    <form method="post" action="/vendor/products" autocomplete="off" style="margin-top: 1rem; border-top: 1px solid #333; padding-top: 1rem;">
+      {{template "friction" .}}
+      <input type="hidden" name="csrf_token" value="{{.CsrfToken}}">
+      <h3>Add New Product</h3>
+      <label for="title">Title</label>
+      <input id="title" type="text" name="title" required>
+      <label for="description">Description</label>
+      <textarea id="description" name="description" rows="4" required></textarea>
+      <label for="price_sat">Price (Satoshis)</label>
+      <input id="price_sat" type="number" name="price_sat" required>
+      <label for="stock">Stock</label>
+      <input id="stock" type="number" name="stock" required>
+      <div class="form-actions"><button type="submit">Create Product</button></div>
+    </form>
+  </div>
+</section>
+{{end}}

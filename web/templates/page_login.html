@@ -8,6 +8,7 @@
   <form method="post" action="/login" autocomplete="off" class="auth-card">
     <h2>Account access</h2>
     {{template "friction" .}}
+    <input type="hidden" name="csrf_token" value="{{.CsrfToken}}">
     <label for="login-username">Username</label><input id="login-username" type="text" name="username" maxlength="32" autocomplete="username" required>
     <label for="login-password">Password</label><input id="login-password" type="password" name="password" maxlength="128" autocomplete="current-password" required>
     <div class="form-actions"><button type="submit">Sign in</button><a href="/register">Create account</a></div>

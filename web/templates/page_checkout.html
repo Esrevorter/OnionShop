@@ -1,0 +1,19 @@
+{{template "layout" .}}
+{{define "title"}}Checkout · OnionShop{{end}}
+{{define "body"}}
+<section class="auth-layout">
+  <div class="auth-intro">
+    <p class="eyebrow">Checkout</p>
+    <h1>Complete Your Order</h1>
+  </div>
+  <div class="auth-card">
+    <p><strong>Total:</strong> {{.Total}}</p>
+    <div class="notice"><strong>Payment Pending</strong><br>Monero payment instructions and QR codes will be displayed here once Phase 10 is fully integrated.</div>
+    <form method="post" action="/checkout" autocomplete="off" style="margin-top: 1rem;">
+      {{template "friction" .}}
+      <input type="hidden" name="csrf_token" value="{{.CsrfToken}}">
+      <div class="form-actions"><button type="submit">Confirm Order</button></div>
+    </form>
+  </div>
+</section>
+{{end}}

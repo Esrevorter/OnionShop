@@ -1,0 +1,19 @@
+{{template "layout" .}}
+{{define "title"}}Wallet · OnionShop{{end}}
+{{define "body"}}
+<section class="auth-layout">
+  <div class="auth-intro">
+    <p class="eyebrow">Finance</p>
+    <h1>Your Wallet</h1>
+    <p class="lede">Manage your balance and request withdrawals.</p>
+  </div>
+  <div class="auth-card">
+    <h2>Available Balance</h2>
+    <p class="lede" style="font-size: 2rem; font-weight: bold;">0.00000000 XMR</p>
+    <div class="notice"><strong>Note:</strong> The Monero settlement layer is currently being integrated (Phase 10). Balances will reflect here once complete.</div>
+    <div class="form-actions" style="justify-content: flex-start; margin-top: 1rem;">
+      <a href="/withdraw" class="button">Request Withdrawal</a>
+    </div>
+  </div>
+</section>
+{{end}}

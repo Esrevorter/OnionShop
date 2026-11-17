@@ -1,0 +1,18 @@
+{{template "layout" .}}
+{{define "title"}}Apply as Vendor · OnionShop{{end}}
+{{define "body"}}
+<section class="auth-layout">
+  <div class="auth-intro">
+    <p class="eyebrow">Vendor Application</p>
+    <h1>Become a Vendor</h1>
+    <p class="lede">Submit your shop name for admin review. Approval grants you vendor privileges.</p>
+  </div>
+  <form method="post" action="/vendor/apply" autocomplete="off" class="auth-card">
+    {{template "friction" .}}
+    <input type="hidden" name="csrf_token" value="{{.CsrfToken}}">
+    <label for="shop_name">Shop Name (3-60 characters)</label>
+    <input id="shop_name" type="text" name="shop_name" minlength="3" maxlength="60" required>
+    <div class="form-actions"><button type="submit">Submit Application</button></div>
+  </form>
+</section>
+{{end}}
