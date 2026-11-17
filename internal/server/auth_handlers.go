@@ -38,22 +38,22 @@ const honeypotField = "sta"
 // AuthData renders the login/register/account/pgp templates. The Phase 4
 // slices back the vendor/admin pages (vendor_products, admin_vendors); they
 // stay nil on every other page, where the templates never touch them.
-type AuthData struct {
-	CsrfToken      string
-	Captcha        *CaptchaChallenge
-	HoneypotHidden bool
-	Error          string
-	Flash          string
-	PersonalPhrase string // anti-phishing phrase shown ONLY after login (§9)
-	PGPPublicKey   string // armored PUBLIC key only (Phase 3 PGP); never private material
-	PGPFingerprint string // display fingerprint of PGPPublicKey ("" when absent)
+        type AuthData struct {
+	CsrfToken       string
+	IsAuthenticated bool // <-- ADD THIS LINE
+	Captcha         *CaptchaChallenge
+	HoneypotHidden  bool
+	Error           string
+	Flash           string
+	PersonalPhrase  string
+	PGPPublicKey    string
+	PGPFingerprint  string
 
-	Products    []ProductRecord  // vendor dashboard rows (vendor_handlers.go)
-	Categories  []CategoryRecord // category dropdown options
-	Pending     []VendorRecord   // admin approval queue (handleAdminVendors)
-	VendorState *VendorRecord    // this account's vendor row, if any
+	Products    []ProductRecord
+	Categories  []CategoryRecord
+	Pending     []VendorRecord
+	VendorState *VendorRecord
 }
-
 // UserRecord is one row from public.users. PasswordHash never leaves this
 // package's verify path and is never rendered.
 type UserRecord struct {
@@ -1363,9 +1363,11 @@ func (a *App) buildTemplates(dir string) error {
 	a.templates = tpls
 	return nil
 }
-
 func (a *App) baseData(r *http.Request) AuthData {
-	d := AuthData{CsrfToken: CSRFToken(r.Context(), a.sm)}
+	d := AuthData{
+		CsrfToken:       CSRFToken(r.Context(), a.sm),
+		IsAuthenticated: CurrentUserID(r.Context(), a.sm) != "", // <-- ADD THIS LINE
+	}
 	d.HoneypotHidden = true // forms always hide the decoy via CSS (AGENTS.md §3)
 	return d
 }

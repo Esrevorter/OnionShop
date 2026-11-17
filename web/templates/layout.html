@@ -40,15 +40,19 @@
     <nav class="site-nav" aria-label="Main navigation">
       <a href="/">Marketplace</a>
       <a href="/search">Search</a>
-      {{if .PersonalPhrase}}
-        <span class="phrase-badge" title="Your anti-phishing phrase">✓ {{.PersonalPhrase}}</span>
+      
+      {{if .IsAuthenticated}}
+        {{if .PersonalPhrase}}
+          <span class="phrase-badge" title="Your anti-phishing phrase">✓ {{.PersonalPhrase}}</span>
+        {{end}}
+        <a href="/account">Account</a>
         <a href="/wallet">Wallet</a>
         <a href="/orders">Orders</a>
         <a href="/disputes">Disputes</a>
         <a href="/tickets">Tickets</a>
-        <form method="post" action="/logout" class="nav-form">
+        <form method="post" action="/logout" class="nav-form" style="margin:0; display:inline;">
           <input type="hidden" name="csrf_token" value="{{.CsrfToken}}">
-          <button class="secondary" type="submit">Log out</button>
+          <button class="secondary" type="submit" style="border:none; background:none; cursor:pointer; font-size:inherit; color:var(--accent); padding:.45rem .7rem;">Log out</button>
         </form>
       {{else}}
         <a href="/login">Log in</a>
