@@ -82,13 +82,14 @@ button.danger { background: #522d2a; border-color: #9c5e56; color: #ffe2de; }
 .brand {
   display: inline-flex;
   align-items: center;
-  gap: .5rem;
+  gap: .55rem;
   color: var(--ink);
-  font-size: 1.2rem;
+  font-size: 1.25rem;
   font-weight: 800;
   letter-spacing: -.03em;
   text-decoration: none;
 }
+.brand-onion { filter: drop-shadow(0 .12rem .35rem rgb(138 95 196 / 35%)); }
 /* Inline vector onion: sized ~4x the old ◈ glyph, colored via theme vars.
    No external file, no font, CSP-safe (markup only). */
 .brand-onion { display: block; flex: none; }
