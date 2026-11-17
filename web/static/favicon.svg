@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="32" height="32">
+  <defs>
+    <linearGradient id="onionFill" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#c9a0f0"/>
+      <stop offset="1" stop-color="#8a5fc4"/>
+    </linearGradient>
+  </defs>
+  <path d="M32 14C20 18 13 30 15 42 17 53 26 57 32 57 38 57 47 53 49 42 51 30 44 18 32 14Z"
+        fill="url(#onionFill)" stroke="#d7bdf2" stroke-width="2"/>
+  <g fill="none" stroke="#e9dcfb" stroke-width="1.4" stroke-opacity=".7" stroke-linecap="round">
+    <path d="M32 16C27 30 27 44 32 56"/>
+    <path d="M32 16C37 30 37 44 32 56"/>
+    <path d="M22 21C20 33 22 45 26 53"/>
+    <path d="M42 21C44 33 42 45 38 53"/>
+  </g>
+  <g fill="none" stroke="#c9a0f0" stroke-width="2.4" stroke-linecap="round">
+    <path d="M32 14C31 10 31 7 32 4"/>
+    <path d="M32 9C28 7 26 4 27 1"/>
+    <path d="M32 9C36 7 38 4 37 1"/>
+  </g>
+</svg>
