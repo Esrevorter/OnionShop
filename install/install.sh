@@ -55,6 +55,7 @@ ensure_var DB_PASSWORD gen64
 ensure_var DB_NAME "printf onionshop"
 ensure_var REDIS_PASSWORD gen64
 ensure_var SESSION_HASH_KEY gen64
+ensure_var NGINX_BIND_IP "printf '127.0.0.1'"
 if ! grep -q '^AGE_PUBLIC_KEY=' .env 2>/dev/null; then
   die "AGE_PUBLIC_KEY is required by the configured backup sidecar; generate its private identity offline and set the public recipient in .env"
 fi

@@ -17,20 +17,50 @@
 
 ## 2. Network and host controls
 
-- **Whonix Topology:** The deployment strictly uses a Whonix-Gateway / Whonix-Workstation (AppVM) split. The AppVM hosts the entire application stack (`app`, `postgres`, `nginx`, `redis`, `backup`) and has **no direct physical network interface**. All network traffic is forcibly routed through the Whonix-Gateway's Tor daemon. This prevents any accidental clearnet leaks, DNS leaks, or direct IP exposure from the application stack.
-- Review nginx, Tor, Docker, and host firewall together. Tor port 80 maps to the AppVM's nginx redirect listener 8080; onion port 443 maps to TLS listener 8443.
+- Review nginx, Tor, Docker, and host firewall together. Tor port 80 maps to nginx redirect listener 8080; onion port 443 maps to TLS listener 8443.
 - App/nginx uses the shared UNIX socket; health checks should exercise the actual proxy/socket route.
-- Docker internal networks do not by themselves prove host firewall safety, DNS policy, or Tor-only egress. The Whonix topology enforces this at the hypervisor level, but audit each service configuration to ensure no internal bypasses are attempted.
+- Docker internal networks do not by themselves prove host firewall safety, DNS policy, or Tor-only egress. Audit each service.
 - Apply LUKS2, swap, nftables, systemd, and private-onion Dropbear through host-specific reviewed procedures and test recovery first.
 - Verify external container image digest/platform against upstream metadata.
 
-## 3. Data, payments, and recovery
+## 3. Whonix Deployment Specifics
+
+When deploying on Whonix, the Hidden Service **must** terminate on the **Whonix-Gateway**, while the application runs on the **Whonix-Workstation**. This avoids the unsupported and dangerous "Tor over Tor" anti-pattern.
+
+1. **Gateway Configuration**: The Gateway's `/etc/tor/torrc` must forward to the Workstation's internal IP (e.g., `10.152.152.11`):
+   ```text
+   HiddenServiceDir /var/lib/tor/onionshop/
+   HiddenServicePort 80 10.152.152.11:8080
+   HiddenServicePort 443 10.152.152.11:8443
+   ```
+2. **Workstation Configuration**: In the Workstation's `.env`, set `NGINX_BIND_IP=0.0.0.0` so the Gateway can reach the nginx container.
+3. **MANDATORY FIREWALL RULE**: Because `0.0.0.0` exposes the ports to the Workstation's entire network, you **must** configure the Workstation's host firewall (e.g., `nftables` or `iptables`) to drop all inbound traffic to ports 8080 and 8443, **except** from the Gateway's internal IP (`10.152.152.10`). 
+
+   Example `nftables` rule:
+   ```nft
+   table inet filter {
+       chain input {
+           type filter hook input priority 0; policy drop;
+           # Allow established/related
+           ct state established,related accept
+           # Allow loopback
+           iifname "lo" accept
+           # Allow SSH from admin (adjust as needed)
+           tcp dport 22 accept
+           # ALLOW NGINX *ONLY* FROM WHONIX-GATEWAY
+           ip saddr 10.152.152.10 tcp dport { 8080, 8443 } accept
+       }
+   }
+   ```
+   Failure to apply this firewall rule when using `NGINX_BIND_IP=0.0.0.0` constitutes a critical security misconfiguration.
+
+## 4. Data, payments, and recovery
 
 - Do not commit or bake secrets. Verify database grants and Redis policy against actual code/config.
-- Poll payment backends; do not add inbound webhooks. Verify ledger transactions/idempotency and financial workflows.
+- Poll payment services; do not add inbound webhooks. Verify ledger transactions/idempotency and financial workflows.
 - Encrypt backups with age to an offline-generated public recipient; keep private identity offline and run restore drills.
 - `rm`/`shred` are not reliable erasure on SSDs, snapshots, copy-on-write or journaled filesystems. Persistent denial requires tested cryptographic key destruction.
 
-## 4. Production readiness
+## 5. Production readiness
 
 Follow `PRODUCTION_READINESS.md`. Production requires actual Tor Browser TLS behavior testing, host/network verification, integration checks, and successful backup restoration; docs do not substitute for evidence.

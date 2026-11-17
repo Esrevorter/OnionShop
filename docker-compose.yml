@@ -32,8 +32,11 @@ services:
     user: "101:101"                    # 'nginx' user in Alpine
     group_add: ["1000"]                # supplementary access to app.sock (0770)
     ports:
-      - "127.0.0.1:8080:8080"          # Tor HiddenServicePort 80 target
-      - "127.0.0.1:8443:8443"          # Tor HiddenServicePort 443 target
+      # Configurable bind IP. Default 127.0.0.1 for safety. 
+      # Whonix-Workstation deployments MUST set NGINX_BIND_IP=0.0.0.0 in .env
+      # AND enforce a host firewall restricting access to the Gateway's IP.
+      - "${NGINX_BIND_IP:-127.0.0.1}:8080:8080"          # Tor HiddenServicePort 80 target
+      - "${NGINX_BIND_IP:-127.0.0.1}:8443:8443"          # Tor HiddenServicePort 443 target
     volumes:
       - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
       - ./nginx/ssl:/etc/nginx/ssl:ro
@@ -52,6 +55,7 @@ services:
       interval: 30s
       timeout: 5s
       retries: 3  
+
   app:
     image: onionshop-app:local
     build:
@@ -83,6 +87,7 @@ services:
       timeout: 5s
       retries: 12
       start_period: 10s
+
   postgres:
     image: postgres:16-alpine # tag-only; verify/pin digest before production
     <<: *default-hardening
@@ -111,6 +116,7 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+
   redis:
     image: redis:7-alpine # tag-only; verify/pin digest before production
     <<: *default-hardening
@@ -131,6 +137,52 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+
+  # 2. Monero Node (monerod)
+  # Own node is mandatory for OpSec. Syncs via host's Tor daemon to protect IP.
+  monerod:
+    # TODO: REPLACE PLACEHOLDER DIGEST with actual digest from registry.
+    # Run: docker pull ghcr.io/sethforprivacy/simple-monerod:v0.18.3.3
+    # Run: docker inspect --format='{{index .RepoDigests 0}}' ghcr.io/sethforprivacy/simple-monerod:v0.18.3.3
+    image: ghcr.io/sethforprivacy/simple-monerod@sha256:PLACEHOLDER_DIGEST_REPLACE_ME
+    <<: *default-hardening
+    mem_limit: 2000m
+    pids_limit: 512
+    environment:
+      - PUID=1000
+      - PGID=1000
+    # Command flags enforce pruned sync, Tor routing, and strict RPC lockdown.
+    # host.docker.internal resolves to the host machine's loopback to reach Tor.
+    command: >
+      --prune-blockchain
+      --sync-pruned-blocks
+      --proxy host.docker.internal:9050
+      --p2p-bind-ip 127.0.0.1
+      --tx-proxy tor,host.docker.internal:9050,10
+      --pad-transactions
+      --no-igd
+      --hide-my-port
+      --no-zmq
+      --enable-dns-blocklist
+      --enforce-dns-checkpointing
+      --check-updates=disabled
+      --restricted-rpc
+      --rpc-bind-ip 127.0.0.1
+      --rpc-login monero:moneropassword
+      --disable-md5
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - monero_data:/home/monero/.bitmonero
+    networks: [internal_net]
+    tmpfs: [/tmp]
+    healthcheck:
+      # Basic RPC check to verify the daemon is responsive
+      test: ["CMD-SHELL", "wget -qO- --user=monero --password=moneropassword http://127.0.0.1:18081/get_height || exit 1"]
+      interval: 60s
+      timeout: 10s
+      retries: 5
+      start_period: 120s
 
   backup:
     build:
@@ -156,6 +208,7 @@ volumes:
   pgdata:
   backup_data:
   appsock:
+  monero_data:
 
 networks:
   internal_net:
