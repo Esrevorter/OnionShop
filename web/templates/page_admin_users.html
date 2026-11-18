@@ -41,21 +41,27 @@
           </td>
           <td class="text-muted">{{.CreatedAt.Format "2006-01-02"}}</td>
           <td>
-            {{if eq .Status "active"}}
-              <form method="post" action="/admin/users/ban" style="display:inline;">
+            <div style="display: flex; gap: 0.5rem; flex-wrap: wrap;">
+              {{if eq .Status "active"}}
+                <form method="post" action="/admin/users/ban" style="display:inline;">
+                  {{template "friction" $}}
+                  <input type="hidden" name="user_id" value="{{.ID}}">
+                  <input type="hidden" name="action" value="ban">
+                  <button type="submit" class="btn-danger btn-sm">Ban</button>
+                </form>
+              {{else}}
+                <form method="post" action="/admin/users/ban" style="display:inline;">
+                  {{template "friction" $}}
+                  <input type="hidden" name="user_id" value="{{.ID}}">
+                  <input type="hidden" name="action" value="unban">
+                  <button type="submit" class="btn-success btn-sm">Unban</button>
+                </form>
+              {{end}}
+              <form method="post" action="/admin/users/{{.ID}}/reset-password" style="display:inline;" onsubmit="return confirm('This will invalidate all user sessions and generate a temporary password. Are you sure?');">
                 {{template "friction" $}}
-                <input type="hidden" name="user_id" value="{{.ID}}">
-                <input type="hidden" name="action" value="ban">
-                <button type="submit" class="btn-danger btn-sm">Ban</button>
+                <button type="submit" class="btn-secondary btn-sm" style="border: 1px solid var(--line);">Reset PW</button>
               </form>
-            {{else}}
-              <form method="post" action="/admin/users/ban" style="display:inline;">
-                {{template "friction" $}}
-                <input type="hidden" name="user_id" value="{{.ID}}">
-                <input type="hidden" name="action" value="unban">
-                <button type="submit" class="btn-success btn-sm">Unban</button>
-              </form>
-            {{end}}
+            </div>
           </td>
         </tr>
         {{end}}

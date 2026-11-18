@@ -2,7 +2,10 @@ package server
 
 import (
 	"context"
+	"crypto/rand"
+	"fmt"
 	"log"
+	"math/big"
 	"net/http"
 	"strings"
 	"time"
@@ -37,6 +40,17 @@ type AdminUserData struct {
 type adminUserListData struct {
 	AuthData
 	Users []AdminUserData
+}
+
+type AdminCategory struct {
+	ID   int64
+	Slug string
+	Name string
+}
+
+type CategoryData struct {
+	AuthData
+	Categories []AdminCategory
 }
 
 func (a *App) handleAdminDashboard(w http.ResponseWriter, r *http.Request) {
@@ -94,7 +108,6 @@ func (a *App) handleAdminBanUser(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	_ = r.ParseForm()
 
-	// fail closure re-renders the user list with an error and a FRESH CAPTCHA
 	fail := func(msg string) {
 		data := adminUserListData{AuthData: a.baseData(r)}
 		data.Error = msg
@@ -103,12 +116,11 @@ func (a *App) handleAdminBanUser(w http.ResponseWriter, r *http.Request) {
 			data.Users = users
 		}
 		if data.Captcha = a.newChallenge(w, r, "admin"); data.Captcha == nil {
-			return // newChallenge already wrote the generic 500
+			return
 		}
 		a.renderAs(w, "admin_users", http.StatusUnprocessableEntity, data)
 	}
 
-	// ENFORCE CAPTCHA + HONEYPOT
 	if !a.requireFriction(w, r, "admin") {
 		fail("Human verification failed, please try again.")
 		return
@@ -166,9 +178,171 @@ func fetchAdminUsers(ctx context.Context, pool *pgxpool.Pool) ([]AdminUserData, 
 	return out, rows.Err()
 }
 
+func (a *App) handleAdminCategories(w http.ResponseWriter, r *http.Request) {
+	pool, ok := a.adminPool()
+	if !ok {
+		writeGenericError(w)
+		return
+	}
+	ctx := r.Context()
+	data := a.baseData(r)
+
+	rows, err := pool.Query(ctx, `SELECT id, slug, name FROM public.categories ORDER BY id ASC`)
+	if err != nil {
+		log.Printf("server: admin category list failed: %v", err)
+		data.Error = "could not load categories"
+		a.renderAs(w, "admin_categories", http.StatusInternalServerError, CategoryData{AuthData: data})
+		return
+	}
+	defer rows.Close()
+
+	var categories []AdminCategory
+	for rows.Next() {
+		var c AdminCategory
+		if err := rows.Scan(&c.ID, &c.Slug, &c.Name); err != nil {
+			log.Printf("server: admin category scan failed: %v", err)
+			continue
+		}
+		categories = append(categories, c)
+	}
+
+	a.renderAs(w, "admin_categories", http.StatusOK, CategoryData{AuthData: data, Categories: categories})
+}
+
+func (a *App) handleAdminCategoryCreate(w http.ResponseWriter, r *http.Request) {
+	pool, ok := a.adminPool()
+	if !ok {
+		writeGenericError(w)
+		return
+	}
+	ctx := r.Context()
+	_ = r.ParseForm()
+	data := a.baseData(r)
+
+	fail := func(msg string) {
+		data.Error = msg
+		if data.Captcha = a.newChallenge(w, r, "admin"); data.Captcha == nil {
+			return
+		}
+		rows, err := pool.Query(ctx, `SELECT id, slug, name FROM public.categories ORDER BY id ASC`)
+		if err == nil {
+			defer rows.Close()
+			var categories []AdminCategory
+			for rows.Next() {
+				var c AdminCategory
+				if err := rows.Scan(&c.ID, &c.Slug, &c.Name); err == nil {
+					categories = append(categories, c)
+				}
+			}
+			a.renderAs(w, "admin_categories", http.StatusUnprocessableEntity, CategoryData{AuthData: data, Categories: categories})
+			return
+		}
+		a.renderAs(w, "admin_categories", http.StatusUnprocessableEntity, CategoryData{AuthData: data})
+	}
+
+	if !a.requireFriction(w, r, "admin") {
+		fail("Human verification failed, please try again.")
+		return
+	}
+
+	name := strings.TrimSpace(r.FormValue("name"))
+	slug := strings.ToLower(strings.TrimSpace(r.FormValue("slug")))
+
+	if len(name) < 2 || len(name) > 50 {
+		fail("Category name must be 2-50 characters.")
+		return
+	}
+	if len(slug) < 2 || len(slug) > 50 {
+		fail("Category slug must be 2-50 characters.")
+		return
+	}
+	for _, c := range slug {
+		if !((c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '-') {
+			fail("Slug can only contain lowercase letters, numbers, and hyphens.")
+			return
+		}
+	}
+
+	_, err := pool.Exec(ctx, `INSERT INTO public.categories (slug, name) VALUES ($1, $2)`, slug, name)
+	if err != nil {
+		log.Printf("server: admin category create failed: %v", err)
+		fail("Could not create category. Slug may already exist.")
+		return
+	}
+
+	data.Flash = "Category created successfully."
+	http.Redirect(w, r, "/admin/categories", http.StatusSeeOther)
+}
+
+func generateTempPassword() string {
+	const charset = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
+	b := make([]byte, 16)
+	for i := range b {
+		num, _ := rand.Int(rand.Reader, big.NewInt(int64(len(charset))))
+		b[i] = charset[num.Int64()]
+	}
+	return string(b)
+}
+
+func (a *App) handleAdminResetPassword(w http.ResponseWriter, r *http.Request) {
+	pool, ok := a.adminPool()
+	if !ok {
+		writeGenericError(w)
+		return
+	}
+	ctx := r.Context()
+	_ = r.ParseForm()
+	data := a.baseData(r)
+
+	userIDStr := chi.URLParam(r, "id")
+	uid := parseUUIDText(userIDStr)
+	if !uid.Valid {
+		http.Error(w, "bad request", http.StatusBadRequest)
+		return
+	}
+
+	if !a.requireFriction(w, r, "admin") {
+		data.Error = "Human verification failed."
+		users, _ := fetchAdminUsers(ctx, pool)
+		a.renderAs(w, "admin_users", http.StatusUnprocessableEntity, adminUserListData{AuthData: data, Users: users})
+		return
+	}
+
+	tempPass := generateTempPassword()
+	hash, _, err := HashPassword(tempPass)
+	if err != nil {
+		log.Printf("server: password hash failed: %v", err)
+		writeGenericError(w)
+		return
+	}
+
+	_, err = pool.Exec(ctx, `UPDATE public.users SET password_hash = $1, updated_at = now() WHERE id = $2`, hash, uid)
+	if err != nil {
+		log.Printf("server: password reset update failed: %v", err)
+		writeGenericError(w)
+		return
+	}
+
+	if err := a.InvalidateUserSessions(ctx, uuidString(uid)); err != nil {
+		log.Printf("server: session invalidation after password reset failed (non-fatal): %v", err)
+	}
+
+	data.Flash = fmt.Sprintf("Password reset successful. Temporary password: %s (Provide this to the user securely)", tempPass)
+
+	users, err := fetchAdminUsers(ctx, pool)
+	if err == nil {
+		a.renderAs(w, "admin_users", http.StatusOK, adminUserListData{AuthData: data, Users: users})
+	} else {
+		http.Redirect(w, r, "/admin/users", http.StatusSeeOther)
+	}
+}
+
 func (a *App) registerAdminRoutes(r chi.Router) {
 	admin := a.RequireRole("admin")
 	r.With(admin).Get("/admin", a.handleAdminDashboard)
 	r.With(admin).Get("/admin/users", a.handleAdminUsers)
 	r.With(admin).Post("/admin/users/ban", a.handleAdminBanUser)
+	r.With(admin).Post("/admin/users/{id}/reset-password", a.handleAdminResetPassword)
+	r.With(admin).Get("/admin/categories", a.handleAdminCategories)
+	r.With(admin).Post("/admin/categories", a.handleAdminCategoryCreate)
 }

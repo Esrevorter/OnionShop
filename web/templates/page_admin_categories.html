@@ -1,0 +1,59 @@
+{{template "layout" .}}
+
+{{define "title"}}Category Management · OnionShop{{end}}
+
+{{define "body"}}
+<section class="admin-layout">
+  <div class="admin-header">
+    <h1>Product Categories</h1>
+    <a href="/admin" class="btn-secondary">← Back to Dashboard</a>
+  </div>
+
+  <div class="auth-card" style="max-width: 600px; margin-bottom: 2rem;">
+    <h2>Add New Category</h2>
+    <form method="post" action="/admin/categories" autocomplete="off">
+      {{template "friction" .}}
+      
+      <label for="name">Category Name</label>
+      <input id="name" type="text" name="name" maxlength="50" placeholder="e.g., Electronics" required>
+      
+      <label for="slug">URL Slug (lowercase, letters, numbers, hyphens)</label>
+      <input id="slug" type="text" name="slug" maxlength="50" placeholder="e.g., electronics" pattern="[a-z0-9\-]+" required>
+      <p class="form-help">This will be used in the URL: /category/your-slug</p>
+      
+      <div class="form-actions">
+        <button type="submit">Create Category</button>
+      </div>
+    </form>
+  </div>
+
+  <div class="table-container">
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th>ID</th>
+          <th>Name</th>
+          <th>Slug</th>
+        </tr>
+      </thead>
+      <tbody>
+        {{if not .Categories}}
+        <tr>
+          <td colspan="3" class="text-muted" style="text-align: center; padding: 2rem;">
+            No categories defined yet.
+          </td>
+        </tr>
+        {{else}}
+        {{range .Categories}}
+        <tr>
+          <td>{{.ID}}</td>
+          <td><strong>{{.Name}}</strong></td>
+          <td><code>/category/{{.Slug}}</code></td>
+        </tr>
+        {{end}}
+        {{end}}
+      </tbody>
+    </table>
+  </div>
+</section>
+{{end}}
