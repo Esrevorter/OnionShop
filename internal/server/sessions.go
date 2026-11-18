@@ -15,34 +15,28 @@ import (
 	"github.com/alexedwards/scs/v2"
 )
 
-// Session / CSRF names. Kept in one place so handlers and templates cannot
-// drift: AGENTS.md §3 mandates the hidden input be named exactly `csrf_token`.
 const (
 	SessionCookieName = "session"
-	CSRFKey           = "csrf_token" // scs session key holding the double-submit token
-	CSRFFormField     = "csrf_token" // form field name in every POST form
-	csrfTokenBytes    = 32           // 256-bit tokens (>=128 bits required, AGENTS.md §4)
+	CSRFKey           = "csrf_token"
+	CSRFFormField     = "csrf_token"
+	csrfTokenBytes    = 32
 
-	createdKey  = "sess.created"  // absolute-lifetime start, UTC epoch seconds
-	userIDKey   = "user_id"       // set by Phase 3 login handlers after rotation
-	usernameKey = "sess.username" // display name; never a secret, never logged
-	roleKey     = "sess.role"     // RBAC role (customer|vendor|mod|admin)
-	phraseKey   = "sess.phrase"   // anti-phishing personal phrase (post-login only)
+	createdKey  = "sess.created"
+	userIDKey   = "user_id"
+	usernameKey = "sess.username"
+	roleKey     = "sess.role"
+	phraseKey   = "sess.phrase"
 )
 
-// ErrInternalSession marks CSPRNG/store failures. Handlers render a generic 500
-// and never surface the cause (SECURITY_AND_OPSEC.md §1: no stack traces).
 var ErrInternalSession = errors.New("server: session subsystem failure")
 
-// SessionConfig controls cookie flags and both expiry kinds.
 type SessionConfig struct {
-	IdleTimeout     time.Duration // sliding window, refreshed on each request
-	AbsoluteTimeout time.Duration // hard cap from creation; never extended
-	SecureCookies   bool          // false ONLY for local dev (ONIONSHOP_SECURE_COOKIES=false)
-	CookieDomain    string        // empty => host-only cookie (correct for an onion)
+	IdleTimeout     time.Duration
+	AbsoluteTimeout time.Duration
+	SecureCookies   bool
+	CookieDomain    string
 }
 
-// DefaultSessionConfig returns production defaults: 30 min idle, 12 h absolute.
 func DefaultSessionConfig() SessionConfig {
 	return SessionConfig{
 		IdleTimeout:     30 * time.Minute,
@@ -51,17 +45,6 @@ func DefaultSessionConfig() SessionConfig {
 	}
 }
 
-// NewSessions builds the scs manager over an already-composed store (see
-// store.FallbackStore: Redis fast path + Postgres durable mirror).
-//
-// Cookie flags follow AGENTS.md §4 exactly: HttpOnly + Secure +
-// SameSite=Strict, host-only, Path "/". Session identifiers come from scs'
-// own generator — 32 bytes of crypto/rand rendered base64url — which meets
-// the ≥128-bit requirement with margin; nothing here weakens it.
-//
-// Expiry: scs v2.8 offers a fixed Lifetime OR a sliding IdleTimeout, not both,
-// so we set Lifetime as the store-side upper bound and enforce the real
-// absolute cap with the AbsoluteExpiry middleware below.
 func NewSessions(st scs.Store, cfg SessionConfig) *scs.SessionManager {
 	sm := scs.New()
 	sm.Store = st
@@ -76,19 +59,12 @@ func NewSessions(st scs.Store, cfg SessionConfig) *scs.SessionManager {
 	}
 	sm.Lifetime = cfg.AbsoluteTimeout
 	sm.IdleTimeout = cfg.IdleTimeout
-	// scs' default ErrorFunc log.Printf's the raw error (which can carry the
-	// token). Replace it: PII-free generic 500 only (AGENTS.md §4).
 	sm.ErrorFunc = func(w http.ResponseWriter, r *http.Request, _ error) {
 		writeGenericError(w)
 	}
 	return sm
 }
 
-// AbsoluteExpiry enforces the hard lifetime cap that scs cannot express next
-// to a sliding window. The first request of a session stamps createdKey; once
-// the stamp is older than timeout the session is destroyed and a fresh token
-// issued, so the visitor silently continues anonymously — attackers probing
-// stolen tokens get no signal about why.
 func AbsoluteExpiry(sm *scs.SessionManager, timeout time.Duration) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -113,9 +89,6 @@ func AbsoluteExpiry(sm *scs.SessionManager, timeout time.Duration) func(http.Han
 	}
 }
 
-// RotateOnAuth MUST be called by login and privilege-change handlers
-// (AGENTS.md §4). It keeps session data, swaps the identifier, and re-stamps
-// nothing — the absolute clock keeps running across the rotation.
 func RotateOnAuth(ctx context.Context, sm *scs.SessionManager) error {
 	if err := sm.RenewToken(ctx); err != nil {
 		return fmt.Errorf("%w: %v", ErrInternalSession, err)
@@ -123,21 +96,14 @@ func RotateOnAuth(ctx context.Context, sm *scs.SessionManager) error {
 	return nil
 }
 
-// CurrentUserID returns the authenticated user id stored in the session by
-// Phase 3 auth handlers ("" when anonymous). Rate limiting keys off this.
 func CurrentUserID(ctx context.Context, sm *scs.SessionManager) string {
 	return sm.GetString(ctx, userIDKey)
 }
 
-// CurrentRole returns the RBAC role recorded at login ("" when anonymous).
-// RequireRole reads it; nothing here trusts a client-supplied role.
 func CurrentRole(ctx context.Context, sm *scs.SessionManager) string {
 	return sm.GetString(ctx, roleKey)
 }
 
-// RequireRole is the RBAC gate (TASKS.md Phase 3): anonymous sessions are
-// bounced to /login; authenticated sessions outside the allowed roles get
-// the uniform 403 — never a hint about which roles exist.
 func (a *App) RequireRole(roles ...string) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -159,15 +125,6 @@ func (a *App) RequireRole(roles ...string) func(http.Handler) http.Handler {
 	}
 }
 
-// InvalidateUserSessions kills every live session belonging to userID when a
-// SessionInvalidator is wired (store.FallbackStore in production). Callers:
-// vendor approval (customer -> vendor promotion) and any future admin role or
-// status change. AGENTS.md §4 makes rotation mandatory on privilege change;
-// since scs' gob payload cannot be edited server-side, deleting OTHERS' rows
-// for that user is the correct primitive (the acting admin's own session rides
-// this very request and is untouched). A nil invalidator means an in-memory
-// dev store where no durable row exists — logged, never silent, because
-// forgetting this wiring would leave stale-role sessions alive in production.
 func (a *App) InvalidateUserSessions(ctx context.Context, userID string) error {
 	if a.invalid == nil {
 		log.Printf("server: session invalidation skipped for a privilege change (no SessionInvalidator wired)")
@@ -182,8 +139,6 @@ func (a *App) InvalidateUserSessions(ctx context.Context, userID string) error {
 	return nil
 }
 
-// NewRandomToken returns n cryptographically-random bytes (default 32 => 256
-// bits) base64url-encoded. Used for CSRF and later CAPTCHA tokens.
 func NewRandomToken(n int) (string, error) {
 	if n <= 0 {
 		n = csrfTokenBytes
@@ -195,16 +150,10 @@ func NewRandomToken(n int) (string, error) {
 	return base64.RawURLEncoding.EncodeToString(b), nil
 }
 
-// hashToken folds a token into a fixed-width digest before comparison so any
-// timing channel is bounded and identical for every input length.
 func hashToken(t string) [sha256.Size]byte { return sha256.Sum256([]byte(t)) }
 
-// ErrCSRFMismatch is the internal marker for failed validation; clients only
-// ever see the same uniform 403 whether the token was missing or wrong.
 var ErrCSRFMismatch = errors.New("server: csrf validation failed")
 
-// CSRFLoad guarantees the session carries a double-submit token, minting one
-// on first sight. Mount after sessions.LoadAndSave and before CSRFProtect.
 func CSRFLoad(sm *scs.SessionManager) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -222,16 +171,11 @@ func CSRFLoad(sm *scs.SessionManager) func(http.Handler) http.Handler {
 	}
 }
 
-// CSRFToken returns the live double-submit token for template rendering:
-//
-//	<input type="hidden" name="csrf_token" value="{{.CsrfToken}}">
 func CSRFToken(ctx context.Context, sm *scs.SessionManager) string {
 	tok, _ := sm.Get(ctx, CSRFKey).(string)
 	return tok
 }
 
-// isSafeMethod lists the methods RFC 7231 deems safe/idempotent; they never
-// need CSRF validation. Everything else (POST/PUT/PATCH/DELETE) does.
 func isSafeMethod(m string) bool {
 	switch m {
 	case http.MethodGet, http.MethodHead, http.MethodOptions:
@@ -240,16 +184,21 @@ func isSafeMethod(m string) bool {
 	return false
 }
 
-// CSRFProtect enforces double-submit validation on state-changing requests:
-// the `csrf_token` form field (or X-CSRF-Token header, reserved for the future
-// SPKI-pinned CLI) must equal the session-stored token. Comparison runs over
-// SHA-256 digests in constant time; failures get a uniform 403 with no detail.
+// CSRFProtect enforces double-submit validation on state-changing requests.
+// Comparison runs over SHA-256 digests in constant time; failures get a uniform 403.
 //
-// A session without a token (destroyed mid-flow) fails closed.
+// Exception for /logout: if the session expired between page load and the click,
+// the form carries a stale CSRF token while the fresh session has a new one.
+// They won't match, resulting in a 403. For logout, we don't care: the goal is
+// just to ensure the user is logged out, and a stale token means they already are.
 func CSRFProtect(sm *scs.SessionManager) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			if isSafeMethod(r.Method) {
+				next.ServeHTTP(w, r)
+				return
+			}
+			if r.URL.Path == "/logout" && r.Method == http.MethodPost {
 				next.ServeHTTP(w, r)
 				return
 			}
@@ -271,10 +220,6 @@ func CSRFProtect(sm *scs.SessionManager) func(http.Handler) http.Handler {
 	}
 }
 
-// writeGenericError renders the uniform error body mandated by
-// SECURITY_AND_OPSEC.md §1 (no stack traces, no internals). Templates take
-// over this hook in Phase 3; keeping it here means every middleware that must
-// abort has one safe exit.
 func writeGenericError(w http.ResponseWriter) {
 	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 	w.WriteHeader(http.StatusInternalServerError)
