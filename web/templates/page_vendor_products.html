@@ -1,28 +1,62 @@
 {{template "layout" .}}
-{{define "title"}}Vendor Dashboard · OnionShop{{end}}
+
+{{define "title"}}My Listings · OnionShop{{end}}
+
 {{define "body"}}
-<section class="auth-layout">
-  <div class="auth-intro">
-    <p class="eyebrow">Vendor</p>
-    <h1>Manage Products</h1>
-    <p class="lede">Create, edit, and remove your product listings.</p>
+<section class="admin-layout">
+  <div class="admin-header">
+    <h1>My Listings {{if .ShopName}}({{.ShopName}}){{end}}</h1>
+    <a href="/vendor/products/new" class="button">+ Add New Listing</a>
   </div>
-  <div class="auth-card">
-    <p>You have no products listed yet.</p>
-    <form method="post" action="/vendor/products" autocomplete="off" style="margin-top: 1rem; border-top: 1px solid #333; padding-top: 1rem;">
-      {{template "friction" .}}
-      <input type="hidden" name="csrf_token" value="{{.CsrfToken}}">
-      <h3>Add New Product</h3>
-      <label for="title">Title</label>
-      <input id="title" type="text" name="title" required>
-      <label for="description">Description</label>
-      <textarea id="description" name="description" rows="4" required></textarea>
-      <label for="price_sat">Price (Satoshis)</label>
-      <input id="price_sat" type="number" name="price_sat" required>
-      <label for="stock">Stock</label>
-      <input id="stock" type="number" name="stock" required>
-      <div class="form-actions"><button type="submit">Create Product</button></div>
-    </form>
+
+  {{if not .Products}}
+    <div class="empty-state">
+      <p>You have no active listings yet.</p>
+      <a href="/vendor/products/new" class="button">Create your first listing</a>
+    </div>
+  {{else}}
+  <div class="table-container">
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th>Title</th>
+          <th>Category</th>
+          <th>Price (Sat)</th>
+          <th>Stock</th>
+          <th>Status</th>
+          <th>Actions</th>
+        </tr>
+      </thead>
+      <tbody>
+        {{range .Products}}
+        <tr>
+          <td><strong>{{.Title}}</strong></td>
+          <td>{{if gt .CategoryID 0}}#{{.CategoryID}}{{else}}Uncategorized{{end}}</td>
+          <td>{{.PriceSat}}</td>
+          <td>{{.Stock}}</td>
+          <td>
+            {{if eq .Status "active"}}
+              <span class="badge badge-success">Active</span>
+            {{else if eq .Status "draft"}}
+              <span class="badge badge-muted">Draft</span>
+            {{else}}
+              <span class="badge badge-danger">Removed</span>
+            {{end}}
+          </td>
+          <td>
+            {{if ne .Status "removed"}}
+            <a href="/vendor/products/{{.ID}}/edit" class="btn-secondary btn-sm">Edit</a>
+            <form method="post" action="/vendor/products/{{.ID}}/remove" style="display:inline;" onsubmit="return confirm('Are you sure you want to remove this listing? This cannot be undone.');">
+              {{template "friction" $}}
+              <button type="submit" class="btn-danger btn-sm">Remove</button>
+            </form>
+            {{end}}
+          </td>
+        </tr>
+        {{end}}
+      </tbody>
+    </table>
   </div>
+  {{end}}
 </section>
 {{end}}

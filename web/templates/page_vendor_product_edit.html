@@ -1,0 +1,57 @@
+{{template "layout" .}}
+
+{{define "title"}}{{if .Editing}}Edit{{else}}New{{end}} Listing · OnionShop{{end}}
+
+{{define "body"}}
+<section class="admin-layout">
+  <div class="admin-header">
+    <h1>{{if .Editing}}Edit{{else}}Create New{{end}} Listing</h1>
+    <a href="/vendor/products" class="btn-secondary">← Back to Listings</a>
+  </div>
+
+  <div class="auth-card" style="max-width: 600px;">
+    <form method="post" action="{{if .Editing}}/vendor/products/{{.Editing.ID}}/edit{{else}}/vendor/products/new{{end}}" autocomplete="off">
+      {{template "friction" .}}
+      
+      <label for="title">Product Title (3-200 characters)</label>
+      <input id="title" type="text" name="title" maxlength="200" value="{{if .Editing}}{{.Editing.Title}}{{end}}" required>
+
+      <label for="description">Description (max 20000 characters)</label>
+      <textarea id="description" name="description" rows="6" maxlength="20000" required>{{if .Editing}}{{.Editing.Description}}{{end}}</textarea>
+
+      <div class="form-grid">
+        <div>
+          <label for="price_sat">Price (in Satoshis)</label>
+          <input id="price_sat" type="number" name="price_sat" min="1" value="{{if .Editing}}{{.Editing.PriceSat}}{{end}}" required>
+        </div>
+        <div>
+          <label for="stock">Available Stock</label>
+          <input id="stock" type="number" name="stock" min="0" value="{{if .Editing}}{{.Editing.Stock}}{{else}}0{{end}}" required>
+        </div>
+      </div>
+
+      <label for="category_id">Category</label>
+      <select id="category_id" name="category_id">
+        <option value="0">Uncategorized</option>
+        {{range .Categories}}
+        <option value="{{.ID}}" {{if and $.Editing (eq $.Editing.CategoryID .ID)}}selected{{end}}>{{.Name}}</option>
+        {{end}}
+      </select>
+
+      {{if .Editing}}
+      <label for="status">Listing Status</label>
+      <select id="status" name="status">
+        <option value="draft" {{if eq .Editing.Status "draft"}}selected{{end}}>Draft (Hidden)</option>
+        <option value="active" {{if eq .Editing.Status "active"}}selected{{end}}>Active (Visible)</option>
+      </select>
+      {{else}}
+      <input type="hidden" name="status" value="draft">
+      {{end}}
+
+      <div class="form-actions">
+        <button type="submit">{{if .Editing}}Save Changes{{else}}Create Listing{{end}}</button>
+      </div>
+    </form>
+  </div>
+</section>
+{{end}}

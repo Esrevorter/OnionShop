@@ -26,8 +26,9 @@ const honeypotField = "sta"
 
 type AuthData struct {
 	CsrfToken       string
-	IsAuthenticated bool // true when a user id is present in the session
-	IsAdmin         bool // true when the session role is "admin" (nav gating)
+	IsAuthenticated bool
+	IsAdmin         bool
+	IsVendor        bool
 	Captcha         *CaptchaChallenge
 	HoneypotHidden  bool
 	Error           string
@@ -95,7 +96,6 @@ const (
 )
 
 type PGAuthStore struct{ pool *pgxpool.Pool }
-
 func NewPGAuthStore(pool *pgxpool.Pool) *PGAuthStore { return &PGAuthStore{pool: pool} }
 
 func scanUser(row pgx.Row) (*UserRecord, error) {
@@ -108,20 +108,14 @@ func scanUser(row pgx.Row) (*UserRecord, error) {
 
 func (s *PGAuthStore) AuthUserByUsername(ctx context.Context, username string) (*UserRecord, error) {
 	u, err := scanUser(s.pool.QueryRow(ctx, qAuthUserByUsername, username))
-	if errors.Is(err, pgx.ErrNoRows) {
-		return nil, ErrNoSuchUser
-	}
-	if err != nil {
-		return nil, fmt.Errorf("store: get user: %w", err)
-	}
+	if errors.Is(err, pgx.ErrNoRows) { return nil, ErrNoSuchUser }
+	if err != nil { return nil, fmt.Errorf("store: get user: %w", err) }
 	return u, nil
 }
 
 func (s *PGAuthStore) AuthCreateUser(ctx context.Context, username, passwordHash, status string) (*UserRecord, error) {
 	u, err := scanUser(s.pool.QueryRow(ctx, qAuthCreateUser, username, passwordHash, status))
-	if err != nil {
-		return nil, fmt.Errorf("store: create user: %w", err)
-	}
+	if err != nil { return nil, fmt.Errorf("store: create user: %w", err) }
 	return u, nil
 }
 
@@ -149,9 +143,7 @@ func (s *PGAuthStore) AuthRecordLogin(ctx context.Context, userID pgtype.UUID, a
 func (s *PGAuthStore) AuthGetPGPKey(ctx context.Context, id pgtype.UUID) (string, error) {
 	var key string
 	if err := s.pool.QueryRow(ctx, qAuthGetPGPKey, id).Scan(&key); err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			return "", ErrNoSuchUser
-		}
+		if errors.Is(err, pgx.ErrNoRows) { return "", ErrNoSuchUser }
 		return "", fmt.Errorf("store: get pgp key: %w", err)
 	}
 	return key, nil
@@ -209,244 +201,143 @@ func scanVendor(row pgx.Row) (VendorRecord, error) {
 }
 
 func (s *PGAuthStore) VendorCreateRequest(ctx context.Context, userID pgtype.UUID, shopName string) error {
-	if _, err := s.pool.Exec(ctx, qVendorCreate, userID, shopName); err != nil {
-		return fmt.Errorf("store: create vendor request: %w", err)
-	}
+	if _, err := s.pool.Exec(ctx, qVendorCreate, userID, shopName); err != nil { return fmt.Errorf("store: create vendor request: %w", err) }
 	return nil
 }
-
 func (s *PGAuthStore) VendorGetByUser(ctx context.Context, userID pgtype.UUID) (*VendorRecord, error) {
 	v, err := scanVendor(s.pool.QueryRow(ctx, qVendorByUser, userID))
-	if errors.Is(err, pgx.ErrNoRows) {
-		return nil, nil
-	}
-	if err != nil {
-		return nil, fmt.Errorf("store: get vendor: %w", err)
-	}
+	if errors.Is(err, pgx.ErrNoRows) { return nil, nil }
+	if err != nil { return nil, fmt.Errorf("store: get vendor: %w", err) }
 	return &v, nil
 }
-
 func (s *PGAuthStore) VendorListPending(ctx context.Context) ([]VendorRecord, error) {
 	rows, err := s.pool.Query(ctx, qVendorPending)
-	if err != nil {
-		return nil, fmt.Errorf("store: list pending vendors: %w", err)
-	}
+	if err != nil { return nil, fmt.Errorf("store: list pending vendors: %w", err) }
 	defer rows.Close()
 	out := []VendorRecord{}
 	for rows.Next() {
 		v, err := scanVendor(rows)
-		if err != nil {
-			return nil, fmt.Errorf("store: list pending vendors: scan: %w", err)
-		}
+		if err != nil { return nil, fmt.Errorf("store: list pending vendors: scan: %w", err) }
 		out = append(out, v)
 	}
-	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("store: list pending vendors: %w", err)
-	}
+	if err := rows.Err(); err != nil { return nil, fmt.Errorf("store: list pending vendors: %w", err) }
 	return out, nil
 }
-
 func (s *PGAuthStore) VendorGetByID(ctx context.Context, vendorID pgtype.UUID) (*VendorRecord, error) {
 	v, err := scanVendor(s.pool.QueryRow(ctx, qVendorByID, vendorID))
-	if errors.Is(err, pgx.ErrNoRows) {
-		return nil, nil
-	}
-	if err != nil {
-		return nil, fmt.Errorf("store: get vendor by id: %w", err)
-	}
+	if errors.Is(err, pgx.ErrNoRows) { return nil, nil }
+	if err != nil { return nil, fmt.Errorf("store: get vendor by id: %w", err) }
 	return &v, nil
 }
-
 func (s *PGAuthStore) VendorByShopName(ctx context.Context, shopName string) (*VendorRecord, error) {
 	v, err := scanVendor(s.pool.QueryRow(ctx, qVendorByShopName, strings.ToLower(shopName)))
-	if errors.Is(err, pgx.ErrNoRows) {
-		return nil, nil
-	}
-	if err != nil {
-		return nil, fmt.Errorf("store: get vendor by shop name: %w", err)
-	}
+	if errors.Is(err, pgx.ErrNoRows) { return nil, nil }
+	if err != nil { return nil, fmt.Errorf("store: get vendor by shop name: %w", err) }
 	return &v, nil
 }
-
 func (s *PGAuthStore) CategoryList(ctx context.Context) ([]CategoryRecord, error) {
 	rows, err := s.pool.Query(ctx, qCategoryList)
-	if err != nil {
-		return nil, fmt.Errorf("store: category list: %w", err)
-	}
+	if err != nil { return nil, fmt.Errorf("store: category list: %w", err) }
 	defer rows.Close()
 	out := []CategoryRecord{}
 	for rows.Next() {
 		var c CategoryRecord
-		if err := rows.Scan(&c.ID, &c.Slug, &c.Name); err != nil {
-			return nil, fmt.Errorf("store: category list: scan: %w", err)
-		}
+		if err := rows.Scan(&c.ID, &c.Slug, &c.Name); err != nil { return nil, fmt.Errorf("store: category list: scan: %w", err) }
 		out = append(out, c)
 	}
-	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("store: category list: %w", err)
-	}
+	if err := rows.Err(); err != nil { return nil, fmt.Errorf("store: category list: %w", err) }
 	return out, nil
 }
-
 func (s *PGAuthStore) ProductCreate(ctx context.Context, p *ProductRecord) error {
 	return s.pool.QueryRow(ctx, qProductInsert, p.VendorID, p.CategoryID, p.Title, p.Description, p.PriceSat, p.Stock, p.ImagePath, p.Status).Scan(&p.ID)
 }
-
 func (s *PGAuthStore) ProductGet(ctx context.Context, id pgtype.UUID) (*ProductRecord, error) {
 	p, err := scanProduct(s.pool.QueryRow(ctx, qProductGet, id))
-	if errors.Is(err, pgx.ErrNoRows) {
-		return nil, ErrNoSuchUser
-	}
-	if err != nil {
-		return nil, fmt.Errorf("store: get product: %w", err)
-	}
+	if errors.Is(err, pgx.ErrNoRows) { return nil, ErrNoSuchUser }
+	if err != nil { return nil, fmt.Errorf("store: get product: %w", err) }
 	return &p, nil
 }
-
 func (s *PGAuthStore) ProductUpdate(ctx context.Context, p *ProductRecord) error {
 	_, err := s.pool.Exec(ctx, qProductUpdate, p.ID, p.CategoryID, p.Title, p.Description, p.PriceSat, p.Stock, p.ImagePath, p.Status)
-	if err != nil {
-		return fmt.Errorf("store: update product: %w", err)
-	}
+	if err != nil { return fmt.Errorf("store: update product: %w", err) }
 	return nil
 }
-
 func (s *PGAuthStore) ProductSetStatus(ctx context.Context, id pgtype.UUID, status string) error {
-	if _, err := s.pool.Exec(ctx, qProductSetStatus, id, status); err != nil {
-		return fmt.Errorf("store: set product status: %w", err)
-	}
+	if _, err := s.pool.Exec(ctx, qProductSetStatus, id, status); err != nil { return fmt.Errorf("store: set product status: %w", err) }
 	return nil
 }
-
 func (s *PGAuthStore) queryProducts(ctx context.Context, sql string, args ...any) ([]ProductRecord, error) {
 	rows, err := s.pool.Query(ctx, sql, args...)
-	if err != nil {
-		return nil, fmt.Errorf("store: product query: %w", err)
-	}
+	if err != nil { return nil, fmt.Errorf("store: product query: %w", err) }
 	defer rows.Close()
 	out := []ProductRecord{}
 	for rows.Next() {
 		p, err := scanProduct(rows)
-		if err != nil {
-			return nil, fmt.Errorf("store: product query: scan: %w", err)
-		}
+		if err != nil { return nil, fmt.Errorf("store: product query: scan: %w", err) }
 		out = append(out, p)
 	}
-	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("store: product query: %w", err)
-	}
+	if err := rows.Err(); err != nil { return nil, fmt.Errorf("store: product query: %w", err) }
 	return out, nil
 }
-
-func (s *PGAuthStore) ProductListByVendor(ctx context.Context, vendorID pgtype.UUID) ([]ProductRecord, error) {
-	return s.queryProducts(ctx, qProductsByVendor, vendorID)
-}
-
-func (s *PGAuthStore) ProductListActive(ctx context.Context, categoryID int64, limit int) ([]ProductRecord, error) {
-	return s.queryProducts(ctx, qProductsActive, categoryID, limit)
-}
-
-func (s *PGAuthStore) ProductSearch(ctx context.Context, query string, limit int) ([]ProductRecord, error) {
-	return s.queryProducts(ctx, qProductsSearch, query, limit)
-}
-
+func (s *PGAuthStore) ProductListByVendor(ctx context.Context, vendorID pgtype.UUID) ([]ProductRecord, error) { return s.queryProducts(ctx, qProductsByVendor, vendorID) }
+func (s *PGAuthStore) ProductListActive(ctx context.Context, categoryID int64, limit int) ([]ProductRecord, error) { return s.queryProducts(ctx, qProductsActive, categoryID, limit) }
+func (s *PGAuthStore) ProductSearch(ctx context.Context, query string, limit int) ([]ProductRecord, error) { return s.queryProducts(ctx, qProductsSearch, query, limit) }
 func (s *PGAuthStore) ShopNameForID(ctx context.Context, vendorID pgtype.UUID) (string, error) {
 	var name string
 	err := s.pool.QueryRow(ctx, qShopNameForID, vendorID).Scan(&name)
-	if errors.Is(err, pgx.ErrNoRows) {
-		return "", nil
-	}
-	if err != nil {
-		return "", fmt.Errorf("store: shop name: %w", err)
-	}
+	if errors.Is(err, pgx.ErrNoRows) { return "", nil }
+	if err != nil { return "", fmt.Errorf("store: shop name: %w", err) }
 	return name, nil
 }
-
 func (s *PGAuthStore) ApprovedVendorID(ctx context.Context, userID pgtype.UUID) (*pgtype.UUID, error) {
 	var id pgtype.UUID
 	err := s.pool.QueryRow(ctx, qApprovedVendorID, userID).Scan(&id)
-	if errors.Is(err, pgx.ErrNoRows) {
-		return nil, nil
-	}
-	if err != nil {
-		return nil, fmt.Errorf("store: approved vendor id: %w", err)
-	}
+	if errors.Is(err, pgx.ErrNoRows) { return nil, nil }
+	if err != nil { return nil, fmt.Errorf("store: approved vendor id: %w", err) }
 	return &id, nil
 }
-
 func (s *PGAuthStore) VendorSetApproval(ctx context.Context, vendorID pgtype.UUID, approved bool) error {
-	if _, err := s.pool.Exec(ctx, qVendorSetApproval, vendorID, approved); err != nil {
-		return fmt.Errorf("store: set vendor approval: %w", err)
-	}
+	if _, err := s.pool.Exec(ctx, qVendorSetApproval, vendorID, approved); err != nil { return fmt.Errorf("store: set vendor approval: %w", err) }
 	return nil
 }
-
 func (s *PGAuthStore) VendorSetRoleToVendor(ctx context.Context, userID pgtype.UUID) error {
-	if _, err := s.pool.Exec(ctx, qVendorPromoteRole, userID); err != nil {
-		return fmt.Errorf("store: promote role: %w", err)
-	}
+	if _, err := s.pool.Exec(ctx, qVendorPromoteRole, userID); err != nil { return fmt.Errorf("store: promote role: %w", err) }
 	return nil
 }
-
 func (s *PGAuthStore) AuditAppend(ctx context.Context, actorID pgtype.UUID, actorKind, action, target, details string) error {
-	if actorKind == "" {
-		actorKind = "user"
-	}
-	if _, err := s.pool.Exec(ctx, qAuditAppend, actorID, actorKind, action, target, details); err != nil {
-		return fmt.Errorf("store: audit append: %w", err)
-	}
+	if actorKind == "" { actorKind = "user" }
+	if _, err := s.pool.Exec(ctx, qAuditAppend, actorID, actorKind, action, target, details); err != nil { return fmt.Errorf("store: audit append: %w", err) }
 	return nil
 }
-
 func (s *PGAuthStore) VendorUsername(ctx context.Context, vendorUserID pgtype.UUID) (string, error) {
 	var name string
 	err := s.pool.QueryRow(ctx, qVendorUsername, vendorUserID).Scan(&name)
-	if errors.Is(err, pgx.ErrNoRows) {
-		return "", nil
-	}
-	if err != nil {
-		return "", fmt.Errorf("store: vendor username: %w", err)
-	}
+	if errors.Is(err, pgx.ErrNoRows) { return "", nil }
+	if err != nil { return "", fmt.Errorf("store: vendor username: %w", err) }
 	return name, nil
 }
-
 func (s *PGAuthStore) AuthUserRole(ctx context.Context, id pgtype.UUID) (string, error) {
 	var role string
 	err := s.pool.QueryRow(ctx, qAuthUserRole, id).Scan(&role)
-	if errors.Is(err, pgx.ErrNoRows) {
-		return "", ErrNoSuchUser
-	}
-	if err != nil {
-		return "", fmt.Errorf("store: get role: %w", err)
-	}
+	if errors.Is(err, pgx.ErrNoRows) { return "", ErrNoSuchUser }
+	if err != nil { return "", fmt.Errorf("store: get role: %w", err) }
 	return role, nil
 }
-
 const qAuthUserByID = `SELECT id, username, password_hash, role, status, created_at FROM public.users WHERE id = $1`
-
 func (s *PGAuthStore) AuthUserByID(ctx context.Context, id pgtype.UUID) (*UserRecord, error) {
 	u, err := scanUser(s.pool.QueryRow(ctx, qAuthUserByID, id))
-	if errors.Is(err, pgx.ErrNoRows) {
-		return nil, ErrNoSuchUser
-	}
-	if err != nil {
-		return nil, fmt.Errorf("store: get user by id: %w", err)
-	}
+	if errors.Is(err, pgx.ErrNoRows) { return nil, ErrNoSuchUser }
+	if err != nil { return nil, fmt.Errorf("store: get user by id: %w", err) }
 	return u, nil
 }
 
 func (a *App) RegisterAuthRoutes(auth AuthStore, captcha *CaptchaService, sessions SessionLinker, templateDir string) error {
 	return a.RegisterAuthRoutesFull(auth, captcha, sessions, nil, nil, templateDir)
 }
-
 func (a *App) RegisterAuthRoutesFull(auth AuthStore, captcha *CaptchaService, sessions SessionLinker, invalid SessionInvalidator, catalog VendorStore, templateDir string) error {
-	if err := a.buildTemplates(templateDir); err != nil {
-		return err
-	}
+	if err := a.buildTemplates(templateDir); err != nil { return err }
 	if invalid == nil && sessions != nil {
-		if si, ok := sessions.(SessionInvalidator); ok {
-			invalid = si
-		}
+		if si, ok := sessions.(SessionInvalidator); ok { invalid = si }
 	}
 	a.invalid = invalid
 	a.vendor = catalog
@@ -480,27 +371,17 @@ func (a *App) handleHome(w http.ResponseWriter, r *http.Request) {
 	data.Flash = ""
 	a.render(w, "home", http.StatusOK, data)
 }
-
 func (a *App) handleCaptchaImage(w http.ResponseWriter, r *http.Request) {
-	if a.captcha == nil {
-		writeGenericError(w)
-		return
-	}
+	if a.captcha == nil { writeGenericError(w); return }
 	id := chi.URLParam(r, "id")
 	ch, ok := a.captcha.Challenge(r.Context(), id)
-	if !ok || len(ch.Image) == 0 {
-		http.NotFound(w, r)
-		return
-	}
+	if !ok || len(ch.Image) == 0 { http.NotFound(w, r); return }
 	w.Header().Set("Content-Type", "image/png")
 	w.Header().Set("Cache-Control", "no-store")
 	w.WriteHeader(http.StatusOK)
 	_, _ = w.Write(ch.Image)
 }
-
-func honeypotTriggered(r *http.Request) bool {
-	return strings.TrimSpace(r.FormValue(honeypotField)) != ""
-}
+func honeypotTriggered(r *http.Request) bool { return strings.TrimSpace(r.FormValue(honeypotField)) != "" }
 
 func (a *App) requireFriction(w http.ResponseWriter, r *http.Request, purpose string) (ok bool) {
 	ctx := r.Context()
@@ -508,9 +389,7 @@ func (a *App) requireFriction(w http.ResponseWriter, r *http.Request, purpose st
 	userID := CurrentUserID(ctx, a.sm)
 	id := r.FormValue("captcha_id")
 	ans := r.FormValue("captcha_answer")
-	if err := a.captcha.Verify(ctx, r.FormValue("captcha_token"), id, ans, token, userID); err != nil {
-		return false
-	}
+	if err := a.captcha.Verify(ctx, r.FormValue("captcha_token"), id, ans, token, userID); err != nil { return false }
 	_ = purpose
 	a.captcha.Burn(ctx, id)
 	a.sm.PopString(ctx, pendingTokenKey)
@@ -518,53 +397,33 @@ func (a *App) requireFriction(w http.ResponseWriter, r *http.Request, purpose st
 }
 
 const pendingTokenKey = "pending_token"
-
 func (a *App) sessionTokenForRequest(r *http.Request) string {
 	ctx := r.Context()
 	pending := a.sm.GetString(ctx, pendingTokenKey)
 	if ck, err := r.Cookie(SessionCookieName); err == nil && ck.Value != "" {
-		if pending != "" {
-			return pending
-		}
+		if pending != "" { return pending }
 		return ck.Value
 	}
-	if tok := a.sm.Token(ctx); tok != "" {
-		return tok
-	}
+	if tok := a.sm.Token(ctx); tok != "" { return tok }
 	return pending
 }
-
 func (a *App) rotateToFreshToken(ctx context.Context) error {
 	token, _, err := a.sm.Commit(ctx)
-	if err != nil {
-		return err
-	}
+	if err != nil { return err }
 	a.sm.Put(ctx, pendingTokenKey, token)
 	return nil
 }
-
 func (a *App) recordPendingToken(ctx context.Context) {
 	if pending := a.sm.GetString(ctx, pendingTokenKey); pending != "" {
-		if _, _, err := a.sm.Commit(ctx); err != nil {
-			log.Printf("auth: pending session token recommit failed (non-fatal): %v", sanitizedErr(err))
-		}
+		if _, _, err := a.sm.Commit(ctx); err != nil { log.Printf("auth: pending session token recommit failed (non-fatal): %v", sanitizedErr(err)) }
 		return
 	}
-	if a.sm.Token(ctx) != "" {
-		return
-	}
+	if a.sm.Token(ctx) != "" { return }
 	tok, err := NewRandomToken(32)
-	if err != nil {
-		log.Printf("auth: pending session token generation failed (non-fatal): %v", sanitizedErr(err))
-		return
-	}
-	if _, err := a.sm.Load(ctx, tok); err != nil {
-		log.Printf("auth: pending session token commit failed (non-fatal): %v", sanitizedErr(err))
-		return
-	}
+	if err != nil { log.Printf("auth: pending session token generation failed (non-fatal): %v", sanitizedErr(err)); return }
+	if _, err := a.sm.Load(ctx, tok); err != nil { log.Printf("auth: pending session token commit failed (non-fatal): %v", sanitizedErr(err)); return }
 	a.sm.Put(ctx, pendingTokenKey, tok)
 }
-
 func (a *App) newChallenge(w http.ResponseWriter, r *http.Request, purpose string) *CaptchaChallenge {
 	a.recordPendingToken(r.Context())
 	ch, err := a.captcha.Issue(r.Context(), a.sessionTokenForRequest(r), CurrentUserID(r.Context(), a.sm), purpose)
@@ -577,226 +436,115 @@ func (a *App) newChallenge(w http.ResponseWriter, r *http.Request, purpose strin
 }
 
 func (a *App) handleRegisterForm(w http.ResponseWriter, r *http.Request) {
-	if CurrentUserID(r.Context(), a.sm) != "" {
-		http.Redirect(w, r, "/account", http.StatusSeeOther)
-		return
-	}
+	if CurrentUserID(r.Context(), a.sm) != "" { http.Redirect(w, r, "/account", http.StatusSeeOther); return }
 	data := a.baseData(r)
-	if data.Captcha = a.newChallenge(w, r, "register"); data.Captcha == nil {
-		return
-	}
+	if data.Captcha = a.newChallenge(w, r, "register"); data.Captcha == nil { return }
 	a.render(w, "register", http.StatusOK, data)
 }
-
 func (a *App) handleRegisterSubmit(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	_ = r.ParseForm()
 	data := a.baseData(r)
-
 	fail := func(msg string) {
 		data.Error = msg
-		if data.Captcha = a.newChallenge(w, r, "register"); data.Captcha == nil {
-			return
-		}
+		if data.Captcha = a.newChallenge(w, r, "register"); data.Captcha == nil { return }
 		a.render(w, "register", http.StatusUnprocessableEntity, data)
 	}
-
-	if honeypotTriggered(r) {
-		fail("challenge failed, please try again")
-		return
-	}
-	if !a.requireFriction(w, r, "register") {
-		fail("challenge failed, please try again")
-		return
-	}
-
+	if honeypotTriggered(r) { fail("challenge failed, please try again"); return }
+	if !a.requireFriction(w, r, "register") { fail("challenge failed, please try again"); return }
 	username := strings.ToLower(strings.TrimSpace(r.FormValue("username")))
 	password := r.FormValue("password")
-	if err := ValidateUsername(username); err != nil {
-		fail("invalid username: must be 3-32 characters (lowercase letters, digits, underscore)")
-		return
-	}
-	if err := ValidatePasswordStrength(password); err != nil {
-		fail("weak password: must be 10-128 characters")
-		return
-	}
-	if h1, h2 := sha256.Sum256([]byte(password)), sha256.Sum256([]byte(r.FormValue("password_confirm"))); subtle.ConstantTimeCompare(h1[:], h2[:]) != 1 {
-		fail("passwords do not match")
-		return
-	}
-
+	if err := ValidateUsername(username); err != nil { fail("invalid username: must be 3-32 characters (lowercase letters, digits, underscore)"); return }
+	if err := ValidatePasswordStrength(password); err != nil { fail("weak password: must be 10-128 characters"); return }
+	if h1, h2 := sha256.Sum256([]byte(password)), sha256.Sum256([]byte(r.FormValue("password_confirm"))); subtle.ConstantTimeCompare(h1[:], h2[:]) != 1 { fail("passwords do not match"); return }
 	hash, _, err := HashPassword(password)
-	if err != nil {
-		fail("challenge failed, please try again")
-		return
-	}
+	if err != nil { fail("challenge failed, please try again"); return }
 	if _, err := a.auth.AuthCreateUser(ctx, username, hash, "active"); err != nil {
-		if isUniqueViolation(err) {
-			fail("that username is unavailable")
-		} else {
-			fail("registration failed, please try again")
-		}
+		if isUniqueViolation(err) { fail("that username is unavailable") } else { fail("registration failed, please try again") }
 		return
 	}
 	data.Flash = "Account created — you can log in now."
-	if data.Captcha = a.newChallenge(w, r, "login"); data.Captcha == nil {
-		return
-	}
+	if data.Captcha = a.newChallenge(w, r, "login"); data.Captcha == nil { return }
 	a.render(w, "login", http.StatusOK, data)
 }
-
 func isUniqueViolation(err error) bool {
 	var pe interface{ SQLState() string }
-	if errors.As(err, &pe) {
-		s := pe.SQLState()
-		return strings.HasPrefix(s, "23")
-	}
+	if errors.As(err, &pe) { return strings.HasPrefix(pe.SQLState(), "23") }
 	return false
 }
 
 func (a *App) handleLoginForm(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
-	if CurrentUserID(ctx, a.sm) != "" {
-		http.Redirect(w, r, "/account", http.StatusSeeOther)
-		return
-	}
+	if CurrentUserID(ctx, a.sm) != "" { http.Redirect(w, r, "/account", http.StatusSeeOther); return }
 	data := a.baseData(r)
-	if data.Captcha = a.newChallenge(w, r, "login"); data.Captcha == nil {
-		return
-	}
+	if data.Captcha = a.newChallenge(w, r, "login"); data.Captcha == nil { return }
 	a.render(w, "login", http.StatusOK, data)
 }
-
 func (a *App) handleLoginSubmit(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	_ = r.ParseForm()
 	data := a.baseData(r)
-
 	const badCreds = "invalid username or password"
 	fail := func(msg string) {
 		data.Error = msg
-		if data.Captcha = a.newChallenge(w, r, "login"); data.Captcha == nil {
-			return
-		}
+		if data.Captcha = a.newChallenge(w, r, "login"); data.Captcha == nil { return }
 		a.render(w, "login", http.StatusUnauthorized, data)
 	}
-
-	if honeypotTriggered(r) {
-		fail(badCreds)
-		return
-	}
-	if !a.requireFriction(w, r, "login") {
-		fail("challenge failed, please try again")
-		return
-	}
-
+	if honeypotTriggered(r) { fail(badCreds); return }
+	if !a.requireFriction(w, r, "login") { fail("challenge failed, please try again"); return }
 	username := strings.ToLower(strings.TrimSpace(r.FormValue("username")))
 	password := r.FormValue("password")
-	if username == "" || password == "" {
-		fail(badCreds)
-		return
-	}
-
+	if username == "" || password == "" { fail(badCreds); return }
 	user, err := a.auth.AuthUserByUsername(ctx, username)
 	switch {
-	case errors.Is(err, ErrNoSuchUser):
-		DummyVerify()
-		fail(badCreds)
-		return
-	case err != nil:
-		fail("login failed, please try again")
-		return
+	case errors.Is(err, ErrNoSuchUser): DummyVerify(); fail(badCreds); return
+	case err != nil: fail("login failed, please try again"); return
 	}
-
 	ok, err := VerifyPassword(password, user.PasswordHash)
-	if err != nil || !ok {
-		fail(badCreds)
-		return
-	}
-	if user.Status != "active" {
-		fail("this account cannot sign in right now")
-		return
-	}
-
+	if err != nil || !ok { fail(badCreds); return }
+	if user.Status != "active" { fail("this account cannot sign in right now"); return }
 	if p, _, perr := decodeArgon(user.PasswordHash); perr == nil && NeedsUpgrade(p) {
 		if nh, _, herr := HashPassword(password); herr == nil {
-			if uerr := a.auth.AuthUpdatePasswordHash(ctx, user.ID, nh); uerr != nil {
-				log.Printf("auth: password param upgrade failed (non-fatal): %v", sanitizedErr(uerr))
-			}
+			if uerr := a.auth.AuthUpdatePasswordHash(ctx, user.ID, nh); uerr != nil { log.Printf("auth: password param upgrade failed (non-fatal): %v", sanitizedErr(uerr)) }
 		}
 	}
-
-	if err := RotateOnAuth(ctx, a.sm); err != nil {
-		writeGenericError(w)
-		return
-	}
+	if err := RotateOnAuth(ctx, a.sm); err != nil { writeGenericError(w); return }
 	a.sm.Put(ctx, pendingTokenKey, a.sm.Token(ctx))
 	a.sm.Put(ctx, userIDKey, uuidString(user.ID))
 	a.sm.Put(ctx, usernameKey, user.Username)
 	a.sm.Put(ctx, roleKey, user.Role)
 	a.sm.Put(ctx, createdKey, time.Now().UTC().Unix())
-
-	if err := a.auth.AuthRecordLogin(ctx, user.ID, time.Now().UTC(), r.Host); err != nil {
-		log.Printf("auth: login history write failed (non-fatal): %v", sanitizedErr(err))
-	}
-
+	if err := a.auth.AuthRecordLogin(ctx, user.ID, time.Now().UTC(), r.Host); err != nil { log.Printf("auth: login history write failed (non-fatal): %v", sanitizedErr(err)) }
 	a.linkSessionUser(ctx)
-
 	http.Redirect(w, r, "/account", http.StatusSeeOther)
 }
-
 func (a *App) linkSessionUser(ctx context.Context) {
-	if a.linker == nil {
-		return
-	}
+	if a.linker == nil { return }
 	uid := CurrentUserID(ctx, a.sm)
 	tok := a.sm.Token(ctx)
-	if uid == "" || tok == "" {
-		return
-	}
-	if err := a.linker.LinkUser(ctx, tok, uid); err != nil {
-		log.Printf("auth: session user_id stamp failed (non-fatal): %v", sanitizedErr(err))
-	}
+	if uid == "" || tok == "" { return }
+	if err := a.linker.LinkUser(ctx, tok, uid); err != nil { log.Printf("auth: session user_id stamp failed (non-fatal): %v", sanitizedErr(err)) }
 }
-
 func (a *App) handleLogout(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
-	if err := a.sm.Destroy(ctx); err != nil {
-		writeGenericError(w)
-		return
-	}
+	if err := a.sm.Destroy(ctx); err != nil { writeGenericError(w); return }
 	http.Redirect(w, r, "/login", http.StatusSeeOther)
 }
 
-const (
-	PersonalPhraseMin = 4
-	PersonalPhraseMax = 64
-)
-
+const ( PersonalPhraseMin = 4; PersonalPhraseMax = 64 )
 func ValidatePersonalPhrase(p string) error {
 	p = strings.TrimSpace(p)
-	if len(p) < PersonalPhraseMin || len(p) > PersonalPhraseMax {
-		return fmt.Errorf("server: phrase must be %d-%d characters", PersonalPhraseMin, PersonalPhraseMax)
-	}
-	for i := 0; i < len(p); i++ {
-		c := p[i]
-		if c < 0x20 || c == 0x7f {
-			return errors.New("server: phrase may not contain control characters")
-		}
-	}
+	if len(p) < PersonalPhraseMin || len(p) > PersonalPhraseMax { return fmt.Errorf("server: phrase must be %d-%d characters", PersonalPhraseMin, PersonalPhraseMax) }
+	for i := 0; i < len(p); i++ { if p[i] < 0x20 || p[i] == 0x7f { return errors.New("server: phrase may not contain control characters") } }
 	return nil
 }
-
 func (a *App) handleAccount(w http.ResponseWriter, r *http.Request) {
 	data := a.baseData(r)
 	data.PersonalPhrase = a.sm.GetString(r.Context(), phraseKey)
 	a.loadPGPState(r.Context(), &data)
-	if data.Captcha = a.newChallenge(w, r, accountPurpose); data.Captcha == nil {
-		return
-	}
+	if data.Captcha = a.newChallenge(w, r, accountPurpose); data.Captcha == nil { return }
 	a.render(w, "account", http.StatusOK, data)
 }
-
 func (a *App) handlePhraseSubmit(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	_ = r.ParseForm()
@@ -804,112 +552,63 @@ func (a *App) handlePhraseSubmit(w http.ResponseWriter, r *http.Request) {
 	fail := func(msg string) {
 		data.Error = msg
 		data.PersonalPhrase = a.sm.GetString(ctx, phraseKey)
-		if data.Captcha = a.newChallenge(w, r, accountPurpose); data.Captcha == nil {
-			return
-		}
+		if data.Captcha = a.newChallenge(w, r, accountPurpose); data.Captcha == nil { return }
 		a.render(w, "account", http.StatusUnprocessableEntity, data)
 	}
-	if honeypotTriggered(r) {
-		fail("submission rejected")
-		return
-	}
-	if !a.requireFriction(w, r, accountPurpose) {
-		fail("challenge failed, please try again")
-		return
-	}
+	if honeypotTriggered(r) { fail("submission rejected"); return }
+	if !a.requireFriction(w, r, accountPurpose) { fail("challenge failed, please try again"); return }
 	phrase := strings.TrimSpace(r.FormValue("personal_phrase"))
-	if err := ValidatePersonalPhrase(phrase); err != nil {
-		fail(err.Error())
-		return
-	}
+	if err := ValidatePersonalPhrase(phrase); err != nil { fail(err.Error()); return }
 	uid := currentUserUUID(ctx, a.sm)
-	if uid == nil {
-		writeGenericError(w)
-		return
-	}
-	if err := a.auth.AuthSetPersonalPhrase(ctx, *uid, phrase); err != nil {
-		fail("could not save the phrase, please try again")
-		return
-	}
+	if uid == nil { writeGenericError(w); return }
+	if err := a.auth.AuthSetPersonalPhrase(ctx, *uid, phrase); err != nil { fail("could not save the phrase, please try again"); return }
 	a.sm.Put(ctx, phraseKey, phrase)
 	data.PersonalPhrase = phrase
 	data.Flash = "Personal phrase updated."
-	if data.Captcha = a.newChallenge(w, r, accountPurpose); data.Captcha == nil {
-		return
-	}
+	if data.Captcha = a.newChallenge(w, r, accountPurpose); data.Captcha == nil { return }
 	a.render(w, "account", http.StatusOK, data)
 }
 
 func uuidString(u pgtype.UUID) string {
-	if !u.Valid {
-		return ""
-	}
+	if !u.Valid { return "" }
 	b := u.Bytes
 	const hex = "0123456789abcdef"
 	out := make([]byte, 36)
 	i := 0
 	for n, v := range [16]byte(b) {
-		if n == 4 || n == 6 || n == 8 || n == 10 {
-			out[i] = '-'
-			i++
-		}
+		if n == 4 || n == 6 || n == 8 || n == 10 { out[i] = '-'; i++ }
 		out[i] = hex[v>>4]
 		out[i+1] = hex[v&0x0f]
 		i += 2
 	}
 	return string(out)
 }
-
 func parseUUID(s string) (pgtype.UUID, bool) {
 	s = strings.TrimSpace(s)
-	if len(s) != 36 {
-		return pgtype.UUID{}, false
-	}
+	if len(s) != 36 { return pgtype.UUID{}, false }
 	var b [16]byte
 	pos := 0
 	nibble := -1
 	for i := 0; i < 36; i++ {
 		c := s[i]
-		if c == '-' {
-			if i != 8 && i != 13 && i != 18 && i != 23 {
-				return pgtype.UUID{}, false
-			}
-			continue
-		}
+		if c == '-' { if i != 8 && i != 13 && i != 18 && i != 23 { return pgtype.UUID{}, false }; continue }
 		var v byte
 		switch {
-		case c >= '0' && c <= '9':
-			v = c - '0'
-		case c >= 'a' && c <= 'f':
-			v = c - 'a' + 10
-		case c >= 'A' && c <= 'F':
-			v = c - 'A' + 10
-		default:
-			return pgtype.UUID{}, false
+		case c >= '0' && c <= '9': v = c - '0'
+		case c >= 'a' && c <= 'f': v = c - 'a' + 10
+		case c >= 'A' && c <= 'F': v = c - 'A' + 10
+		default: return pgtype.UUID{}, false
 		}
-		if nibble < 0 {
-			nibble = int(v)
-		} else {
-			b[pos] = byte(nibble<<4) | v
-			pos++
-			nibble = -1
-		}
+		if nibble < 0 { nibble = int(v) } else { b[pos] = byte(nibble<<4) | v; pos++; nibble = -1 }
 	}
-	if pos != 16 || nibble >= 0 {
-		return pgtype.UUID{}, false
-	}
+	if pos != 16 || nibble >= 0 { return pgtype.UUID{}, false }
 	return pgtype.UUID{Bytes: b, Valid: true}, true
 }
-
 func currentUserUUID(ctx context.Context, sm *scs.SessionManager) *pgtype.UUID {
 	id := sm.GetString(ctx, userIDKey)
-	if id == "" {
-		return nil
-	}
+	if id == "" { return nil }
 	u, ok := parseUUID(id)
-	if !ok {
-		return nil
-	}
+	if !ok { return nil }
 	return &u
 }
 
@@ -932,22 +631,14 @@ var templateFuncs = template.FuncMap{
 func (a *App) buildTemplates(dir string) error {
 	layout := filepath.Join(dir, "layout.html")
 	pages, err := filepath.Glob(filepath.Join(dir, "page_*.html"))
-	if err != nil {
-		return fmt.Errorf("server: template glob: %w", err)
-	}
-	if len(pages) == 0 {
-		return fmt.Errorf("server: no page templates under %s", dir)
-	}
+	if err != nil { return fmt.Errorf("server: template glob: %w", err) }
+	if len(pages) == 0 { return fmt.Errorf("server: no page templates under %s", dir) }
 	partials, err := filepath.Glob(filepath.Join(dir, "*.html"))
-	if err != nil {
-		return fmt.Errorf("server: template glob: %w", err)
-	}
+	if err != nil { return fmt.Errorf("server: template glob: %w", err) }
 	var extras []string
 	for _, p := range partials {
 		base := filepath.Base(p)
-		if base == "layout.html" || strings.HasPrefix(base, "page_") {
-			continue
-		}
+		if base == "layout.html" || strings.HasPrefix(base, "page_") { continue }
 		extras = append(extras, p)
 	}
 	tpls := make(map[string]*template.Template, len(pages))
@@ -960,9 +651,7 @@ func (a *App) buildTemplates(dir string) error {
 		}
 		files = append(files, p)
 		t, err := template.New(name).Funcs(templateFuncs).ParseFiles(files...)
-		if err != nil {
-			return fmt.Errorf("server: parse template %s: %w", p, err)
-		}
+		if err != nil { return fmt.Errorf("server: parse template %s: %w", p, err) }
 		tpls[short] = t
 	}
 	a.templates = tpls
@@ -974,6 +663,7 @@ func (a *App) baseData(r *http.Request) AuthData {
 		CsrfToken:       CSRFToken(r.Context(), a.sm),
 		IsAuthenticated: CurrentUserID(r.Context(), a.sm) != "",
 		IsAdmin:         CurrentRole(r.Context(), a.sm) == "admin",
+		IsVendor:        CurrentRole(r.Context(), a.sm) == "vendor",
 	}
 	d.HoneypotHidden = true
 	return d
@@ -981,10 +671,7 @@ func (a *App) baseData(r *http.Request) AuthData {
 
 func (a *App) render(w http.ResponseWriter, name string, code int, data AuthData) {
 	tpl := a.templates[name]
-	if tpl == nil {
-		writeGenericError(w)
-		return
-	}
+	if tpl == nil { writeGenericError(w); return }
 	var buf bytes.Buffer
 	if err := tpl.ExecuteTemplate(&buf, "layout", data); err != nil {
 		log.Printf("server: render %q failed: %v", name, err)
