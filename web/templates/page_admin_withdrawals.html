@@ -1,0 +1,40 @@
+{{template "layout" .}}
+
+{{define "title"}}Withdrawal Queue · OnionShop{{end}}
+
+{{define "body"}}
+<section class="admin-layout">
+  <div class="admin-header">
+    <h1>Withdrawal Requests</h1>
+    <a href="/admin" class="btn-secondary">← Back to Dashboard</a>
+  </div>
+
+  <div class="notice">
+    <strong>Admin Notice:</strong> Review all withdrawal requests carefully. 
+    Approving queues the transaction; marking as "Paid" completes it.
+  </div>
+
+  <div class="table-container" style="margin-top: 1.5rem;">
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th>Vendor</th>
+          <th>Amount (Sat)</th>
+          <th>Destination Address</th>
+          <th>Requested</th>
+          <th>Status</th>
+          <th>Actions</th>
+        </tr>
+      </thead>
+      <tbody>
+        <!-- Placeholder row: Backend will populate this once ledger is active -->
+        <tr>
+          <td colspan="6" class="text-muted" style="text-align: center; padding: 2rem;">
+            No pending withdrawal requests at this time.
+          </td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+{{end}}

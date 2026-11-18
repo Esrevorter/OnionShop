@@ -1,19 +1,57 @@
 {{template "layout" .}}
+
 {{define "title"}}Wallet · OnionShop{{end}}
+
 {{define "body"}}
-<section class="auth-layout">
-  <div class="auth-intro">
-    <p class="eyebrow">Finance</p>
+<section class="admin-layout">
+  <div class="admin-header">
     <h1>Your Wallet</h1>
-    <p class="lede">Manage your balance and request withdrawals.</p>
+    {{if .VendorState}}
+      <span class="badge badge-success">Approved Vendor</span>
+    {{else}}
+      <span class="badge badge-muted">Customer Account</span>
+    {{end}}
   </div>
-  <div class="auth-card">
-    <h2>Available Balance</h2>
-    <p class="lede" style="font-size: 2rem; font-weight: bold;">0.00000000 XMR</p>
-    <div class="notice"><strong>Note:</strong> The Monero settlement layer is currently being integrated (Phase 10). Balances will reflect here once complete.</div>
-    <div class="form-actions" style="justify-content: flex-start; margin-top: 1rem;">
-      <a href="/withdraw" class="button">Request Withdrawal</a>
+
+  <div class="admin-grid">
+    <div class="stat-card">
+      <div class="stat-label">Available Balance</div>
+      <div class="stat-value">0.00000000 XMR</div>
+      <span class="stat-muted">Ledger integration pending (Phase 10)</span>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">Pending Withdrawals</div>
+      <div class="stat-value">0</div>
+      <span class="stat-muted">No requests in queue</span>
     </div>
   </div>
+
+  {{if .VendorState}}
+  <div class="auth-card" style="max-width: 600px; margin-top: 2rem;">
+    <h2>Request Withdrawal</h2>
+    <p class="lede" style="font-size: 0.9rem; margin-bottom: 1rem;">
+      Withdrawals are subject to a 24–48 hour mandatory delay and admin review. 
+      Ensure your destination address is correct; transactions cannot be reversed.
+    </p>
+    <form method="post" action="/wallet/withdraw" autocomplete="off">
+      {{template "friction" .}}
+      
+      <label for="amount_sat">Amount (in Satoshis)</label>
+      <input id="amount_sat" type="number" name="amount_sat" min="10000" placeholder="10000" required>
+      
+      <label for="btc_address">Destination Bitcoin Address</label>
+      <input id="btc_address" type="text" name="btc_address" placeholder="bc1q..." required>
+      
+      <div class="form-actions">
+        <button type="submit" class="button">Submit Withdrawal Request</button>
+      </div>
+    </form>
+  </div>
+  {{else}}
+  <div class="notice" style="margin-top: 2rem;">
+    <strong>Note:</strong> Only approved vendors can request withdrawals. 
+    <a href="/vendor/apply">Apply to become a vendor</a> to access this feature.
+  </div>
+  {{end}}
 </section>
 {{end}}

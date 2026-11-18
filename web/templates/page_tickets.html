@@ -1,23 +1,54 @@
 {{template "layout" .}}
+
 {{define "title"}}Support Tickets · OnionShop{{end}}
+
 {{define "body"}}
-<section class="auth-layout">
-  <div class="auth-intro">
-    <p class="eyebrow">Support</p>
+<section class="admin-layout">
+  <div class="admin-header">
     <h1>Support Tickets</h1>
-    <p class="lede">Contact site administration for general inquiries.</p>
+    <button class="button" onclick="document.getElementById('new-ticket-form').style.display='block'">+ New Ticket</button>
   </div>
-  <div class="auth-card">
-    <p>You have no open support tickets.</p>
-    <form method="post" action="/tickets" autocomplete="off" style="margin-top: 1rem;">
+
+  <div id="new-ticket-form" class="auth-card" style="max-width: 600px; display: none; margin-bottom: 2rem;">
+    <h2>Create New Ticket</h2>
+    <form method="post" action="/tickets" autocomplete="off">
       {{template "friction" .}}
-      <input type="hidden" name="csrf_token" value="{{.CsrfToken}}">
       <label for="subject">Subject</label>
-      <input id="subject" type="text" name="subject" required>
+      <input id="subject" type="text" name="subject" maxlength="100" required>
+      
       <label for="body">Message</label>
-      <textarea id="body" name="body" rows="5" required></textarea>
-      <div class="form-actions"><button type="submit">Create Ticket</button></div>
+      <textarea id="body" name="body" rows="5" maxlength="2000" required></textarea>
+      
+      <div class="form-actions">
+        <button type="submit">Submit Ticket</button>
+        <button type="button" class="secondary" onclick="document.getElementById('new-ticket-form').style.display='none'">Cancel</button>
+      </div>
     </form>
   </div>
+
+  <div class="table-container">
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th>Ticket ID</th>
+          <th>Subject</th>
+          <th>Status</th>
+          <th>Last Updated</th>
+          <th>Actions</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td colspan="5" class="text-muted" style="text-align: center; padding: 2rem;">
+            You have no open support tickets.
+          </td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
 </section>
+
+<script>
+  // Simple toggle for the new ticket form (no external JS libraries)
+</script>
 {{end}}
