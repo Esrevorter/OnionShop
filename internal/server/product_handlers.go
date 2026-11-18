@@ -11,16 +11,111 @@ package server
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"fmt"
+	"io"
 	"log"
 	"net/http"
+	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 )
+
+const (
+	maxUploadSize = 10 << 20 // 10 MB total
+	maxFiles      = 5
+)
+
+var allowedExts = map[string]bool{
+	".jpg":  true,
+	".jpeg": true,
+	".png":  true,
+	".webp": true,
+}
+
+var allowedMime = map[string]bool{
+	"image/jpeg": true,
+	"image/png":  true,
+	"image/webp": true,
+}
+
+func generateRandomFilename(ext string) string {
+	b := make([]byte, 16)
+	rand.Read(b)
+	return hex.EncodeToString(b) + ext
+}
+
+func handleImageUploads(r *http.Request, existingPaths string) (string, error) {
+	files := r.MultipartForm.File["images"]
+	if len(files) == 0 {
+		return existingPaths, nil
+	}
+	if len(files) > maxFiles {
+		return "", fmt.Errorf("maximum %d images allowed", maxFiles)
+	}
+
+	var newPaths []string
+	uploadDir := "web/static/listings"
+	if err := os.MkdirAll(uploadDir, 0755); err != nil {
+		return "", fmt.Errorf("failed to prepare upload directory")
+	}
+
+	for _, fileHeader := range files {
+		ext := strings.ToLower(filepath.Ext(fileHeader.Filename))
+		if !allowedExts[ext] {
+			return "", fmt.Errorf("invalid file type: %s (allowed: jpg, jpeg, png, webp)", ext)
+		}
+
+		file, err := fileHeader.Open()
+		if err != nil {
+			return "", fmt.Errorf("failed to open uploaded file")
+		}
+		
+		buf := make([]byte, 512)
+		if _, err := file.Read(buf); err != nil {
+			file.Close()
+			return "", fmt.Errorf("failed to read uploaded file")
+		}
+		mimeType := http.DetectContentType(buf)
+		if !allowedMime[mimeType] {
+			file.Close()
+			return "", fmt.Errorf("invalid file content: %s", mimeType)
+		}
+		
+		if _, err := file.Seek(0, 0); err != nil {
+			file.Close()
+			return "", fmt.Errorf("failed to process uploaded file")
+		}
+
+		safeName := generateRandomFilename(ext)
+		destPath := filepath.Join(uploadDir, safeName)
+
+		dst, err := os.Create(destPath)
+		if err != nil {
+			file.Close()
+			return "", fmt.Errorf("failed to save file")
+		}
+		
+		if _, err := io.Copy(dst, file); err != nil {
+			file.Close()
+			dst.Close()
+			return "", fmt.Errorf("failed to save file")
+		}
+		file.Close()
+		dst.Close()
+
+		newPaths = append(newPaths, safeName)
+	}
+
+	return strings.Join(newPaths, ","), nil
+}
 
 const (
 	// productPurpose is the CAPTCHA slot for all three product forms. One
@@ -184,7 +279,6 @@ func (a *App) handleProductNew(w http.ResponseWriter, r *http.Request) {
 
 func (a *App) handleProductCreate(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
-	_ = r.ParseForm()
 	data := a.productData(r)
 	fail := func(msg string) {
 		data.Error = msg
@@ -211,11 +305,22 @@ func (a *App) handleProductCreate(w http.ResponseWriter, r *http.Request) {
 		fail("no approved vendor profile on this account")
 		return
 	}
+	if err := r.ParseMultipartForm(maxUploadSize); err != nil {
+		fail("invalid form data or upload too large (max 10MB)")
+		return
+	}
 	p, msg := a.parseProductForm(r, vrow.ID)
 	if msg != "" {
 		fail(msg)
 		return
 	}
+	imgPaths, err := handleImageUploads(r, "")
+	if err != nil {
+		fail(err.Error())
+		return
+	}
+	p.ImagePath = imgPaths
+
 	created, err := a.vendor.CatalogCreateProduct(ctx, *p)
 	if err != nil {
 		log.Printf("server: product create failed: %v", sanitizedErr(err))
@@ -223,8 +328,7 @@ func (a *App) handleProductCreate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	a.auditProduct(ctx, uid, actionProductCreate, created)
-	data.Flash = "Listing saved."
-	a.renderAs(w, "vendor_product_edit", http.StatusOK, data)
+	http.Redirect(w, r, "/vendor/products", http.StatusSeeOther)
 }
 
 // loadEditableProduct re-reads the target row THROUGH the owner-scoped list
@@ -288,7 +392,6 @@ func (a *App) handleProductEdit(w http.ResponseWriter, r *http.Request) {
 
 func (a *App) handleProductUpdate(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
-	_ = r.ParseForm()
 	data := a.productData(r)
 	fail := func(code int, msg string) {
 		data.Error = msg
@@ -330,15 +433,24 @@ func (a *App) handleProductUpdate(w http.ResponseWriter, r *http.Request) {
 		fail(http.StatusBadRequest, "no approved vendor profile on this account")
 		return
 	}
+	if err := r.ParseMultipartForm(maxUploadSize); err != nil {
+		fail(http.StatusBadRequest, "invalid form data or upload too large (max 10MB)")
+		return
+	}
 	p, msg := a.parseProductForm(r, vrow.ID)
 	if msg != "" {
 		fail(http.StatusBadRequest, msg)
 		return
 	}
 	p.ID = existing.ID
-	// ImagePath is NOT form-controlled: scrubbed upload paths arrive via the
-	// Phase 5 media pipeline; updates preserve whatever the row already has.
-	p.ImagePath = existing.ImagePath
+	
+	imgPaths, err := handleImageUploads(r, existing.ImagePath)
+	if err != nil {
+		fail(http.StatusBadRequest, err.Error())
+		return
+	}
+	p.ImagePath = imgPaths
+	
 	updated, err := a.vendor.CatalogUpdateProduct(ctx, *p)
 	if err != nil {
 		if errors.Is(err, ErrNotFound) {
@@ -350,8 +462,7 @@ func (a *App) handleProductUpdate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	a.auditProduct(ctx, uid, actionProductUpdate, updated)
-	data.Flash = "Listing updated."
-	a.renderAs(w, "vendor_product_edit", http.StatusOK, data)
+	http.Redirect(w, r, "/vendor/products", http.StatusSeeOther)
 }
 
 func (a *App) handleProductRemove(w http.ResponseWriter, r *http.Request) {
