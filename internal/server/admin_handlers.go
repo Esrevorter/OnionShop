@@ -12,22 +12,11 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-// Phase A admin surface (UI.md §5.A): dashboard overview + user management.
-// These handlers run arbitrary read queries against the live pool, so they
-// type-assert Deps.Pool to the concrete *pgxpool.Pool that main.go wires in.
-// The narrow interface (Close/Ping) is preserved for the health probe and the
-// test fakes; admin is production-only (CI has no Postgres), and the assertion
-// fails closed to a generic 500 in any environment that lacks the real pool.
-
-// adminPool returns the concrete pgx pool behind the narrow Deps.Pool
-// interface, or ok=false when the app was wired with a non-pool fake (tests).
 func (a *App) adminPool() (*pgxpool.Pool, bool) {
 	p, ok := a.deps.Pool.(*pgxpool.Pool)
 	return p, ok
 }
 
-// AdminDashboardData backs page_admin_dashboard: headline counts plus the
-// pending-vendor queue length so the operator sees work-in-progress at a glance.
 type AdminDashboardData struct {
 	AuthData
 	UserCount      int64
@@ -37,9 +26,6 @@ type AdminDashboardData struct {
 	DisputeCount   int64
 }
 
-// AdminUserData is one row of the user-management table. ID is the canonical
-// UUID text (not pgtype.UUID) so templates can emit it into a hidden form
-// field without a Stringer dependency.
 type AdminUserData struct {
 	ID        string
 	Username  string
@@ -48,24 +34,21 @@ type AdminUserData struct {
 	CreatedAt time.Time
 }
 
-// adminUserListData wraps AuthData with the user slice for renderAs.
 type adminUserListData struct {
 	AuthData
 	Users []AdminUserData
 }
 
-// handleAdminDashboard renders the Phase A.1 overview cards.
 func (a *App) handleAdminDashboard(w http.ResponseWriter, r *http.Request) {
 	pool, ok := a.adminPool()
 	if !ok {
+		log.Printf("server: admin dashboard failed: database pool is not *pgxpool.Pool (type: %T)", a.deps.Pool)
 		writeGenericError(w)
 		return
 	}
 	ctx := r.Context()
 	data := &AdminDashboardData{AuthData: a.baseData(r)}
 
-	// Headline counts. Orders/disputes tables may not be populated yet; a
-	// failed count is non-fatal and simply leaves the card at zero.
 	if err := pool.QueryRow(ctx, `SELECT count(*) FROM public.users`).Scan(&data.UserCount); err != nil {
 		log.Printf("server: admin user count failed: %v", err)
 	}
@@ -82,10 +65,10 @@ func (a *App) handleAdminDashboard(w http.ResponseWriter, r *http.Request) {
 	a.renderAs(w, "admin_dashboard", http.StatusOK, data)
 }
 
-// handleAdminUsers renders the Phase A.2 user table.
 func (a *App) handleAdminUsers(w http.ResponseWriter, r *http.Request) {
 	pool, ok := a.adminPool()
 	if !ok {
+		log.Printf("server: admin users failed: database pool is not *pgxpool.Pool")
 		writeGenericError(w)
 		return
 	}
@@ -101,17 +84,35 @@ func (a *App) handleAdminUsers(w http.ResponseWriter, r *http.Request) {
 	a.renderAs(w, "admin_users", http.StatusOK, data)
 }
 
-// handleAdminBanUser toggles a user between active and banned, then kills
-// their live sessions so a ban takes effect immediately (AGENTS.md §4:
-// privilege/state changes must never ride an old cookie).
 func (a *App) handleAdminBanUser(w http.ResponseWriter, r *http.Request) {
 	pool, ok := a.adminPool()
 	if !ok {
+		log.Printf("server: admin ban failed: database pool is not *pgxpool.Pool")
 		writeGenericError(w)
 		return
 	}
 	ctx := r.Context()
 	_ = r.ParseForm()
+
+	// fail closure re-renders the user list with an error and a FRESH CAPTCHA
+	fail := func(msg string) {
+		data := adminUserListData{AuthData: a.baseData(r)}
+		data.Error = msg
+		users, err := fetchAdminUsers(ctx, pool)
+		if err == nil {
+			data.Users = users
+		}
+		if data.Captcha = a.newChallenge(w, r, "admin"); data.Captcha == nil {
+			return // newChallenge already wrote the generic 500
+		}
+		a.renderAs(w, "admin_users", http.StatusUnprocessableEntity, data)
+	}
+
+	// ENFORCE CAPTCHA + HONEYPOT
+	if !a.requireFriction(w, r, "admin") {
+		fail("Human verification failed, please try again.")
+		return
+	}
 
 	targetID := strings.TrimSpace(r.FormValue("user_id"))
 	action := r.FormValue("action")
@@ -135,8 +136,6 @@ func (a *App) handleAdminBanUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Kill every live session of the affected user so a ban is effective now,
-	// not at next login. Nil invalidator (dev in-memory store) is a no-op.
 	if action == "ban" {
 		if err := a.InvalidateUserSessions(ctx, targetID); err != nil {
 			log.Printf("server: admin ban session kill failed (non-fatal): %v", err)
@@ -146,12 +145,8 @@ func (a *App) handleAdminBanUser(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, "/admin/users", http.StatusSeeOther)
 }
 
-// fetchAdminUsers pulls the user table for the admin view. Read-only, newest
-// first; bounded so a huge table cannot OOM the page (pagination is a later
-// polish item, not a correctness gate for Phase A).
 func fetchAdminUsers(ctx context.Context, pool *pgxpool.Pool) ([]AdminUserData, error) {
-	rows, err := pool.Query(ctx, `SELECT id, username, role, status, created_at
-FROM public.users ORDER BY created_at DESC LIMIT 500`)
+	rows, err := pool.Query(ctx, `SELECT id, username, role, status, created_at FROM public.users ORDER BY created_at DESC LIMIT 500`)
 	if err != nil {
 		return nil, err
 	}
@@ -171,13 +166,8 @@ FROM public.users ORDER BY created_at DESC LIMIT 500`)
 	return out, rows.Err()
 }
 
-// registerAdminRoutes mounts the Phase A admin surface. Called from newApp
-// AFTER the middleware stack exists (sessions/CSRF/rate-limit), so every
-// route is gated by RequireRole("admin") and CSRF-protected on POST.
 func (a *App) registerAdminRoutes(r chi.Router) {
 	admin := a.RequireRole("admin")
-	// Use r.With() to apply the middleware, which correctly handles the
-	// conversion from func(http.Handler) http.Handler to chi's expected signature.
 	r.With(admin).Get("/admin", a.handleAdminDashboard)
 	r.With(admin).Get("/admin/users", a.handleAdminUsers)
 	r.With(admin).Post("/admin/users/ban", a.handleAdminBanUser)

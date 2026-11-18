@@ -43,14 +43,14 @@
           <td>
             {{if eq .Status "active"}}
               <form method="post" action="/admin/users/ban" style="display:inline;">
-                <input type="hidden" name="csrf_token" value="{{$.CsrfToken}}">
+                {{template "friction" $}}
                 <input type="hidden" name="user_id" value="{{.ID}}">
                 <input type="hidden" name="action" value="ban">
                 <button type="submit" class="btn-danger btn-sm">Ban</button>
               </form>
             {{else}}
               <form method="post" action="/admin/users/ban" style="display:inline;">
-                <input type="hidden" name="csrf_token" value="{{$.CsrfToken}}">
+                {{template "friction" $}}
                 <input type="hidden" name="user_id" value="{{.ID}}">
                 <input type="hidden" name="action" value="unban">
                 <button type="submit" class="btn-success btn-sm">Unban</button>
