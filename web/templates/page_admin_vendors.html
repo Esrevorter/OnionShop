@@ -3,47 +3,44 @@
 {{define "title"}}Vendor Queue · OnionShop{{end}}
 
 {{define "body"}}
-<section class="auth-layout">
-  <div class="auth-intro">
-    <p class="eyebrow">Administration</p>
+<section class="admin-layout">
+  <div class="admin-header">
     <h1>Vendor Applications</h1>
-    <p class="lede">Review and approve new vendor requests. Approving a request grants the user vendor privileges and kills their existing sessions.</p>
+    <a href="/admin" class="btn-secondary">← Back to Dashboard</a>
   </div>
 
-  {{if .Flash}}
-  <div class="notice notice-success"><strong>Success</strong><br>{{.Flash}}</div>
-  {{end}}
+  {{if .Flash}}<div class="flash" role="status">{{.Flash}}</div>{{end}}
 
   {{if not .Pending}}
-  <div class="auth-card">
-    <p>There are no pending vendor applications at this time.</p>
-  </div>
+    <div class="empty-state"><p>There are no pending vendor applications at this time.</p></div>
   {{else}}
-  <div class="auth-card">
-    <h2>Pending Queue ({{len .Pending}})</h2>
-    {{range .Pending}}
-    <div class="vendor-row" style="border-bottom: 1px solid #eee; padding: 1rem 0; display: flex; justify-content: space-between; align-items: center; gap: 1rem;">
-      <div>
-        <strong>{{.ShopName}}</strong><br>
-        <small>Requested: {{.CreatedAt.Format "2006-01-02 15:04 UTC"}}</small>
-      </div>
-      <div style="display: flex; gap: 0.5rem; align-items: flex-end;">
-        <form method="post" action="/admin/vendors/{{.ID}}/decision" style="margin: 0; display: flex; flex-direction: column; gap: 0.5rem; border: 1px solid #ddd; padding: 0.5rem; border-radius: 4px;">
-          {{template "friction" $}}
-          <input type="hidden" name="csrf_token" value="{{$.CsrfToken}}">
-          <input type="hidden" name="decision" value="approve">
-          <button type="submit">Approve</button>
-        </form>
-        <form method="post" action="/admin/vendors/{{.ID}}/decision" style="margin: 0; display: flex; flex-direction: column; gap: 0.5rem; border: 1px solid #ddd; padding: 0.5rem; border-radius: 4px;">
-          {{template "friction" $}}
-          <input type="hidden" name="csrf_token" value="{{$.CsrfToken}}">
-          <input type="hidden" name="decision" value="reject">
-          <button type="submit" style="background: #666;">Reject</button>
-        </form>
-      </div>
+    <div class="table-container">
+      <table class="data-table">
+        <thead>
+          <tr><th>Shop Name</th><th>Requested</th><th>Decision</th></tr>
+        </thead>
+        <tbody>
+          {{range .Pending}}
+          <tr>
+            <td><strong>{{.ShopName}}</strong></td>
+            <td class="text-muted">{{.CreatedAt.Format "2006-01-02"}}</td>
+            <td>
+              <form method="post" action="/admin/vendors/{{.ID}}/decision" style="display:inline;">
+                {{template "friction" $}}
+                <input type="hidden" name="decision" value="approve">
+                <button type="submit" class="btn-success btn-sm">Approve</button>
+              </form>
+              <form method="post" action="/admin/vendors/{{.ID}}/decision" style="display:inline;">
+                {{template "friction" $}}
+                <input type="hidden" name="decision" value="reject">
+                <button type="submit" class="btn-danger btn-sm">Reject</button>
+              </form>
+            </td>
+          </tr>
+          {{end}}
+        </tbody>
+      </table>
     </div>
-    {{end}}
-  </div>
   {{end}}
 </section>
 {{end}}

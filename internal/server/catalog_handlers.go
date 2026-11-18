@@ -1,17 +1,5 @@
 package server
 
-// Phase 4 — public storefront: catalog home, category browsing, search,
-// product detail, and vendor shop pages (TASKS.md "Phase 4: Catalog &
-// Vendors"). All read-only; no friction needed (GETs carry no state change).
-// Vendor-authored text renders through html/template's automatic escaping —
-// the same rule as every other page (SECURITY_AND_OPSEC.md: treat ALL stored
-// strings as untrusted input at render time).
-//
-// This revision rides the VendorStore interface from catalog_store.go
-// (CatalogListCategories / CatalogListProducts / CatalogGetProduct /
-// CatalogGetVendorByUsername / CatalogListTopVendors) instead of the older
-// ProductList*/CategoryList surface.
-
 import (
 	"log"
 	"net/http"
@@ -22,17 +10,11 @@ import (
 )
 
 const (
-	// defaultListSize / maxListSize clamp ?limit= so a crafted query can never
-	// ask the DB for the whole products table.
-	defaultListSize = 24
-	maxListSize     = 100
-
-	catalogPageLimit = 20 // pagination window for category/search pages
+	defaultListSize  = 24
+	maxListSize      = 100
+	catalogPageLimit = 20
 )
 
-// CatalogData extends AuthData with the storefront fields. Keeping it a
-// superset struct means layout.html keeps working unchanged (it only reads
-// CsrfToken/Error/Flash), and templates handed either shape still render.
 type CatalogData struct {
 	AuthData
 	Categories   []CategoryRecord
@@ -43,18 +25,15 @@ type CatalogData struct {
 	Vendor       *VendorRecord
 	Query        string
 	CategoryName string
-	SatToBTC     string // pre-formatted price display helper (sat -> BTC text)
-	Total        int64  // full match count for the current listing (pagination)
+	SatToBTC     string
+	Total        int64
 	Limit        int
 	Offset       int
-	PrevOffset   int    // Offset-Limit clamped at 0 (computed Go-side; templates stay arithmetic-free)
-	NextOffset   int    // Offset+Limit — render "next" only while < Total
-	ShopHandle   string // /u/{handle} username for the shop page's message form action
+	PrevOffset   int
+	NextOffset   int
+	ShopHandle   string
 }
 
-// satToBTC renders an integer-satoshi price as an 8-decimal BTC string. Pure
-// formatting — arithmetic never leaves the integer domain anywhere else in
-// the stack (ARCHITECTURE.md §5).
 func satToBTC(sat int64) string {
 	neg := ""
 	if sat < 0 {
@@ -69,23 +48,12 @@ func satToBTC(sat int64) string {
 	return neg + whole + "." + frac
 }
 
-// catalogBase seeds CatalogData with the shared auth fields so handlers can
-// fill in list slots without repeating themselves. The anti-phishing phrase
-// lives in the session (phraseKey), mirroring handleAccount's read.
 func (a *App) catalogBase(r *http.Request) *CatalogData {
 	d := &CatalogData{AuthData: a.baseData(r)}
 	d.PersonalPhrase = a.sm.GetString(r.Context(), phraseKey)
 	return d
 }
 
-// renderCatalog mirrors render()'s policy — buffer FIRST, then commit
-// headers — for the *CatalogData shape (render() takes AuthData by value and
-// would silently drop the embedded struct's siblings). An execution error
-// after headers are out is unrecoverable and would leak a truncated 200
-// instead of the generic 500. When the storefront template set is absent
-// (bare dev/test apps only parse web/templates' page_* files), fall back to
-// handleHome so GET / keeps answering 200 exactly like the router tests
-// assert.
 func (a *App) renderCatalog(w http.ResponseWriter, r *http.Request, name string, code int, data *CatalogData) {
 	tpl := a.templates[name]
 	if tpl == nil {
@@ -95,8 +63,6 @@ func (a *App) renderCatalog(w http.ResponseWriter, r *http.Request, name string,
 	a.renderAs(w, name, code, data)
 }
 
-// listLimit clamps ?limit= to sane bounds so a crafted query cannot ask the
-// DB for the whole table.
 func listLimit(r *http.Request) int {
 	if v := r.URL.Query().Get("limit"); v != "" {
 		if n, err := strconv.Atoi(v); err == nil && n > 0 {
@@ -109,9 +75,6 @@ func listLimit(r *http.Request) int {
 	return defaultListSize
 }
 
-// paginationData computes PrevOffset/NextOffset once in Go — templates are
-// deliberately logic-free (html/template has no arithmetic), and precomputed
-// window numbers keep page markup from silently mis-paging.
 func (d *CatalogData) paginationData() {
 	d.PrevOffset = d.Offset - d.Limit
 	if d.PrevOffset < 0 {
@@ -120,7 +83,6 @@ func (d *CatalogData) paginationData() {
 	d.NextOffset = d.Offset + d.Limit
 }
 
-// listOffset parses ?offset= defensively: garbage or negatives page zero.
 func listOffset(r *http.Request) int {
 	if v := r.URL.Query().Get("offset"); v != "" {
 		if n, err := strconv.Atoi(v); err == nil && n > 0 {
@@ -130,15 +92,10 @@ func listOffset(r *http.Request) int {
 	return 0
 }
 
-// registerCatalogRoutes mounts the Phase 4 public storefront. It runs inside
-// RegisterAuthRoutesFull AFTER the middleware stack exists, replacing the
-// Phase 3 "/" landing handler when (and only when) a VendorStore was wired —
-// bare apps keep handleHome semantics so existing router tests pass.
 func (a *App) registerCatalogRoutes(r chi.Router) {
 	if a.vendor == nil {
 		return
 	}
-	// Replace the Phase 3 landing mount with the catalog home.
 	r.Get("/", a.handleCatalogHome)
 	r.Get("/search", a.handleSearch)
 	r.Get("/category/{slug}", a.handleCategory)
@@ -146,9 +103,6 @@ func (a *App) registerCatalogRoutes(r chi.Router) {
 	r.Get("/u/{handle}", a.handleShopPage)
 }
 
-// handleCatalogHome replaces the Phase 3 landing page when a vendor store is
-// wired. Without one it MUST behave exactly like handleHome did (router tests
-// assert GET / = 200 on bare apps).
 func (a *App) handleCatalogHome(w http.ResponseWriter, r *http.Request) {
 	if a.vendor == nil {
 		a.handleHome(w, r)
@@ -158,21 +112,19 @@ func (a *App) handleCatalogHome(w http.ResponseWriter, r *http.Request) {
 	data := a.catalogBase(r)
 	cats, err := a.vendor.CatalogListCategories(ctx)
 	if err != nil {
-		log.Printf("server: catalog categories failed: %v", sanitizedErr(err))
+		log.Printf("server: catalog categories failed: %v", err)
 		writeGenericError(w)
 		return
 	}
 	prods, err := a.vendor.CatalogListProducts(ctx, -1, "", listLimit(r), 0)
 	if err != nil {
-		log.Printf("server: catalog listing failed: %v", sanitizedErr(err))
+		log.Printf("server: catalog listing failed: %v", err)
 		writeGenericError(w)
 		return
 	}
-	// Leaderboard widget reads the cron-maintained snapshot; a missing board
-	// (fresh install before first refresh) is not an error worth a 500.
 	top, err := a.vendor.CatalogListTopVendors(ctx, DefaultLeaderboardSize)
 	if err != nil {
-		log.Printf("server: top vendors read failed (non-fatal): %v", sanitizedErr(err))
+		log.Printf("server: top vendors read failed (non-fatal): %v", err)
 	}
 	data.Categories, data.Products, data.TopVendors = cats, prods, top
 	data.Limit, data.Offset = listLimit(r), 0
@@ -194,13 +146,13 @@ func (a *App) handleSearch(w http.ResponseWriter, r *http.Request) {
 	}
 	prods, err := a.vendor.CatalogListProducts(r.Context(), -1, q, data.Limit, data.Offset)
 	if err != nil {
-		log.Printf("server: catalog search failed: %v", sanitizedErr(err))
+		log.Printf("server: catalog search failed: %v", err)
 		writeGenericError(w)
 		return
 	}
 	total, err := a.vendor.CatalogCountProducts(r.Context(), -1, q)
 	if err != nil {
-		log.Printf("server: catalog count failed: %v", sanitizedErr(err))
+		log.Printf("server: catalog count failed: %v", err)
 		writeGenericError(w)
 		return
 	}
@@ -217,7 +169,7 @@ func (a *App) handleCategory(w http.ResponseWriter, r *http.Request) {
 	slug := chi.URLParam(r, "slug")
 	cats, err := a.vendor.CatalogListCategories(ctx)
 	if err != nil {
-		log.Printf("server: category resolve failed: %v", sanitizedErr(err))
+		log.Printf("server: category resolve failed: %v", err)
 		writeGenericError(w)
 		return
 	}
@@ -236,13 +188,13 @@ func (a *App) handleCategory(w http.ResponseWriter, r *http.Request) {
 	limit, offset := listLimit(r), listOffset(r)
 	prods, err := a.vendor.CatalogListProducts(ctx, catID, "", limit, offset)
 	if err != nil {
-		log.Printf("server: category listing failed: %v", sanitizedErr(err))
+		log.Printf("server: category listing failed: %v", err)
 		writeGenericError(w)
 		return
 	}
 	total, err := a.vendor.CatalogCountProducts(ctx, catID, "")
 	if err != nil {
-		log.Printf("server: category count failed: %v", sanitizedErr(err))
+		log.Printf("server: category count failed: %v", err)
 		writeGenericError(w)
 		return
 	}
@@ -265,15 +217,12 @@ func (a *App) handleProductPage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	p, err := a.vendor.CatalogGetProduct(r.Context(), id)
-	// Drafts/removed rows are invisible to the public — 404, never 403, so a
-	// probe cannot distinguish "exists but hidden" from "does not exist".
-	// The store already gates status='active' AND vendor approved.
 	if err != nil {
 		if errorsIsNotFound(err) {
 			http.NotFound(w, r)
 			return
 		}
-		log.Printf("server: product fetch failed: %v", sanitizedErr(err))
+		log.Printf("server: product fetch failed: %v", err)
 		writeGenericError(w)
 		return
 	}
@@ -288,12 +237,10 @@ func (a *App) handleProductPage(w http.ResponseWriter, r *http.Request) {
 	a.renderCatalog(w, r, "product", http.StatusOK, data)
 }
 
-// handleShopPage serves /u/{handle} — the vendor profile page keyed by the
-// vendor's USERNAME (CatalogGetVendorByUsername joins users and admits
-// approved vendors only). Products arrive via the category-independent
-// storefront listing filtered through the vendor's username in memory over
-// one bounded page window; rating/sales badges ride the leaderboard snapshot
-// when the vendor appears on it.
+// handleShopPage serves /u/{handle}. It populates ShopHandle (the message
+// form's action target) and mints a CAPTCHA bound to messagePurpose, because
+// the embedded "message vendor" form requires friction on POST. Without the
+// challenge here the form would demand verification with none shown.
 func (a *App) handleShopPage(w http.ResponseWriter, r *http.Request) {
 	if a.vendor == nil {
 		http.NotFound(w, r)
@@ -307,7 +254,7 @@ func (a *App) handleShopPage(w http.ResponseWriter, r *http.Request) {
 			http.NotFound(w, r)
 			return
 		}
-		log.Printf("server: shop resolve failed: %v", sanitizedErr(err))
+		log.Printf("server: shop resolve failed: %v", err)
 		writeGenericError(w)
 		return
 	}
@@ -317,7 +264,7 @@ func (a *App) handleShopPage(w http.ResponseWriter, r *http.Request) {
 	}
 	prods, err := a.vendor.CatalogListProducts(ctx, -1, "", maxListSize, 0)
 	if err != nil {
-		log.Printf("server: shop products failed: %v", sanitizedErr(err))
+		log.Printf("server: shop products failed: %v", err)
 		writeGenericError(w)
 		return
 	}
@@ -330,14 +277,16 @@ func (a *App) handleShopPage(w http.ResponseWriter, r *http.Request) {
 	data := a.catalogBase(r)
 	data.Vendor = v
 	data.ShopName = v.ShopName
+	data.ShopHandle = handle
 	data.Products = own
+	if data.Captcha = a.newChallenge(w, r, messagePurpose); data.Captcha == nil {
+		return
+	}
 	a.renderCatalog(w, r, "shop", http.StatusOK, data)
 }
 
-// errorsIsNotFound keeps the handler 404 mapping terse; ErrNotFound is the
-// only sentinel the catalog store emits for missing rows.
 func errorsIsNotFound(err error) bool {
 	return err != nil && strings.Contains(err.Error(), ErrNotFound.Error())
 }
 
-var _ = catalogPageLimit // reserved: pagination window knob for Phase 5 listing UI
+var _ = catalogPageLimit

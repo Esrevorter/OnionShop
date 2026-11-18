@@ -16,15 +16,7 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
-// Phase 4 vendor surface (TASKS.md "Catalog & Vendors"): registration with
-// admin approval, the /u/<handle> profile pages (rating, sales count, ETA
-// badge, "message vendor"), and order reviews with a bounded edit window.
-// Every POST rides the same gate/friction pattern as the auth surface:
-// RequireRole + CSRF (global middleware) + image CAPTCHA + honeypot, and
-// every privilege/state change lands in audit_log (migration 0003).
-
 const (
-	// Audit action verbs — stable identifiers, never free text (SECURITY §3).
 	actionVendorRequest = "vendor.request"
 	actionVendorApprove = "vendor.approve"
 	actionVendorReject  = "vendor.reject"
@@ -34,49 +26,33 @@ const (
 	actionReviewSubmit  = "review.submit"
 	actionVendorMessage = "vendor.message"
 
-	vendorPurpose  = "vendor"   // CAPTCHA slot: apply / approve / reject forms
-	reviewPurpose  = "review"   // CAPTCHA slot: review submit forms
-	messagePurpose = "vmessage" // CAPTCHA slot: "message vendor" form
+	vendorPurpose  = "vendor"
+	reviewPurpose  = "review"
+	messagePurpose = "vmessage"
 
-	shopNameMin, shopNameMax = 3, 60 // mirrors vendors.shop_name CHECK
-	reviewBodyMax            = 2000  // mirrors reviews.body CHECK
-	vendorMessageMax         = 5000  // mirrors messages.body CHECK
+	shopNameMin, shopNameMax = 3, 60
+	reviewBodyMax            = 2000
+	vendorMessageMax         = 5000
 )
 
-// ReviewEditWindow bounds how long after an order's last state change its
-// lines stay rateable/editable. Enforced server-side (Postgres' own clock in
-// the store; this constant only sizes the UI copy + the SQL interval), never
-// by a form-supplied timestamp.
 const ReviewEditWindow = 30 * 24 * time.Hour
 
-// VendorData renders the vendor-facing templates (apply page, admin queue,
-// profile page, review forms). It embeds AuthData so baseData stays the one
-// place CSRF/phrase/flash/error are assembled, and every template keeps
-// working when handed either shape.
 type VendorData struct {
 	AuthData
 	ShopName      string
-	Pending       []VendorRecord // admin queue rows
-	Vendor        *VendorRecord  // profile subject
-	VendorRating  float64        // avg 1..5 from released orders
-	VendorSales   int64          // completed-order count
-	Reviews       []ReviewRecord // customer review lines (account page)
-	MessageTarget string         // username the message form posts to
-	Eta           string         // fast|medium|slow badge
+	Pending       []VendorRecord
+	Vendor        *VendorRecord
+	VendorRating  float64
+	VendorSales   int64
+	Reviews       []ReviewRecord
+	MessageTarget string
+	Eta           string
 }
 
-// vendorData builds the typed payload for catalog templates: baseData keeps
-// assembling CSRF/phrase/flash/error in one place (auth_handlers.go), and the
-// catalog extras ride on top so pages never re-derive them.
 func (a *App) vendorData(r *http.Request) *VendorData {
 	return &VendorData{AuthData: a.baseData(r)}
 }
 
-// renderAs is render()'s typed-payload sibling: pass an AuthData for the
-// plain pages or a *VendorData whenever the template needs catalog extras
-// (Pending, Reviews, profile fields). Buffering + generic-500 policy are
-// identical to render() — kept separate only because render() takes AuthData
-// by value and would silently drop the embedded-pointer fields' siblings.
 func (a *App) renderAs(w http.ResponseWriter, name string, code int, data any) {
 	tpl := a.templates[name]
 	if tpl == nil {
@@ -94,59 +70,42 @@ func (a *App) renderAs(w http.ResponseWriter, name string, code int, data any) {
 	_, _ = buf.WriteTo(w)
 }
 
-// currentUUID parses the session user id back into a pgtype.UUID. Handlers
-// call it instead of re-reading the DB: the value was validated at login and
-// role-checked by RequireRole on this very request.
 func (a *App) currentUUID(r *http.Request) (pgtype.UUID, bool) {
 	u := parseUUIDText(CurrentUserID(r.Context(), a.sm))
 	return u, u.Valid
 }
 
-// registerVendorRoutes mounts the Phase 4 vendor/admin/review surface. It is
-// called from RegisterAuthRoutesFull AFTER the middleware stack exists; nil
-// stores simply skip their routes (dev boots stay honest, never panic).
 func (a *App) registerVendorRoutes(r chi.Router) {
 	anyUser := a.RequireRole("customer", "vendor", "mod", "admin")
 	adminOnly := a.RequireRole("admin")
 
-	// Vendor application: any authenticated account may ask; approval flips
-	// the role through the durable store (never via this form).
 	r.Method(http.MethodGet, "/vendor/apply", anyUser(http.HandlerFunc(a.handleVendorApplyForm)))
 	r.Method(http.MethodPost, "/vendor/apply", anyUser(http.HandlerFunc(a.handleVendorApplySubmit)))
 
-	// Admin approval queue (writes to audit log, TASKS.md Phase 4 line 1).
 	r.Method(http.MethodGet, "/admin/vendors", adminOnly(http.HandlerFunc(a.handleVendorQueue)))
 	r.Method(http.MethodPost, "/admin/vendors/{id}/decision", adminOnly(http.HandlerFunc(a.handleVendorDecision)))
 
-	// Order reviews: list of rateable lines per vendor + one submit endpoint.
 	r.Method(http.MethodGet, "/account/reviews", anyUser(http.HandlerFunc(a.handleReviewList)))
 	r.Method(http.MethodPost, "/reviews/submit", anyUser(http.HandlerFunc(a.handleReviewSubmit)))
 
-	// "Message vendor" from the public shop page (catalog_store's
-	// CatalogSendVendorMessage; Phase 7 re-homes these rows into threads).
 	r.Method(http.MethodPost, "/vendor/{handle}/message", anyUser(http.HandlerFunc(a.handleVendorMessage)))
 
-	// Vendor product dashboard + CRUD (product_handlers.go). Skipped without
-	// a catalog store — same nil discipline as every mount above.
 	if a.vendor != nil {
 		a.registerProductRoutes(r)
 	}
 }
 
-// ---- message vendor -----------------------------------------------------------
-
 // handleVendorMessage posts one note to an approved vendor from their /u/<handle>
 // page. The recipient is resolved server-side from the URL handle (never a form
-// id), so a crafted body cannot retarget the message. Self-messaging and unknown
-// or unapproved vendors all fail with the same generic verb.
+// id), so a crafted body cannot retarget the message. The page is re-rendered
+// with a CatalogData (the same shape the GET handler uses) so the product grid
+// and the message form's handle stay populated, and a FRESH challenge is minted
+// on every re-render — the previous code rendered with a VendorData that lacked
+// the fields the shop template needs, which 500'd the success path.
 func (a *App) handleVendorMessage(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	_ = r.ParseForm()
-	data := a.vendorData(r)
-	fail := func(code int, msg string) {
-		data.Error = msg
-		a.renderAs(w, "shop", code, data)
-	}
+	data := a.catalogBase(r)
 	uid, ok := a.currentUUID(r)
 	if !ok {
 		http.Redirect(w, r, "/login", http.StatusSeeOther)
@@ -155,6 +114,13 @@ func (a *App) handleVendorMessage(w http.ResponseWriter, r *http.Request) {
 	if a.vendor == nil || a.auth == nil {
 		writeGenericError(w)
 		return
+	}
+	fail := func(code int, msg string) {
+		data.Error = msg
+		if data.Captcha = a.newChallenge(w, r, messagePurpose); data.Captcha == nil {
+			return
+		}
+		a.renderCatalog(w, r, "shop", code, data)
 	}
 	if honeypotTriggered(r) || !a.requireFriction(w, r, messagePurpose) {
 		fail(http.StatusUnauthorized, "challenge failed, please try again")
@@ -167,13 +133,17 @@ func (a *App) handleVendorMessage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err != nil {
-		log.Printf("server: vendor message target lookup failed: %v", sanitizedErr(err))
+		log.Printf("server: vendor message target lookup failed: %v", err)
 		writeGenericError(w)
+		return
+	}
+	if !target.Approved {
+		fail(http.StatusBadRequest, "no such vendor")
 		return
 	}
 	senderName, err := a.auth.VendorUsername(ctx, uid)
 	if err != nil {
-		log.Printf("server: vendor message sender lookup failed: %v", sanitizedErr(err))
+		log.Printf("server: vendor message sender lookup failed: %v", err)
 		writeGenericError(w)
 		return
 	}
@@ -191,19 +161,37 @@ func (a *App) handleVendorMessage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := a.vendor.CatalogSendVendorMessage(ctx, uid, target.UserID, body); err != nil {
-		log.Printf("server: vendor message write failed: %v", sanitizedErr(err))
+		log.Printf("server: vendor message write failed: %v", err)
 		fail(http.StatusInternalServerError, "message failed, please try again")
 		return
 	}
 	details, _ := json.Marshal(map[string]any{"to": handle, "length": len(body)})
 	if err := a.auth.AuditAppend(ctx, uid, "user", actionVendorMessage, "vendor:"+uuidString(target.ID), string(details)); err != nil {
-		log.Printf("server: vendor message audit write failed (non-fatal): %v", sanitizedErr(err))
+		log.Printf("server: vendor message audit write failed (non-fatal): %v", err)
 	}
+	// Re-render the shop with the vendor + its products so the form stays usable.
+	data.Vendor = target
+	data.ShopName = target.ShopName
+	data.ShopHandle = handle
+	prods, err := a.vendor.CatalogListProducts(ctx, -1, "", maxListSize, 0)
+	if err != nil {
+		log.Printf("server: shop products failed: %v", err)
+		fail(http.StatusInternalServerError, "message sent, but the shop could not refresh")
+		return
+	}
+	own := make([]StorefrontProduct, 0, len(prods))
+	for _, p := range prods {
+		if uuidString(p.VendorID) == uuidString(target.ID) {
+			own = append(own, p)
+		}
+	}
+	data.Products = own
 	data.Flash = "Message sent."
-	fail(http.StatusOK, "")
+	if data.Captcha = a.newChallenge(w, r, messagePurpose); data.Captcha == nil {
+		return
+	}
+	a.renderCatalog(w, r, "shop", http.StatusOK, data)
 }
-
-// ---- application -----------------------------------------------------------
 
 func (a *App) handleVendorApplyForm(w http.ResponseWriter, r *http.Request) {
 	if a.vendor == nil || a.auth == nil {
@@ -218,7 +206,7 @@ func (a *App) handleVendorApplyForm(w http.ResponseWriter, r *http.Request) {
 	}
 	existing, err := a.auth.VendorGetByUser(r.Context(), uid)
 	if err != nil {
-		log.Printf("server: vendor apply lookup failed: %v", sanitizedErr(err))
+		log.Printf("server: vendor apply lookup failed: %v", err)
 		writeGenericError(w)
 		return
 	}
@@ -247,7 +235,6 @@ func (a *App) handleVendorApplySubmit(w http.ResponseWriter, r *http.Request) {
 		}
 		a.renderAs(w, "vendor_apply", http.StatusBadRequest, data)
 	}
-
 	uid, ok := a.currentUUID(r)
 	if !ok {
 		http.Redirect(w, r, "/login", http.StatusSeeOther)
@@ -261,31 +248,27 @@ func (a *App) handleVendorApplySubmit(w http.ResponseWriter, r *http.Request) {
 		fail("challenge failed, please try again")
 		return
 	}
-
 	shop := strings.TrimSpace(r.FormValue("shop_name"))
 	if len(shop) < shopNameMin || len(shop) > shopNameMax {
 		fail(fmt.Sprintf("shop name must be %d-%d characters", shopNameMin, shopNameMax))
 		return
 	}
-	// One row per user (vendors.user_id UNIQUE): a second submission updates
-	// the pending request instead of stacking duplicates behind approval.
 	if err := a.auth.VendorCreateRequest(ctx, uid, shop); err != nil {
-		log.Printf("server: vendor request write failed: %v", sanitizedErr(err))
+		log.Printf("server: vendor request write failed: %v", err)
 		fail("vendor application failed, please try again")
 		return
 	}
 	details, _ := json.Marshal(map[string]any{"shop_name": shop})
 	if err := a.auth.AuditAppend(ctx, uid, "user", actionVendorRequest, "vendor:"+uuidString(uid), string(details)); err != nil {
-		// Bookkeeping failure must not strand a valid application — loud log,
-		// same policy as login history (auth_handlers.go).
-		log.Printf("server: vendor request audit write failed (non-fatal): %v", sanitizedErr(err))
+		log.Printf("server: vendor request audit write failed (non-fatal): %v", err)
 	}
 	data.Flash = "Application submitted. An administrator will review it."
 	a.renderAs(w, "vendor_apply", http.StatusOK, data)
 }
 
-// ---- admin approval queue ----------------------------------------------------
-
+// handleVendorQueue renders the admin approval queue. It MUST mint a CAPTCHA
+// because every decision form on the page requires friction (handleVendorDecision);
+// without a challenge here the admin sees "challenge required" with no challenge.
 func (a *App) handleVendorQueue(w http.ResponseWriter, r *http.Request) {
 	if a.auth == nil {
 		writeGenericError(w)
@@ -294,11 +277,14 @@ func (a *App) handleVendorQueue(w http.ResponseWriter, r *http.Request) {
 	data := a.vendorData(r)
 	pending, err := a.auth.VendorListPending(r.Context())
 	if err != nil {
-		log.Printf("server: pending vendor list failed: %v", sanitizedErr(err))
+		log.Printf("server: pending vendor list failed: %v", err)
 		writeGenericError(w)
 		return
 	}
 	data.Pending = pending
+	if data.Captcha = a.newChallenge(w, r, vendorPurpose); data.Captcha == nil {
+		return
+	}
 	a.renderAs(w, "admin_vendors", http.StatusOK, data)
 }
 
@@ -314,9 +300,11 @@ func (a *App) handleVendorDecision(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		data.Pending = pending
+		if data.Captcha = a.newChallenge(w, r, vendorPurpose); data.Captcha == nil {
+			return
+		}
 		a.renderAs(w, "admin_vendors", code, data)
 	}
-
 	if honeypotTriggered(r) || !a.requireFriction(w, r, vendorPurpose) {
 		fail(http.StatusUnauthorized, "challenge failed, please try again")
 		return
@@ -327,9 +315,6 @@ func (a *App) handleVendorDecision(w http.ResponseWriter, r *http.Request) {
 		fail(http.StatusBadRequest, "unknown application")
 		return
 	}
-
-	// Re-read the authoritative role for the applicant before flipping
-	// anything: approving must promote exactly one known 'customer'.
 	target, err := a.vendorRowTarget(ctx, vid)
 	if err != nil {
 		fail(http.StatusBadRequest, "unknown application")
@@ -337,7 +322,7 @@ func (a *App) handleVendorDecision(w http.ResponseWriter, r *http.Request) {
 	}
 	role, err := a.auth.AuthUserRole(ctx, target.UserID)
 	if err != nil {
-		log.Printf("server: vendor decision role lookup failed: %v", sanitizedErr(err))
+		log.Printf("server: vendor decision role lookup failed: %v", err)
 		fail(http.StatusInternalServerError, "approval failed, please try again")
 		return
 	}
@@ -345,24 +330,19 @@ func (a *App) handleVendorDecision(w http.ResponseWriter, r *http.Request) {
 		fail(http.StatusBadRequest, "unknown application")
 		return
 	}
-
 	if err := a.auth.VendorSetApproval(ctx, vid, approve); err != nil {
-		log.Printf("server: vendor approval write failed: %v", sanitizedErr(err))
+		log.Printf("server: vendor approval write failed: %v", err)
 		fail(http.StatusInternalServerError, "approval failed, please try again")
 		return
 	}
 	if approve {
 		if err := a.auth.VendorSetRoleToVendor(ctx, target.UserID); err != nil {
-			log.Printf("server: vendor promotion failed: %v", sanitizedErr(err))
+			log.Printf("server: vendor promotion failed: %v", err)
 		}
-		// Privilege change: kill every live session of the promoted user so
-		// no stale 'customer' cookie survives the flip (AGENTS.md §4). The
-		// new vendor signs in fresh with the upgraded role.
 		if err := a.InvalidateUserSessions(ctx, uuidString(target.UserID)); err != nil {
-			log.Printf("server: session invalidation after vendor approval failed: %v", sanitizedErr(err))
+			log.Printf("server: session invalidation after vendor approval failed: %v", err)
 		}
 	}
-
 	actorID, _ := a.currentUUID(r)
 	name, _ := a.auth.VendorUsername(ctx, target.UserID)
 	details, _ := json.Marshal(map[string]any{"shop_name": target.ShopName, "username": name})
@@ -371,7 +351,7 @@ func (a *App) handleVendorDecision(w http.ResponseWriter, r *http.Request) {
 		action = actionVendorReject
 	}
 	if err := a.auth.AuditAppend(ctx, actorID, "admin", action, "vendor:"+uuidString(vid), string(details)); err != nil {
-		log.Printf("server: vendor decision audit write failed (non-fatal): %v", sanitizedErr(err))
+		log.Printf("server: vendor decision audit write failed (non-fatal): %v", err)
 	}
 	if approve {
 		data.Flash = "Vendor approved."
@@ -381,10 +361,6 @@ func (a *App) handleVendorDecision(w http.ResponseWriter, r *http.Request) {
 	fail(http.StatusOK, "")
 }
 
-// vendorRowTarget pulls the vendor row being decided on. VendorStore does not
-// expose GetVendorByID (the handlers never needed it elsewhere), so the queue
-// template carries the owner/user ids alongside the row id; we reconstruct
-// the target from the pending list snapshot instead of trusting the form.
 func (a *App) vendorRowTarget(ctx context.Context, vendorID pgtype.UUID) (*VendorRecord, error) {
 	pending, err := a.auth.VendorListPending(ctx)
 	if err != nil {
@@ -397,8 +373,6 @@ func (a *App) vendorRowTarget(ctx context.Context, vendorID pgtype.UUID) (*Vendo
 	}
 	return nil, ErrNotFound
 }
-
-// ---- reviews ------------------------------------------------------------------
 
 func (a *App) handleReviewList(w http.ResponseWriter, r *http.Request) {
 	if a.vendor == nil {
@@ -425,13 +399,13 @@ func (a *App) handleReviewList(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err != nil {
-		log.Printf("server: review vendor lookup failed: %v", sanitizedErr(err))
+		log.Printf("server: review vendor lookup failed: %v", err)
 		writeGenericError(w)
 		return
 	}
 	lines, err := a.vendor.CatalogReviewableLines(ctx, uid, prof.ID)
 	if err != nil {
-		log.Printf("server: reviewable lines failed: %v", sanitizedErr(err))
+		log.Printf("server: reviewable lines failed: %v", err)
 		writeGenericError(w)
 		return
 	}
@@ -463,7 +437,6 @@ func (a *App) handleReviewSubmit(w http.ResponseWriter, r *http.Request) {
 		fail(http.StatusUnauthorized, "challenge failed, please try again")
 		return
 	}
-
 	itemID, err := strconv.ParseInt(r.FormValue("item_id"), 10, 64)
 	if err != nil || itemID <= 0 {
 		fail(http.StatusBadRequest, "unknown order line")
@@ -479,32 +452,27 @@ func (a *App) handleReviewSubmit(w http.ResponseWriter, r *http.Request) {
 		fail(http.StatusBadRequest, "review text too long")
 		return
 	}
-
 	err = a.vendor.CatalogSubmitReview(ctx, uid, itemID, rating, body)
 	switch {
 	case errors.Is(err, ErrNotFound):
 		fail(http.StatusBadRequest, "that order line cannot be reviewed")
 		return
 	case err != nil && strings.Contains(err.Error(), "window closed"):
-		// Error text here is ours ("store: review window closed") — safe verb,
-		// no internals (sanitizedErr still strips driver detail).
 		fail(http.StatusBadRequest, "the review window for this order has closed")
 		return
 	case err != nil:
-		log.Printf("server: review submit failed: %v", sanitizedErr(err))
+		log.Printf("server: review submit failed: %v", err)
 		fail(http.StatusInternalServerError, "review failed, please try again")
 		return
 	}
 	details, _ := json.Marshal(map[string]any{"item_id": itemID, "rating": rating})
 	if aerr := a.auth.AuditAppend(ctx, uid, "user", actionReviewSubmit, fmt.Sprintf("order_item:%d", itemID), string(details)); aerr != nil {
-		log.Printf("server: review audit write failed (non-fatal): %v", sanitizedErr(aerr))
+		log.Printf("server: review audit write failed (non-fatal): %v", aerr)
 	}
 	data.Flash = "Review saved."
 	fail(http.StatusOK, "")
 }
 
-// parseUUIDParam reads one chi URL parameter as a UUID, rejecting malformed
-// input without echoing it back.
 func parseUUIDParam(r *http.Request, key string) (pgtype.UUID, error) {
 	raw := chi.URLParam(r, key)
 	u := parseUUIDText(raw)
