@@ -69,13 +69,13 @@ func (a *App) vendorRow(ctx context.Context, userID pgtype.UUID) (*VendorRecord,
 // registerVendorRoutes once both stores exist; role gate is exactly 'vendor'
 // (mods/admins manage through the admin queue, not listings).
 func (a *App) registerProductRoutes(r chi.Router) {
-	vendorOnly := a.RequireRole("vendor")
-	r.Method(http.MethodGet, "/vendor/products", vendorOnly(http.HandlerFunc(a.handleProductList)))
-	r.Method(http.MethodGet, "/vendor/products/new", vendorOnly(http.HandlerFunc(a.handleProductNew)))
-	r.Method(http.MethodPost, "/vendor/products/new", vendorOnly(http.HandlerFunc(a.handleProductCreate)))
-	r.Method(http.MethodGet, "/vendor/products/{id}/edit", vendorOnly(http.HandlerFunc(a.handleProductEdit)))
-	r.Method(http.MethodPost, "/vendor/products/{id}/edit", vendorOnly(http.HandlerFunc(a.handleProductUpdate)))
-	r.Method(http.MethodPost, "/vendor/products/{id}/remove", vendorOnly(http.HandlerFunc(a.handleProductRemove)))
+	vendorOrAdmin := a.RequireRole("vendor", "admin")
+	r.Method(http.MethodGet, "/vendor/products", vendorOrAdmin(http.HandlerFunc(a.handleProductList)))
+	r.Method(http.MethodGet, "/vendor/products/new", vendorOrAdmin(http.HandlerFunc(a.handleProductNew)))
+	r.Method(http.MethodPost, "/vendor/products/new", vendorOrAdmin(http.HandlerFunc(a.handleProductCreate)))
+	r.Method(http.MethodGet, "/vendor/products/{id}/edit", vendorOrAdmin(http.HandlerFunc(a.handleProductEdit)))
+	r.Method(http.MethodPost, "/vendor/products/{id}/edit", vendorOrAdmin(http.HandlerFunc(a.handleProductUpdate)))
+	r.Method(http.MethodPost, "/vendor/products/{id}/remove", vendorOrAdmin(http.HandlerFunc(a.handleProductRemove)))
 }
 
 // handleProductList shows every listing owned by the caller (drafts included
