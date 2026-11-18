@@ -176,7 +176,9 @@ FROM public.users ORDER BY created_at DESC LIMIT 500`)
 // route is gated by RequireRole("admin") and CSRF-protected on POST.
 func (a *App) registerAdminRoutes(r chi.Router) {
 	admin := a.RequireRole("admin")
-	r.Get("/admin", admin(http.HandlerFunc(a.handleAdminDashboard)))
-	r.Get("/admin/users", admin(http.HandlerFunc(a.handleAdminUsers)))
-	r.Post("/admin/users/ban", admin(http.HandlerFunc(a.handleAdminBanUser)))
+	// Use r.With() to apply the middleware, which correctly handles the
+	// conversion from func(http.Handler) http.Handler to chi's expected signature.
+	r.With(admin).Get("/admin", a.handleAdminDashboard)
+	r.With(admin).Get("/admin/users", a.handleAdminUsers)
+	r.With(admin).Post("/admin/users/ban", a.handleAdminBanUser)
 }

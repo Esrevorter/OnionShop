@@ -1,0 +1,56 @@
+{{template "layout" .}}
+
+{{define "title"}}Admin Dashboard · OnionShop{{end}}
+
+{{define "body"}}
+<section class="admin-layout">
+  <div class="admin-header">
+    <h1>Admin Dashboard</h1>
+    <p class="lede">Marketplace overview and quick actions.</p>
+  </div>
+
+  <div class="admin-grid">
+    <div class="stat-card">
+      <div class="stat-label">Total Users</div>
+      <div class="stat-value">{{.UserCount}}</div>
+      <a href="/admin/users" class="stat-link">Manage Users →</a>
+    </div>
+
+    <div class="stat-card">
+      <div class="stat-label">Vendors</div>
+      <div class="stat-value">{{.VendorCount}}</div>
+      <a href="/admin/vendors" class="stat-link">Vendor Queue →</a>
+    </div>
+
+    <div class="stat-card">
+      <div class="stat-label">Pending Approvals</div>
+      <div class="stat-value">{{.PendingVendors}}</div>
+      {{if gt .PendingVendors 0}}
+        <a href="/admin/vendors" class="stat-link">Review Now →</a>
+      {{else}}
+        <span class="stat-muted">None waiting</span>
+      {{end}}
+    </div>
+
+    <div class="stat-card">
+      <div class="stat-label">Open Orders</div>
+      <div class="stat-value">{{.OrderCount}}</div>
+      <span class="stat-muted">Coming soon</span>
+    </div>
+
+    <div class="stat-card">
+      <div class="stat-label">Open Disputes</div>
+      <div class="stat-value">{{.DisputeCount}}</div>
+      <span class="stat-muted">Coming soon</span>
+    </div>
+  </div>
+
+  <div class="admin-section">
+    <h2>Quick Actions</h2>
+    <div class="action-grid">
+      <a href="/admin/users" class="action-btn">User Management</a>
+      <a href="/admin/vendors" class="action-btn">Vendor Approvals</a>
+    </div>
+  </div>
+</section>
+{{end}}

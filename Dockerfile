@@ -4,7 +4,8 @@
 FROM golang:1.25-alpine AS build
 WORKDIR /src
 COPY go.mod go.sum ./
-RUN go mod download
+ENV GOPROXY=https://goproxy.io,direct
+RUN apk add --no-cache git && go mod download
 
 # Download pre-compiled sqlc binary (avoids compiling from source, which fails
 # in alpine). internal/store/gen/ is gitignored, so the Dockerfile must

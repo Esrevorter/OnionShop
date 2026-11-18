@@ -84,14 +84,14 @@ type SessionLinker interface {
 var ErrNoSuchUser = errors.New("store: no such user")
 
 const (
-	qAuthUserByUsername   = `SELECT id, username, password_hash, role, status, created_at FROM public.users WHERE username = $1`
-	qAuthCreateUser       = `INSERT INTO public.users (username, password_hash, role, status) VALUES ($1, $2, 'customer', $3) RETURNING id, username, password_hash, role, status, created_at`
+	qAuthUserByUsername     = `SELECT id, username, password_hash, role, status, created_at FROM public.users WHERE username = $1`
+	qAuthCreateUser         = `INSERT INTO public.users (username, password_hash, role, status) VALUES ($1, $2, 'customer', $3) RETURNING id, username, password_hash, role, status, created_at`
 	qAuthUpdatePasswordHash = `UPDATE public.users SET password_hash = $2, updated_at = now() WHERE id = $1`
-	qAuthSetPhrase        = `UPDATE public.users SET personal_phrase = $2, updated_at = now() WHERE id = $1`
-	qAuthRecordLogin      = `INSERT INTO public.login_history (user_id, occurred_at, host_header) VALUES ($1, $2, $3)`
-	qAuthGetPGPKey        = `SELECT COALESCE(pgp_public_key, '') FROM public.users WHERE id = $1`
-	qAuthSetPGPKey        = `UPDATE public.users SET pgp_public_key = $2, updated_at = now() WHERE id = $1`
-	qAuthClearPGPKey      = `UPDATE public.users SET pgp_public_key = NULL, updated_at = now() WHERE id = $1`
+	qAuthSetPhrase          = `UPDATE public.users SET personal_phrase = $2, updated_at = now() WHERE id = $1`
+	qAuthRecordLogin        = `INSERT INTO public.login_history (user_id, occurred_at, host_header) VALUES ($1, $2, $3)`
+	qAuthGetPGPKey          = `SELECT COALESCE(pgp_public_key, '') FROM public.users WHERE id = $1`
+	qAuthSetPGPKey          = `UPDATE public.users SET pgp_public_key = $2, updated_at = now() WHERE id = $1`
+	qAuthClearPGPKey        = `UPDATE public.users SET pgp_public_key = NULL, updated_at = now() WHERE id = $1`
 )
 
 type PGAuthStore struct{ pool *pgxpool.Pool }
@@ -834,85 +834,6 @@ func (a *App) handlePhraseSubmit(w http.ResponseWriter, r *http.Request) {
 	a.sm.Put(ctx, phraseKey, phrase)
 	data.PersonalPhrase = phrase
 	data.Flash = "Personal phrase updated."
-	if data.Captcha = a.newChallenge(w, r, accountPurpose); data.Captcha == nil {
-		return
-	}
-	a.render(w, "account", http.StatusOK, data)
-}
-
-func (a *App) handlePGPUpload(w http.ResponseWriter, r *http.Request) {
-	ctx := r.Context()
-	_ = r.ParseForm()
-	data := a.baseData(r)
-	fail := func(msg string) {
-		data.Error = msg
-		if data.Captcha = a.newChallenge(w, r, accountPurpose); data.Captcha == nil {
-			return
-		}
-		a.render(w, "account", http.StatusUnprocessableEntity, data)
-	}
-	if honeypotTriggered(r) {
-		fail("submission rejected")
-		return
-	}
-	if !a.requireFriction(w, r, accountPurpose) {
-		fail("challenge failed, please try again")
-		return
-	}
-	key := strings.TrimSpace(r.FormValue("pgp_key"))
-	if err := ValidatePGPKey(key); err != nil {
-		fail(err.Error())
-		return
-	}
-	uid := currentUserUUID(ctx, a.sm)
-	if uid == nil {
-		writeGenericError(w)
-		return
-	}
-	if err := a.auth.AuthSetPGPKey(ctx, *uid, key); err != nil {
-		fail("could not save the key, please try again")
-		return
-	}
-	a.sm.Put(ctx, pgpKeyKey, key)
-	data.PGPPublicKey = key
-	data.Flash = "PGP public key uploaded."
-	if data.Captcha = a.newChallenge(w, r, accountPurpose); data.Captcha == nil {
-		return
-	}
-	a.render(w, "account", http.StatusOK, data)
-}
-
-func (a *App) handlePGPClear(w http.ResponseWriter, r *http.Request) {
-	ctx := r.Context()
-	_ = r.ParseForm()
-	data := a.baseData(r)
-	fail := func(msg string) {
-		data.Error = msg
-		if data.Captcha = a.newChallenge(w, r, accountPurpose); data.Captcha == nil {
-			return
-		}
-		a.render(w, "account", http.StatusUnprocessableEntity, data)
-	}
-	if honeypotTriggered(r) {
-		fail("submission rejected")
-		return
-	}
-	if !a.requireFriction(w, r, accountPurpose) {
-		fail("challenge failed, please try again")
-		return
-	}
-	uid := currentUserUUID(ctx, a.sm)
-	if uid == nil {
-		writeGenericError(w)
-		return
-	}
-	if err := a.auth.AuthClearPGPKey(ctx, *uid); err != nil {
-		fail("could not clear the key, please try again")
-		return
-	}
-	a.sm.Put(ctx, pgpKeyKey, "")
-	data.PGPPublicKey = ""
-	data.Flash = "PGP public key cleared."
 	if data.Captcha = a.newChallenge(w, r, accountPurpose); data.Captcha == nil {
 		return
 	}

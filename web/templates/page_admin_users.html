@@ -1,0 +1,67 @@
+{{template "layout" .}}
+
+{{define "title"}}User Management · OnionShop{{end}}
+
+{{define "body"}}
+<section class="admin-layout">
+  <div class="admin-header">
+    <h1>User Management</h1>
+    <a href="/admin" class="btn-secondary">← Back to Dashboard</a>
+  </div>
+
+  {{if not .Users}}
+    <div class="empty-state"><p>No users registered yet.</p></div>
+  {{else}}
+  <div class="table-container">
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th>Username</th>
+          <th>Role</th>
+          <th>Status</th>
+          <th>Joined</th>
+          <th>Actions</th>
+        </tr>
+      </thead>
+      <tbody>
+        {{range .Users}}
+        <tr>
+          <td><strong>{{.Username}}</strong></td>
+          <td><span class="badge badge-role">{{.Role}}</span></td>
+          <td>
+            {{if eq .Status "active"}}
+              <span class="badge badge-success">Active</span>
+            {{else if eq .Status "banned"}}
+              <span class="badge badge-danger">Banned</span>
+            {{else if eq .Status "suspended"}}
+              <span class="badge badge-warning">Suspended</span>
+            {{else}}
+              <span class="badge badge-muted">{{.Status}}</span>
+            {{end}}
+          </td>
+          <td class="text-muted">{{.CreatedAt.Format "2006-01-02"}}</td>
+          <td>
+            {{if eq .Status "active"}}
+              <form method="post" action="/admin/users/ban" style="display:inline;">
+                <input type="hidden" name="csrf_token" value="{{$.CsrfToken}}">
+                <input type="hidden" name="user_id" value="{{.ID}}">
+                <input type="hidden" name="action" value="ban">
+                <button type="submit" class="btn-danger btn-sm">Ban</button>
+              </form>
+            {{else}}
+              <form method="post" action="/admin/users/ban" style="display:inline;">
+                <input type="hidden" name="csrf_token" value="{{$.CsrfToken}}">
+                <input type="hidden" name="user_id" value="{{.ID}}">
+                <input type="hidden" name="action" value="unban">
+                <button type="submit" class="btn-success btn-sm">Unban</button>
+              </form>
+            {{end}}
+          </td>
+        </tr>
+        {{end}}
+      </tbody>
+    </table>
+  </div>
+  {{end}}
+</section>
+{{end}}
