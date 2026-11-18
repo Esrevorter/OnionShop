@@ -59,7 +59,7 @@
               {{end}}
               <form method="post" action="/admin/users/{{.ID}}/reset-password" style="display:inline;" onsubmit="return confirm('This will invalidate all user sessions and generate a temporary password. Are you sure?');">
                 {{template "friction" $}}
-                <button type="submit" class="btn-secondary btn-sm" style="border: 1px solid var(--line);">Reset PW</button>
+                <button type="submit" class="btn-sm" style="background: var(--warning); color: #102017; border: 1px solid var(--warning); font-weight: 700;">Reset PW</button>
               </form>
             </div>
           </td>
