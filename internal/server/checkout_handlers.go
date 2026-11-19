@@ -80,7 +80,7 @@ func (a *App) handleCartAction(w http.ResponseWriter, r *http.Request) {
 		delete(cart, productID)
 	} else if action == "update" {
 		qtyStr := r.FormValue("qty")
-		qty, err := strconv.Atoi(qtyStr)
+		qty, err := strconv.ParseInt(qtyStr, 10, 64)
 		if err != nil || qty <= 0 {
 			delete(cart, productID)
 		} else {

@@ -15,7 +15,7 @@ type CartItem struct {
 	ProductID string `json:"product_id"`
 	Title     string `json:"title"`
 	PriceSat  int64  `json:"price_sat"`
-	Qty       int    `json:"qty"`
+	Qty       int64  `json:"qty"`
 	VendorID  string `json:"vendor_id"`
 }
 
