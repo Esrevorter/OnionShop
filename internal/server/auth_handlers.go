@@ -49,6 +49,7 @@ type AuthData struct {
 	Pending2FAUID   string
 	TOTPEnabled     bool
 	TOTPQRCode      string
+	TOTPSecret      string
 	BackupCodes     []string
 }
 
@@ -582,6 +583,14 @@ func (a *App) handleAccount(w http.ResponseWriter, r *http.Request) {
 	data := a.baseData(r)
 	data.PersonalPhrase = a.sm.GetString(r.Context(), phraseKey)
 	a.loadPGPState(r.Context(), &data)
+	if uid := currentUserUUID(r.Context(), a.sm); uid != nil {
+		if u, uerr := a.auth.AuthUserByID(r.Context(), *uid); uerr == nil && u != nil {
+			data.TOTPEnabled = u.TOTPEnabled
+			if u.BackupCodes != "" {
+				data.BackupCodes = strings.Split(u.BackupCodes, ",")
+			}
+		}
+	}
 	if data.Captcha = a.newChallenge(w, r, "account"); data.Captcha == nil { return }
 	a.render(w, "account", http.StatusOK, data)
 }
@@ -715,9 +724,11 @@ func (a *App) handle2FASetup(w http.ResponseWriter, r *http.Request) {
 		codes = append(codes, strings.ToUpper(hex.EncodeToString(b)))
 	}
 	data.BackupCodes = codes
+	data.TOTPSecret = key.Secret()
+	a.sm.Put(ctx, "pending_totp_backup", strings.Join(codes, ","))
 
 	if data.Captcha = a.newChallenge(w, r, "account"); data.Captcha == nil { return }
-	a.render(w, "account", http.StatusOK, data)
+	a.render(w, "2fa_setup", http.StatusOK, data)
 }
 
 func (a *App) handle2FAEnable(w http.ResponseWriter, r *http.Request) {
@@ -729,10 +740,12 @@ func (a *App) handle2FAEnable(w http.ResponseWriter, r *http.Request) {
 
 	fail := func(msg string) {
 		data.Error = msg
-		user, _ := a.auth.AuthUserByID(ctx, *uid)
-		data.TOTPEnabled = user.TOTPEnabled
+		data.TOTPSecret = a.sm.GetString(ctx, "pending_totp_secret")
+		if s := a.sm.GetString(ctx, "pending_totp_backup"); s != "" {
+			data.BackupCodes = strings.Split(s, ",")
+		}
 		if data.Captcha = a.newChallenge(w, r, "account"); data.Captcha == nil { return }
-		a.render(w, "account", http.StatusUnprocessableEntity, data)
+		a.render(w, "2fa_setup", http.StatusUnprocessableEntity, data)
 	}
 
 	if honeypotTriggered(r) || !a.requireFriction(w, r, "account") {
@@ -756,7 +769,8 @@ func (a *App) handle2FAEnable(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	backupCodesStr := strings.Join(data.BackupCodes, ",")
+	backupCodesStr := a.sm.GetString(ctx, "pending_totp_backup")
+	if backupCodesStr == "" { fail("setup session expired, please restart"); return }
 	if pgStore, ok := a.auth.(*PGAuthStore); ok {
 		if _, err := pgStore.pool.Exec(ctx, `UPDATE public.users SET totp_secret = $2, totp_enabled = $3, backup_codes = $4, updated_at = now() WHERE id = $1`, *uid, pendingSecret, true, backupCodesStr); err != nil {
 			fail("could not enable 2FA")
@@ -768,8 +782,10 @@ func (a *App) handle2FAEnable(w http.ResponseWriter, r *http.Request) {
 	}
 
 	a.sm.Remove(ctx, "pending_totp_secret")
+	a.sm.Remove(ctx, "pending_totp_backup")
 	data.Flash = "Two-Factor Authentication enabled. Save your backup codes!"
 	data.TOTPEnabled = true
+	data.BackupCodes = strings.Split(backupCodesStr, ",")
 	if data.Captcha = a.newChallenge(w, r, "account"); data.Captcha == nil { return }
 	a.render(w, "account", http.StatusOK, data)
 }
