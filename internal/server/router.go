@@ -170,6 +170,7 @@ func newApp(cfg Config, deps Deps, sessionStore scs.Store, withRateLimit bool) (
 
 	// Phase 5-8 UI shells (wallet, orders, disputes, tickets, checkout, ...).
 	a.registerPageRoutes(r)
+	a.registerCheckoutRoutes(r)
 	// Phase A admin surface (dashboard + user management).
 	a.registerAdminRoutes(r)
 
