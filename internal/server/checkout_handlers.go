@@ -61,11 +61,9 @@ func (a *App) handleCartAction(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	uid := CurrentUserID(ctx, a.sm)
 	
-	if honeypotTriggered(r) || !a.requireFriction(w, r, "cart") {
-		http.Redirect(w, r, "/cart", http.StatusSeeOther)
-		return
-	}
-
+	// No CAPTCHA/honeypot friction here: handleCartGet never mints a challenge,
+	// so requiring it would silently reject every update/remove. CSRF (enforced
+	// globally) + the user-scoped Redis cart key are sufficient for this action.
 	action := r.FormValue("action")
 	productID := r.FormValue("product_id")
 

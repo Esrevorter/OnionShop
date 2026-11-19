@@ -6,7 +6,7 @@
 <section class="admin-layout">
   <div class="admin-header">
     <h1>Shopping Cart</h1>
-    <a href="/" class="btn-secondary">← Continue Shopping</a>
+    <a href="/" class="button secondary">← Continue Shopping</a>
   </div>
 
   {{if not .Cart}}
@@ -33,20 +33,20 @@
           <td>{{$item.PriceSat}} sat</td>
           <td>
             <form method="post" action="/cart/action" style="display:flex; gap:0.5rem; align-items:center;">
-              {{template "friction" $}}
+              <input type="hidden" name="csrf_token" value="{{$.CsrfToken}}">
               <input type="hidden" name="product_id" value="{{$pid}}">
               <input type="hidden" name="action" value="update">
               <input type="number" name="qty" value="{{$item.Qty}}" min="1" max="99" style="width: 60px; padding: 0.25rem;">
-              <button type="submit" class="btn-secondary btn-sm">Update</button>
+              <button type="submit" class="button secondary">Update</button>
             </form>
           </td>
           <td>{{mul $item.PriceSat $item.Qty}} sat</td>
           <td>
             <form method="post" action="/cart/action">
-              {{template "friction" $}}
+              <input type="hidden" name="csrf_token" value="{{$.CsrfToken}}">
               <input type="hidden" name="product_id" value="{{$pid}}">
               <input type="hidden" name="action" value="remove">
-              <button type="submit" class="btn-danger btn-sm">Remove</button>
+              <button type="submit" class="button danger">Remove</button>
             </form>
           </td>
         </tr>
