@@ -145,8 +145,8 @@ func generateRandomFilename(ext string) string {
 	return hex.EncodeToString(b) + ext
 }
 
-// deletePublicImages removes the on-disk full + thumb for each public path,
-// validated to stay inside uploadDir. Used when an image is replaced.
+// deletePublicImages removes on-disk full+thumb for each public path, validated
+// to stay inside uploadDir. Used when an image is replaced.
 func deletePublicImages(publicPaths []string) {
 	for _, pp := range publicPaths {
 		pp = strings.TrimSpace(pp)
@@ -166,8 +166,8 @@ func deletePublicImages(publicPaths []string) {
 	}
 }
 
-// handleImageUploads decodes+re-encodes (EXIF scrub), writes a capped full and
-// a 480px thumb, returns a single public path, and deletes replaced files.
+// handleImageUploads decodes+re-encodes (EXIF scrub), writes a capped full and a
+// 480px thumb, returns a single public path, and deletes replaced files.
 func handleImageUploads(r *http.Request, existingPaths string) (string, error) {
 	if r.MultipartForm == nil || len(r.MultipartForm.File["images"]) == 0 {
 		return existingPaths, nil
@@ -230,7 +230,6 @@ func handleImageUploads(r *http.Request, existingPaths string) (string, error) {
 	}
 
 	if len(newPaths) > 0 {
-		// Replace semantics: drop old files, keep only the first new upload.
 		if existingPaths != "" {
 			deletePublicImages(strings.Split(existingPaths, ","))
 		}

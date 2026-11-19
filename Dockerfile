@@ -28,6 +28,7 @@ COPY web/ ./web/
 RUN sqlc generate
 
 RUN CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags="-s -w" -o /out/onionshop ./cmd/onionshop
+RUN CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags="-s -w" -o /out/onionshop-thumbs ./cmd/onionshop-thumbs
 
 FROM alpine:3.19
 # /run/onionshop MUST exist in the image with the app's ownership: Docker seeds
@@ -40,6 +41,7 @@ RUN adduser -u 1000 -S app \
  && chown 1000:1000 /run/onionshop \
  && chmod 0770 /run/onionshop
 COPY --from=build /out/onionshop /usr/local/bin/onionshop
+COPY --from=build /out/onionshop-thumbs /usr/local/bin/onionshop-thumbs
 # html/template parses from disk at boot: buildTemplates globs page_*.html under
 # web/templates RELATIVE to the working directory. The runtime stage must ship
 # them — copying web/ into the build stage alone is not enough.
