@@ -20,6 +20,13 @@
       <p class="muted">{{.PriceSat}} satoshis</p>
       <p>{{if gt .Stock 0}}In stock: {{.Stock}}{{else}}Currently out of stock{{end}}</p>
       <p class="muted">Confirm product details and seller information before placing an order.</p>
+      {{if $.IsAuthenticated}}
+      <form method="post" action="/product/{{$.Product.ID}}/add-to-cart" style="margin-top: 1rem;">
+        <button type="submit" class="button">Add to Cart</button>
+      </form>
+      {{else}}
+      <p class="muted" style="margin-top: 1rem;"><a href="/login">Log in</a> to add to cart.</p>
+      {{end}}
     </aside>
   </div>
 </article>
