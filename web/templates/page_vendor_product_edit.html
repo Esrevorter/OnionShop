@@ -10,9 +10,9 @@
   </div>
 
   <div class="auth-card" style="max-width: 600px;">
-    <form method="post" action="{{if .Editing}}/vendor/products/{{.Editing.ID}}/edit{{else}}/vendor/products/new{{end}}" autocomplete="off">
+    <form method="post" enctype="multipart/form-data" action="{{if .Editing}}/vendor/products/{{.Editing.ID}}/edit{{else}}/vendor/products/new{{end}}" autocomplete="off">
       {{template "friction" .}}
-      
+
       <label for="title">Product Title (3-200 characters)</label>
       <input id="title" type="text" name="title" maxlength="200" value="{{if .Editing}}{{.Editing.Title}}{{end}}" required>
 
@@ -29,6 +29,14 @@
           <input id="stock" type="number" name="stock" min="0" value="{{if .Editing}}{{.Editing.Stock}}{{else}}0{{end}}" required>
         </div>
       </div>
+
+      <label for="images">Product Images (Max 5, JPG/PNG, 10MB total)</label>
+      <input id="images" type="file" name="images" multiple accept="image/jpeg,image/png">
+      {{if .Editing}}
+        {{if .Editing.ImagePath}}
+          <p class="form-help">New uploads replace the current images. Leave empty to keep them.</p>
+        {{end}}
+      {{end}}
 
       <label for="category_id">Category</label>
       <select id="category_id" name="category_id">
