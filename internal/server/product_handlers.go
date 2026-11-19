@@ -207,10 +207,8 @@ func handleImageUploads(r *http.Request, existingPaths string) (string, error) {
 	}
 
 	if len(newPaths) > 0 {
-		if existingPaths != "" {
-			return existingPaths + "," + strings.Join(newPaths, ","), nil
-		}
-		return strings.Join(newPaths, ","), nil
+		// Single public URL the storefront/grid templates use directly.
+		return "/uploads/" + newPaths[0], nil
 	}
 	return existingPaths, nil
 }

@@ -7,32 +7,13 @@
 <nav class="breadcrumbs" aria-label="Breadcrumb"><a href="/">Marketplace</a><span aria-hidden="true">/</span><a href="/u/{{.VendorUsername}}">{{.ShopName}}</a><span aria-hidden="true">/</span><span>Listing</span></nav>
 <article class="product-detail">
   <div class="product-detail-media">
-    {{if .ImagePath}}
-      {{range $i, $img := split .ImagePath ","}}
-        {{if eq $i 0}}
-          <img src="/uploads/{{$img}}" alt="Product photo for {{$.Title}}" width="960" height="720">
-        {{end}}
-      {{end}}
-    {{else}}
-      <div class="product-placeholder" role="img" aria-label="No product image">◈</div>
-    {{end}}
+    {{if .ImagePath}}<img src="{{.ImagePath}}" alt="Product photo for {{.Title}}" width="960" height="720">{{else}}<div class="product-placeholder" role="img" aria-label="No product image">◈</div>{{end}}
   </div>
   <div class="product-copy">
     <p class="eyebrow">{{.ShopName}}</p>
     <h1>{{.Title}}</h1>
     <p class="muted">Sold by <a href="/u/{{.VendorUsername}}">@{{.VendorUsername}}</a>{{if .Eta}} · {{.Eta}} dispatch{{end}}</p>
     <div class="description">{{inertURL .Description}}</div>
-    
-    {{if .ImagePath}}
-      <div style="display: flex; gap: 0.5rem; margin-top: 1rem; flex-wrap: wrap;">
-        {{range $i, $img := split .ImagePath ","}}
-          {{if gt $i 0}}
-            <img src="/static/listings/{{$img}}" alt="Additional product photo" style="width: 80px; height: 80px; object-fit: cover; border-radius: 4px; border: 1px solid var(--line);">
-          {{end}}
-        {{end}}
-      </div>
-    {{end}}
-
     <aside class="price-panel">
       <p class="eyebrow">Price</p>
       <p class="price-large">{{$.SatToBTC}} BTC</p>
