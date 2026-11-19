@@ -24,7 +24,7 @@ const (
 	productTitleMin, productTitleMax = 3, 200
 	productDescMax = 20000
 	productStatusDraft, productStatusActive, productStatusRemoved = "draft", "active", "removed"
-	maxUploadSize = 10 << 20
+	maxUploadSize = 10 << 20 // 10 MB total
 	maxFiles = 5
 	uploadDir = "/var/lib/onionshop/uploads"
 )
@@ -61,8 +61,10 @@ func (a *App) registerProductRoutes(r chi.Router) {
 	r.Method(http.MethodPost, "/vendor/products/{id}/edit", vendorOrAdmin(http.HandlerFunc(a.handleProductUpdate)))
 	r.Method(http.MethodPost, "/vendor/products/{id}/publish", vendorOrAdmin(http.HandlerFunc(a.handleProductPublish)))
 	r.Method(http.MethodPost, "/vendor/products/{id}/remove", vendorOrAdmin(http.HandlerFunc(a.handleProductRemove)))
-	r.Method(http.MethodPost, "/product/{id}/add-to-cart", a.RequireRole("customer", "vendor", "mod", "admin")(http.HandlerFunc(a.handleAddToCart)))
-
+	// Add-to-cart is available to any signed-in role (customer/vendor/mod/admin).
+	// CSRF is enforced globally by CSRFProtect; the product-page form carries the token.
+	anyUser := a.RequireRole("customer", "vendor", "mod", "admin")
+	r.Method(http.MethodPost, "/product/{id}/add-to-cart", anyUser(http.HandlerFunc(a.handleAddToCart)))
 }
 
 func (a *App) handleProductList(w http.ResponseWriter, r *http.Request) {
@@ -492,11 +494,13 @@ func (a *App) handleProductPublish(w http.ResponseWriter, r *http.Request) {
 	a.auditProduct(ctx, uid, actionProductUpdate, updated)
 	vrow, err := a.vendorRow(ctx, uid)
 	if err != nil {
+		log.Printf("server: product publish post-render lookup failed: %v", sanitizedErr(err))
 		writeGenericError(w)
 		return
 	}
 	products, err := a.vendor.CatalogListVendorProducts(ctx, uid)
 	if err != nil {
+		log.Printf("server: product list after publish failed: %v", sanitizedErr(err))
 		writeGenericError(w)
 		return
 	}
@@ -543,11 +547,13 @@ func (a *App) handleProductRemove(w http.ResponseWriter, r *http.Request) {
 	}
 	vrow, err := a.vendorRow(ctx, uid)
 	if err != nil {
+		log.Printf("server: product remove post-render lookup failed: %v", sanitizedErr(err))
 		writeGenericError(w)
 		return
 	}
 	products, err := a.vendor.CatalogListVendorProducts(ctx, uid)
 	if err != nil {
+		log.Printf("server: product list after remove failed: %v", sanitizedErr(err))
 		writeGenericError(w)
 		return
 	}
@@ -555,6 +561,69 @@ func (a *App) handleProductRemove(w http.ResponseWriter, r *http.Request) {
 	data.Products = products
 	data.Flash = "Listing removed."
 	a.renderAs(w, "vendor_products", http.StatusOK, data)
+}
+
+// handleAddToCart adds an active product to the Redis-backed cart keyed by the
+// signed-in user id, matching GetCart/SaveCart/CartItem used by the /cart page.
+// CSRF is enforced by the global CSRFProtect middleware (the form carries the
+// token); no CAPTCHA is required for this low-risk action.
+func (a *App) handleAddToCart(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	uid := CurrentUserID(ctx, a.sm)
+	if uid == "" {
+		http.Redirect(w, r, "/login", http.StatusSeeOther)
+		return
+	}
+	if a.vendor == nil {
+		writeGenericError(w)
+		return
+	}
+	pid, err := parseUUIDParam(r, "id")
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	p, err := a.vendor.CatalogGetProduct(ctx, pid)
+	if err != nil {
+		if errorsIsNotFound(err) {
+			http.NotFound(w, r)
+			return
+		}
+		log.Printf("server: add-to-cart product lookup failed: %v", sanitizedErr(err))
+		writeGenericError(w)
+		return
+	}
+	if p.Status != productStatusActive {
+		http.NotFound(w, r)
+		return
+	}
+
+	cart, err := GetCart(ctx, a.deps.RDB, uid)
+	if err != nil {
+		log.Printf("server: add-to-cart get cart failed: %v", sanitizedErr(err))
+		writeGenericError(w)
+		return
+	}
+	key := uuidString(p.ID)
+	if item, ok := cart[key]; ok {
+		item.Qty++
+		cart[key] = item
+	} else {
+		cart[key] = CartItem{
+			ProductID: key,
+			Title:     p.Title,
+			PriceSat:  p.PriceSat,
+			Qty:       1,
+			VendorID:  uuidString(p.VendorID),
+		}
+	}
+	if err := SaveCart(ctx, a.deps.RDB, uid, cart); err != nil {
+		log.Printf("server: add-to-cart save cart failed: %v", sanitizedErr(err))
+		writeGenericError(w)
+		return
+	}
+	// Redirect to the cart so the user immediately sees the added item.
+	http.Redirect(w, r, "/cart", http.StatusSeeOther)
 }
 
 func (a *App) auditProduct(ctx context.Context, actorID pgtype.UUID, action string, p *ProductRecord) {
@@ -571,62 +640,3 @@ func (a *App) auditProduct(ctx context.Context, actorID pgtype.UUID, action stri
 		log.Printf("server: %s audit write failed (non-fatal): %v", action, sanitizedErr(err))
 	}
 }
-
-// handleAddToCart adds a product to the user's session-based cart.
-func (a *App) handleAddToCart(w http.ResponseWriter, r *http.Request) {
-	ctx := r.Context()
-	uid := CurrentUserID(ctx, a.sm)
-	if uid == "" {
-		http.Redirect(w, r, "/login", http.StatusSeeOther)
-		return
-	}
-
-	pid, err := parseUUIDParam(r, "id")
-	if err != nil {
-		http.NotFound(w, r)
-		return
-	}
-
-	// Get the product to verify it exists and is active
-	p, err := a.vendor.CatalogGetProduct(ctx, pid)
-	if err != nil {
-		if errorsIsNotFound(err) {
-			http.NotFound(w, r)
-			return
-		}
-		log.Printf("server: add to cart product lookup failed: %v", sanitizedErr(err))
-		writeGenericError(w)
-		return
-	}
-
-	if p.Status != "active" {
-		http.NotFound(w, r)
-		return
-	}
-
-	// Simple session-based cart implementation
-	cartData := a.sm.GetString(ctx, "cart")
-	var items []string
-	if cartData != "" {
-		items = strings.Split(cartData, ",")
-	}
-	
-	// Check if already in cart
-	found := false
-	for _, item := range items {
-		if item == uuidString(pid) {
-			found = true
-			break
-		}
-	}
-	
-	if !found {
-		items = append(items, uuidString(pid))
-		a.sm.Put(ctx, "cart", strings.Join(items, ","))
-	}
-
-	// Redirect back to product page
-	a.sm.Put(ctx, "flash", "Added to cart!")
-	http.Redirect(w, r, "/product/"+uuidString(pid), http.StatusSeeOther)
-}
-
