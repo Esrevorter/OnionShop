@@ -893,6 +893,7 @@ var templateFuncs = template.FuncMap{
 		return template.HTML(strings.Join(out, " "))
 	},
 	"split": strings.Split,
+	"mul": func(a, b int64) int64 { return a * b },
 }
 
 func (a *App) buildTemplates(dir string) error {

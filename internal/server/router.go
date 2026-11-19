@@ -163,11 +163,15 @@ func newApp(cfg Config, deps Deps, sessionStore scs.Store, withRateLimit bool) (
 	r.Get("/healthz", a.handleHealth)
 	// CAPTCHA images ride the same router as the forms that embed them.
 	// The id contains a dot (nonce.mac), so the route is keyed on the whole
-	// segment ({id}) with NO trailing literal.
+	// segment ({id}) with NO trailing literal: a "{id}.png" pattern makes chi
+	// capture "nonce.mac.png" and the lookup misses. The handler sets
+	// Content-Type: image/png explicitly, so the extension is unnecessary.
 	r.Get("/captcha/{id}", a.handleCaptchaImage)
 
-	// Mount the Phase 5-8 UI pages (wallet, orders, disputes, etc.)
+	// Phase 5-8 UI shells (wallet, orders, disputes, tickets, checkout, ...).
 	a.registerPageRoutes(r)
+	// Phase A admin surface (dashboard + user management).
+	a.registerAdminRoutes(r)
 
 	r.NotFound(a.handleNotFound)
 

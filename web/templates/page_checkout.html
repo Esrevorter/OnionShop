@@ -1,19 +1,56 @@
 {{template "layout" .}}
+
 {{define "title"}}Checkout · OnionShop{{end}}
+
 {{define "body"}}
-<section class="auth-layout">
-  <div class="auth-intro">
-    <p class="eyebrow">Checkout</p>
-    <h1>Complete Your Order</h1>
+<section class="admin-layout">
+  <div class="admin-header">
+    <h1>Checkout</h1>
+    <a href="/cart" class="btn-secondary">← Back to Cart</a>
   </div>
-  <div class="auth-card">
-    <p><strong>Total:</strong> {{.Total}}</p>
-    <div class="notice"><strong>Payment Pending</strong><br>Monero payment instructions and QR codes will be displayed here once Phase 10 is fully integrated.</div>
-    <form method="post" action="/checkout" autocomplete="off" style="margin-top: 1rem;">
-      {{template "friction" .}}
-      <input type="hidden" name="csrf_token" value="{{.CsrfToken}}">
-      <div class="form-actions"><button type="submit">Confirm Order</button></div>
-    </form>
+
+  {{if .OrderPlaced}}
+    <div class="flash" role="status" style="border-color: var(--accent-strong); color: var(--accent); padding: 2rem; text-align: center;">
+      <h2 style="margin-top: 0;">Order Placed Successfully!</h2>
+      <p>Your order has been received and is being processed. You can view its status in your <a href="/orders">Orders</a> page.</p>
+      <a href="/" class="button" style="margin-top: 1rem;">Return to Marketplace</a>
+    </div>
+  {{else}}
+  <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 2rem;">
+    <div class="auth-card">
+      <h2>Order Summary</h2>
+      <table class="data-table" style="font-size: 0.9rem;">
+        <tbody>
+          {{range $pid, $item := .Cart}}
+          <tr>
+            <td>{{$item.Title}} <span class="text-muted">(x{{$item.Qty}})</span></td>
+            <td style="text-align: right;">{{mul $item.PriceSat $item.Qty}} sat</td>
+          </tr>
+          {{end}}
+          <tr style="border-top: 2px solid var(--line); font-weight: bold;">
+            <td>Total</td>
+            <td style="text-align: right; color: var(--accent);">{{.TotalSat}} sat</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="auth-card">
+      <h2>Delivery Instructions</h2>
+      <p class="lede" style="font-size: 0.9rem; margin-bottom: 1rem;">
+        Provide any necessary details for the vendor (e.g., PGP public key for digital goods). 
+        <strong>Do not include personal identifying information.</strong>
+      </p>
+      <form method="post" action="/checkout" autocomplete="off">
+        {{template "friction" .}}
+        <label for="delivery_instructions">Instructions (Max 2000 characters)</label>
+        <textarea id="delivery_instructions" name="delivery_instructions" rows="6" maxlength="2000" placeholder="Enter delivery details here..."></textarea>
+        <div class="form-actions" style="margin-top: 1.5rem;">
+          <button type="submit" class="button">Place Order</button>
+        </div>
+      </form>
+    </div>
   </div>
+  {{end}}
 </section>
 {{end}}

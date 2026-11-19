@@ -1,0 +1,69 @@
+{{template "layout" .}}
+
+{{define "title"}}Shopping Cart · OnionShop{{end}}
+
+{{define "body"}}
+<section class="admin-layout">
+  <div class="admin-header">
+    <h1>Shopping Cart</h1>
+    <a href="/" class="btn-secondary">← Continue Shopping</a>
+  </div>
+
+  {{if not .Cart}}
+    <div class="empty-state">
+      <p>Your cart is empty.</p>
+      <a href="/" class="button">Browse the Marketplace</a>
+    </div>
+  {{else}}
+  <div class="table-container">
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th>Product</th>
+          <th>Price</th>
+          <th>Quantity</th>
+          <th>Subtotal</th>
+          <th>Action</th>
+        </tr>
+      </thead>
+      <tbody>
+        {{range $pid, $item := .Cart}}
+        <tr>
+          <td><strong>{{$item.Title}}</strong></td>
+          <td>{{$item.PriceSat}} sat</td>
+          <td>
+            <form method="post" action="/cart/action" style="display:flex; gap:0.5rem; align-items:center;">
+              {{template "friction" $}}
+              <input type="hidden" name="product_id" value="{{$pid}}">
+              <input type="hidden" name="action" value="update">
+              <input type="number" name="qty" value="{{$item.Qty}}" min="1" max="99" style="width: 60px; padding: 0.25rem;">
+              <button type="submit" class="btn-secondary btn-sm">Update</button>
+            </form>
+          </td>
+          <td>{{mul $item.PriceSat $item.Qty}} sat</td>
+          <td>
+            <form method="post" action="/cart/action">
+              {{template "friction" $}}
+              <input type="hidden" name="product_id" value="{{$pid}}">
+              <input type="hidden" name="action" value="remove">
+              <button type="submit" class="btn-danger btn-sm">Remove</button>
+            </form>
+          </td>
+        </tr>
+        {{end}}
+      </tbody>
+      <tfoot>
+        <tr>
+          <td colspan="3" style="text-align: right; font-weight: bold;">Total:</td>
+          <td colspan="2" style="font-weight: bold; color: var(--accent);">{{.TotalSat}} sat</td>
+        </tr>
+      </tfoot>
+    </table>
+  </div>
+
+  <div class="form-actions" style="justify-content: flex-end; margin-top: 1.5rem;">
+    <a href="/checkout" class="button">Proceed to Checkout</a>
+  </div>
+  {{end}}
+</section>
+{{end}}
