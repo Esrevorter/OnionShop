@@ -52,7 +52,7 @@
                 <button type="submit" class="btn-success btn-sm">Publish</button>
               </form>
               {{end}}
-              <a href="/vendor/products/{{.ID}}/edit" class="btn-secondary btn-sm">Edit</a>
+              <a href="/vendor/products/{{.ID}}/edit" class="button secondary btn-sm">Edit</a>
               <form method="post" action="/vendor/products/{{.ID}}/remove" style="display:inline;" onsubmit="return confirm('Are you sure you want to remove this listing? This cannot be undone.');">
                 {{template "friction" $}}
                 <button type="submit" class="btn-danger btn-sm">Remove</button>

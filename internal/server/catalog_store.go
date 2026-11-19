@@ -158,6 +158,7 @@ RETURNING id, vendor_id, COALESCE(category_id, 0), title, description, price_sat
     price_sat   = $6,
     stock       = $7,
     status      = $8,
+    image_path  = $9,
     updated_at  = now()
 WHERE id = $1 AND vendor_id = $2
 RETURNING id, vendor_id, COALESCE(category_id, 0), title, description, price_sat, stock,
@@ -378,8 +379,12 @@ func (s *PGCatalogStore) CatalogUpdateProduct(ctx context.Context, p ProductReco
 	if p.CategoryID > 0 {
 		catCol = int32(p.CategoryID)
 	}
+	var imgCol any
+	if p.ImagePath != "" {
+		imgCol = p.ImagePath
+	}
 	row := s.pool.QueryRow(ctx, qCatalogUpdateProduct, p.ID, p.VendorID, catCol,
-		p.Title, p.Description, p.PriceSat, int32(p.Stock), p.Status)
+		p.Title, p.Description, p.PriceSat, int32(p.Stock), p.Status, imgCol)
 	out, err := scanProduct(row)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, ErrNotFound
