@@ -45,11 +45,19 @@
           </td>
           <td>
             {{if ne .Status "removed"}}
-            <a href="/vendor/products/{{.ID}}/edit" class="btn-secondary btn-sm">Edit</a>
-            <form method="post" action="/vendor/products/{{.ID}}/remove" style="display:inline;" onsubmit="return confirm('Are you sure you want to remove this listing? This cannot be undone.');">
-              {{template "friction" $}}
-              <button type="submit" class="btn-danger btn-sm">Remove</button>
-            </form>
+            <div style="display:flex; gap:0.5rem; flex-wrap:wrap;">
+              {{if eq .Status "draft"}}
+              <form method="post" action="/vendor/products/{{.ID}}/publish" style="display:inline;">
+                {{template "friction" $}}
+                <button type="submit" class="btn-success btn-sm">Publish</button>
+              </form>
+              {{end}}
+              <a href="/vendor/products/{{.ID}}/edit" class="btn-secondary btn-sm">Edit</a>
+              <form method="post" action="/vendor/products/{{.ID}}/remove" style="display:inline;" onsubmit="return confirm('Are you sure you want to remove this listing? This cannot be undone.');">
+                {{template "friction" $}}
+                <button type="submit" class="btn-danger btn-sm">Remove</button>
+              </form>
+            </div>
             {{end}}
           </td>
         </tr>

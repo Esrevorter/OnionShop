@@ -60,6 +60,7 @@ func (a *App) registerProductRoutes(r chi.Router) {
 	r.Method(http.MethodPost, "/vendor/products/new", vendorOrAdmin(http.HandlerFunc(a.handleProductCreate)))
 	r.Method(http.MethodGet, "/vendor/products/{id}/edit", vendorOrAdmin(http.HandlerFunc(a.handleProductEdit)))
 	r.Method(http.MethodPost, "/vendor/products/{id}/edit", vendorOrAdmin(http.HandlerFunc(a.handleProductUpdate)))
+	r.Method(http.MethodPost, "/vendor/products/{id}/publish", vendorOrAdmin(http.HandlerFunc(a.handleProductPublish)))
 	r.Method(http.MethodPost, "/vendor/products/{id}/remove", vendorOrAdmin(http.HandlerFunc(a.handleProductRemove)))
 }
 
@@ -171,7 +172,6 @@ func handleImageUploads(r *http.Request, existingPaths string) (string, error) {
 			return "", fmt.Errorf("failed to open uploaded file")
 		}
 
-		// SECURITY: Decode into memory. This strips ALL headers/metadata (EXIF, GPS, etc.)
 		img, format, err := image.Decode(file)
 		file.Close()
 		if err != nil {
@@ -191,7 +191,6 @@ func handleImageUploads(r *http.Request, existingPaths string) (string, error) {
 			return "", fmt.Errorf("failed to create destination file")
 		}
 
-		// Re-encode with clean headers using pure standard library (CGO-free)
 		if outExt == ".png" {
 			err = png.Encode(dst, img)
 		} else {
@@ -415,6 +414,79 @@ func (a *App) handleProductUpdate(w http.ResponseWriter, r *http.Request) {
 	}
 	a.auditProduct(ctx, uid, actionProductUpdate, updated)
 	http.Redirect(w, r, "/vendor/products", http.StatusSeeOther)
+}
+
+// handleProductPublish flips a draft listing to active with a single click,
+// without requiring the full edit form. The target row is re-read through the
+// owner-scoped list (loadEditableProduct), so a crafted id can never publish
+// someone else's listing (no IDOR). Removed rows are not publishable.
+func (a *App) handleProductPublish(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	_ = r.ParseForm()
+	data := a.productData(r)
+	if a.vendor == nil || a.auth == nil {
+		writeGenericError(w)
+		return
+	}
+	uid, ok := a.currentUUID(r)
+	if !ok {
+		http.Redirect(w, r, "/login", http.StatusSeeOther)
+		return
+	}
+	if honeypotTriggered(r) || !a.requireFriction(w, r, productPurpose) {
+		a.handleProductList(w, r)
+		return
+	}
+	pid, err := parseUUIDParam(r, "id")
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	existing, err := a.loadEditableProduct(ctx, uid, pid)
+	if err != nil {
+		if errors.Is(err, ErrNotFound) {
+			http.NotFound(w, r)
+			return
+		}
+		log.Printf("server: product publish lookup failed: %v", sanitizedErr(err))
+		writeGenericError(w)
+		return
+	}
+	if existing.Status == productStatusRemoved {
+		http.NotFound(w, r)
+		return
+	}
+	if existing.Status == productStatusActive {
+		// already live; no-op, just re-render the shelf
+		a.handleProductList(w, r)
+		return
+	}
+	existing.Status = productStatusActive
+	updated, err := a.vendor.CatalogUpdateProduct(ctx, *existing)
+	if err != nil {
+		log.Printf("server: product publish write failed: %v", sanitizedErr(err))
+		writeGenericError(w)
+		return
+	}
+	a.auditProduct(ctx, uid, actionProductUpdate, updated)
+
+	// Re-render the shelf with a flash (same in-place pattern as remove).
+	vrow, err := a.vendorRow(ctx, uid)
+	if err != nil {
+		log.Printf("server: product publish post-render lookup failed: %v", sanitizedErr(err))
+		writeGenericError(w)
+		return
+	}
+	products, err := a.vendor.CatalogListVendorProducts(ctx, uid)
+	if err != nil {
+		log.Printf("server: product list after publish failed: %v", sanitizedErr(err))
+		writeGenericError(w)
+		return
+	}
+	data.ShopName = vrow.ShopName
+	data.Products = products
+	data.Flash = "Listing published. It is now visible on the marketplace."
+	a.renderAs(w, "vendor_products", http.StatusOK, data)
 }
 
 func (a *App) handleProductRemove(w http.ResponseWriter, r *http.Request) {
