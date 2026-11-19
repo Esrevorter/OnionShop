@@ -22,6 +22,7 @@
       <p class="muted">Confirm product details and seller information before placing an order.</p>
       {{if $.IsAuthenticated}}
       <form method="post" action="/product/{{$.Product.ID}}/add-to-cart" style="margin-top: 1rem;">
+        <input type="hidden" name="csrf_token" value="{{$.CsrfToken}}">
         <button type="submit" class="button">Add to Cart</button>
       </form>
       {{else}}

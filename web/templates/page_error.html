@@ -1,0 +1,35 @@
+{{template "layout" .}}
+
+{{define "title"}}Error {{.ErrorCode}} · OnionShop{{end}}
+
+{{define "body"}}
+<section class="auth-layout">
+  <div class="auth-intro">
+    <p class="eyebrow">System Status</p>
+    <h1>{{.ErrorCode}}</h1>
+    <p class="lede">{{.ErrorMessage}}</p>
+  </div>
+
+  <div class="auth-card">
+    <h2>What happened?</h2>
+    {{if eq .ErrorCode "403"}}
+      <p>You do not have permission to access this resource. This usually means you are logged out or trying to view a vendor-only page without the correct role.</p>
+    {{else if eq .ErrorCode "404"}}
+      <p>The page or item you requested could not be found. It may have been removed by the vendor or never existed.</p>
+    {{else if eq .ErrorCode "405"}}
+      <p>The HTTP method used is not allowed for this resource.</p>
+    {{else if eq .ErrorCode "500"}}
+      <p>An unexpected server error occurred. Our team has been notified. Please try again later.</p>
+    {{else}}
+      <p>An error occurred while processing your request.</p>
+    {{end}}
+    
+    <div class="form-actions" style="margin-top: 1.5rem;">
+      <a href="/" class="button">Return to Marketplace</a>
+      {{if and .IsAuthenticated (ne .ErrorCode "403")}}
+        <a href="/account" class="button secondary">My Account</a>
+      {{end}}
+    </div>
+  </div>
+</section>
+{{end}}

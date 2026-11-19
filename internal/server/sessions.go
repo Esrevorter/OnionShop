@@ -118,9 +118,7 @@ func (a *App) RequireRole(roles ...string) func(http.Handler) http.Handler {
 					return
 				}
 			}
-			w.Header().Set("Content-Type", "text/plain; charset=utf-8")
-			w.WriteHeader(http.StatusForbidden)
-			_, _ = w.Write([]byte("forbidden\n"))
+			a.renderErrorPage(w, r, http.StatusForbidden, "forbidden")
 		})
 	}
 }
@@ -191,7 +189,7 @@ func isSafeMethod(m string) bool {
 // the form carries a stale CSRF token while the fresh session has a new one.
 // They won't match, resulting in a 403. For logout, we don't care: the goal is
 // just to ensure the user is logged out, and a stale token means they already are.
-func CSRFProtect(sm *scs.SessionManager) func(http.Handler) http.Handler {
+func (a *App) CSRFProtect() func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			if isSafeMethod(r.Method) {
@@ -202,7 +200,7 @@ func CSRFProtect(sm *scs.SessionManager) func(http.Handler) http.Handler {
 				next.ServeHTTP(w, r)
 				return
 			}
-			want, _ := sm.Get(r.Context(), CSRFKey).(string)
+			want, _ := a.sm.Get(r.Context(), CSRFKey).(string)
 			got := r.FormValue(CSRFFormField)
 			if got == "" {
 				got = r.Header.Get("X-CSRF-Token")
@@ -210,9 +208,7 @@ func CSRFProtect(sm *scs.SessionManager) func(http.Handler) http.Handler {
 			wantHash := hashToken(want)
 			gotHash := hashToken(got)
 			if want == "" || subtle.ConstantTimeCompare(gotHash[:], wantHash[:]) != 1 {
-				w.Header().Set("Content-Type", "text/plain; charset=utf-8")
-				w.WriteHeader(http.StatusForbidden)
-				_, _ = w.Write([]byte("403 forbidden\n"))
+				a.renderErrorPage(w, r, http.StatusForbidden, "403 forbidden")
 				return
 			}
 			next.ServeHTTP(w, r)

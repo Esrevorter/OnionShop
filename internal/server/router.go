@@ -159,7 +159,7 @@ func newApp(cfg Config, deps Deps, sessionStore scs.Store, withRateLimit bool) (
 			BucketFor: bucketForRequest(deps.BucketFor),
 		}))
 	}
-	r.Use(CSRFProtect(deps.Sm))
+	r.Use(a.CSRFProtect())
 
 	r.Get("/healthz", a.handleHealth)
 	// CAPTCHA images ride the same router as the forms that embed them.
@@ -316,11 +316,11 @@ func (a *App) handleHealth(w http.ResponseWriter, r *http.Request) {
 	// fatals if the pool cannot be opened, a.deps.Pool is non-nil when the
 	// app is running. We still type-assert and ping to catch connection
 	// drops post-startup.
-	if a.deps.Pool == nil {
-		status, body = http.StatusServiceUnavailable, "not ok\n"
-	} else if pinger, ok := a.deps.Pool.(interface{ Ping(context.Context) error }); ok {
-		if err := pinger.Ping(ctx); err != nil {
-			status, body = http.StatusServiceUnavailable, "not ok\n"
+	if a.deps.Pool != nil {
+		if pinger, ok := a.deps.Pool.(interface{ Ping(context.Context) error }); ok {
+			if err := pinger.Ping(ctx); err != nil {
+				status, body = http.StatusServiceUnavailable, "not ok\n"
+			}
 		}
 	}
 

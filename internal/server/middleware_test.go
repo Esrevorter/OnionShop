@@ -169,7 +169,8 @@ func TestAbsoluteExpiryRenewsStaleSession(t *testing.T) {
 // TestCSRFDoubleSubmit walks the full mint → accept → reject path.
 func TestCSRFDoubleSubmit(t *testing.T) {
 	sm := newTestSessions(t)
-	chain := CSRFLoad(sm)(CSRFProtect(sm)(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+	app := &App{sm: sm}
+	chain := CSRFLoad(sm)(app.CSRFProtect()(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	})))
 	smChain := sm.LoadAndSave(chain)
