@@ -4,10 +4,14 @@ import (
 	"bytes"
 	"context"
 	"crypto/sha256"
+	"crypto/rand"
 	"crypto/subtle"
+	"encoding/base64"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"html/template"
+	"image/png"
 	"log"
 	"net/http"
 	"os"
@@ -20,6 +24,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/pquerna/otp/totp"
 )
 
 const honeypotField = "sta"
@@ -36,11 +41,15 @@ type AuthData struct {
 	PersonalPhrase  string
 	PGPPublicKey    string
 	PGPFingerprint  string
-
-	Products    []ProductRecord
-	Categories  []CategoryRecord
-	Pending     []VendorRecord
-	VendorState *VendorRecord
+	Products        []ProductRecord
+	Categories      []CategoryRecord
+	Pending         []VendorRecord
+	VendorState     *VendorRecord
+	Requires2FA     bool
+	Pending2FAUID   string
+	TOTPEnabled     bool
+	TOTPQRCode      string
+	BackupCodes     []string
 }
 
 type UserRecord struct {
@@ -49,6 +58,9 @@ type UserRecord struct {
 	PasswordHash string
 	Role         string
 	Status       string
+	TOTPSecret   string
+	TOTPEnabled  bool
+	BackupCodes  string
 	CreatedAt    time.Time
 }
 
@@ -85,8 +97,9 @@ type SessionLinker interface {
 var ErrNoSuchUser = errors.New("store: no such user")
 
 const (
-	qAuthUserByUsername     = `SELECT id, username, password_hash, role, status, created_at FROM public.users WHERE username = $1`
-	qAuthCreateUser         = `INSERT INTO public.users (username, password_hash, role, status) VALUES ($1, $2, 'customer', $3) RETURNING id, username, password_hash, role, status, created_at`
+	qAuthUserByUsername     = `SELECT id, username, password_hash, role, status, COALESCE(totp_secret, ''), COALESCE(totp_enabled, false), COALESCE(backup_codes, ''), created_at FROM public.users WHERE username = $1`
+	qAuthUserByID           = `SELECT id, username, password_hash, role, status, COALESCE(totp_secret, ''), COALESCE(totp_enabled, false), COALESCE(backup_codes, ''), created_at FROM public.users WHERE id = $1`
+	qAuthCreateUser         = `INSERT INTO public.users (username, password_hash, role, status) VALUES ($1, $2, 'customer', $3) RETURNING id, username, password_hash, role, status, '', false, '', created_at`
 	qAuthUpdatePasswordHash = `UPDATE public.users SET password_hash = $2, updated_at = now() WHERE id = $1`
 	qAuthSetPhrase          = `UPDATE public.users SET personal_phrase = $2, updated_at = now() WHERE id = $1`
 	qAuthRecordLogin        = `INSERT INTO public.login_history (user_id, occurred_at, host_header) VALUES ($1, $2, $3)`
@@ -100,9 +113,8 @@ func NewPGAuthStore(pool *pgxpool.Pool) *PGAuthStore { return &PGAuthStore{pool:
 
 func scanUser(row pgx.Row) (*UserRecord, error) {
 	u := &UserRecord{}
-	if err := row.Scan(&u.ID, &u.Username, &u.PasswordHash, &u.Role, &u.Status, &u.CreatedAt); err != nil {
-		return nil, err
-	}
+	err := row.Scan(&u.ID, &u.Username, &u.PasswordHash, &u.Role, &u.Status, &u.TOTPSecret, &u.TOTPEnabled, &u.BackupCodes, &u.CreatedAt)
+	if err != nil { return nil, err }
 	return u, nil
 }
 
@@ -110,6 +122,13 @@ func (s *PGAuthStore) AuthUserByUsername(ctx context.Context, username string) (
 	u, err := scanUser(s.pool.QueryRow(ctx, qAuthUserByUsername, username))
 	if errors.Is(err, pgx.ErrNoRows) { return nil, ErrNoSuchUser }
 	if err != nil { return nil, fmt.Errorf("store: get user: %w", err) }
+	return u, nil
+}
+
+func (s *PGAuthStore) AuthUserByID(ctx context.Context, id pgtype.UUID) (*UserRecord, error) {
+	u, err := scanUser(s.pool.QueryRow(ctx, qAuthUserByID, id))
+	if errors.Is(err, pgx.ErrNoRows) { return nil, ErrNoSuchUser }
+	if err != nil { return nil, fmt.Errorf("store: get user by id: %w", err) }
 	return u, nil
 }
 
@@ -323,17 +342,11 @@ func (s *PGAuthStore) AuthUserRole(ctx context.Context, id pgtype.UUID) (string,
 	if err != nil { return "", fmt.Errorf("store: get role: %w", err) }
 	return role, nil
 }
-const qAuthUserByID = `SELECT id, username, password_hash, role, status, created_at FROM public.users WHERE id = $1`
-func (s *PGAuthStore) AuthUserByID(ctx context.Context, id pgtype.UUID) (*UserRecord, error) {
-	u, err := scanUser(s.pool.QueryRow(ctx, qAuthUserByID, id))
-	if errors.Is(err, pgx.ErrNoRows) { return nil, ErrNoSuchUser }
-	if err != nil { return nil, fmt.Errorf("store: get user by id: %w", err) }
-	return u, nil
-}
 
 func (a *App) RegisterAuthRoutes(auth AuthStore, captcha *CaptchaService, sessions SessionLinker, templateDir string) error {
 	return a.RegisterAuthRoutesFull(auth, captcha, sessions, nil, nil, templateDir)
 }
+
 func (a *App) RegisterAuthRoutesFull(auth AuthStore, captcha *CaptchaService, sessions SessionLinker, invalid SessionInvalidator, catalog VendorStore, templateDir string) error {
 	if err := a.buildTemplates(templateDir); err != nil { return err }
 	if invalid == nil && sessions != nil {
@@ -354,12 +367,19 @@ func (a *App) RegisterAuthRoutesFull(auth AuthStore, captcha *CaptchaService, se
 	r.Post("/register", a.handleRegisterSubmit)
 	r.Get("/login", a.handleLoginForm)
 	r.Post("/login", a.handleLoginSubmit)
+	r.Get("/login/2fa", a.handle2FALoginForm)
+	r.Post("/login/2fa", a.handle2FALoginSubmit)
 	r.Post("/logout", a.handleLogout)
+	
 	accountMW := a.RequireRole("customer", "vendor", "mod", "admin")
 	r.Method(http.MethodGet, "/account", accountMW(http.HandlerFunc(a.handleAccount)))
 	r.Method(http.MethodPost, "/account/phrase", accountMW(http.HandlerFunc(a.handlePhraseSubmit)))
 	r.Method(http.MethodPost, "/account/pgp", accountMW(http.HandlerFunc(a.handlePGPUpload)))
 	r.Method(http.MethodPost, "/account/pgp/clear", accountMW(http.HandlerFunc(a.handlePGPClear)))
+	r.Method(http.MethodGet, "/account/2fa/setup", accountMW(http.HandlerFunc(a.handle2FASetup)))
+	r.Method(http.MethodPost, "/account/2fa/enable", accountMW(http.HandlerFunc(a.handle2FAEnable)))
+	r.Method(http.MethodPost, "/account/2fa/disable", accountMW(http.HandlerFunc(a.handle2FADisable)))
+	
 	r.Get("/pgp", a.handlePGPToolPage)
 	a.registerVendorRoutes(r)
 	a.registerCatalogRoutes(r)
@@ -476,10 +496,12 @@ func isUniqueViolation(err error) bool {
 func (a *App) handleLoginForm(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	if CurrentUserID(ctx, a.sm) != "" { http.Redirect(w, r, "/account", http.StatusSeeOther); return }
+	a.sm.Remove(ctx, "pending_2fa_uid")
 	data := a.baseData(r)
 	if data.Captcha = a.newChallenge(w, r, "login"); data.Captcha == nil { return }
 	a.render(w, "login", http.StatusOK, data)
 }
+
 func (a *App) handleLoginSubmit(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	_ = r.ParseForm()
@@ -495,29 +517,45 @@ func (a *App) handleLoginSubmit(w http.ResponseWriter, r *http.Request) {
 	username := strings.ToLower(strings.TrimSpace(r.FormValue("username")))
 	password := r.FormValue("password")
 	if username == "" || password == "" { fail(badCreds); return }
+	
 	user, err := a.auth.AuthUserByUsername(ctx, username)
 	switch {
 	case errors.Is(err, ErrNoSuchUser): DummyVerify(); fail(badCreds); return
 	case err != nil: fail("login failed, please try again"); return
 	}
+	
 	ok, err := VerifyPassword(password, user.PasswordHash)
 	if err != nil || !ok { fail(badCreds); return }
 	if user.Status != "active" { fail("this account cannot sign in right now"); return }
+
 	if p, _, perr := decodeArgon(user.PasswordHash); perr == nil && NeedsUpgrade(p) {
 		if nh, _, herr := HashPassword(password); herr == nil {
 			if uerr := a.auth.AuthUpdatePasswordHash(ctx, user.ID, nh); uerr != nil { log.Printf("auth: password param upgrade failed (non-fatal): %v", sanitizedErr(uerr)) }
 		}
 	}
+
+	// 2FA Check
+	if user.TOTPEnabled {
+		if err := RotateOnAuth(ctx, a.sm); err != nil { writeGenericError(w); return }
+		a.sm.Put(ctx, "pending_2fa_uid", uuidString(user.ID))
+		http.Redirect(w, r, "/login/2fa", http.StatusSeeOther)
+		return
+	}
+
 	if err := RotateOnAuth(ctx, a.sm); err != nil { writeGenericError(w); return }
 	a.sm.Put(ctx, pendingTokenKey, a.sm.Token(ctx))
 	a.sm.Put(ctx, userIDKey, uuidString(user.ID))
 	a.sm.Put(ctx, usernameKey, user.Username)
 	a.sm.Put(ctx, roleKey, user.Role)
 	a.sm.Put(ctx, createdKey, time.Now().UTC().Unix())
-	if err := a.auth.AuthRecordLogin(ctx, user.ID, time.Now().UTC(), r.Host); err != nil { log.Printf("auth: login history write failed (non-fatal): %v", sanitizedErr(err)) }
+	
+	if err := a.auth.AuthRecordLogin(ctx, user.ID, time.Now().UTC(), r.Host); err != nil {
+		log.Printf("auth: login history write failed (non-fatal): %v", sanitizedErr(err))
+	}
 	a.linkSessionUser(ctx)
 	http.Redirect(w, r, "/account", http.StatusSeeOther)
 }
+
 func (a *App) linkSessionUser(ctx context.Context) {
 	if a.linker == nil { return }
 	uid := CurrentUserID(ctx, a.sm)
@@ -525,6 +563,7 @@ func (a *App) linkSessionUser(ctx context.Context) {
 	if uid == "" || tok == "" { return }
 	if err := a.linker.LinkUser(ctx, tok, uid); err != nil { log.Printf("auth: session user_id stamp failed (non-fatal): %v", sanitizedErr(err)) }
 }
+
 func (a *App) handleLogout(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	if err := a.sm.Destroy(ctx); err != nil { writeGenericError(w); return }
@@ -538,13 +577,15 @@ func ValidatePersonalPhrase(p string) error {
 	for i := 0; i < len(p); i++ { if p[i] < 0x20 || p[i] == 0x7f { return errors.New("server: phrase may not contain control characters") } }
 	return nil
 }
+
 func (a *App) handleAccount(w http.ResponseWriter, r *http.Request) {
 	data := a.baseData(r)
 	data.PersonalPhrase = a.sm.GetString(r.Context(), phraseKey)
 	a.loadPGPState(r.Context(), &data)
-	if data.Captcha = a.newChallenge(w, r, accountPurpose); data.Captcha == nil { return }
+	if data.Captcha = a.newChallenge(w, r, "account"); data.Captcha == nil { return }
 	a.render(w, "account", http.StatusOK, data)
 }
+
 func (a *App) handlePhraseSubmit(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	_ = r.ParseForm()
@@ -552,11 +593,11 @@ func (a *App) handlePhraseSubmit(w http.ResponseWriter, r *http.Request) {
 	fail := func(msg string) {
 		data.Error = msg
 		data.PersonalPhrase = a.sm.GetString(ctx, phraseKey)
-		if data.Captcha = a.newChallenge(w, r, accountPurpose); data.Captcha == nil { return }
+		if data.Captcha = a.newChallenge(w, r, "account"); data.Captcha == nil { return }
 		a.render(w, "account", http.StatusUnprocessableEntity, data)
 	}
 	if honeypotTriggered(r) { fail("submission rejected"); return }
-	if !a.requireFriction(w, r, accountPurpose) { fail("challenge failed, please try again"); return }
+	if !a.requireFriction(w, r, "account") { fail("challenge failed, please try again"); return }
 	phrase := strings.TrimSpace(r.FormValue("personal_phrase"))
 	if err := ValidatePersonalPhrase(phrase); err != nil { fail(err.Error()); return }
 	uid := currentUserUUID(ctx, a.sm)
@@ -565,7 +606,214 @@ func (a *App) handlePhraseSubmit(w http.ResponseWriter, r *http.Request) {
 	a.sm.Put(ctx, phraseKey, phrase)
 	data.PersonalPhrase = phrase
 	data.Flash = "Personal phrase updated."
-	if data.Captcha = a.newChallenge(w, r, accountPurpose); data.Captcha == nil { return }
+	if data.Captcha = a.newChallenge(w, r, "account"); data.Captcha == nil { return }
+	a.render(w, "account", http.StatusOK, data)
+}
+
+func (a *App) handle2FALoginForm(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	pendingUID := a.sm.GetString(ctx, "pending_2fa_uid")
+	if pendingUID == "" {
+		http.Redirect(w, r, "/login", http.StatusSeeOther)
+		return
+	}
+	data := a.baseData(r)
+	data.Requires2FA = true
+	data.Pending2FAUID = pendingUID
+	if data.Captcha = a.newChallenge(w, r, "login2fa"); data.Captcha == nil { return }
+	a.render(w, "login_2fa", http.StatusOK, data)
+}
+
+func (a *App) handle2FALoginSubmit(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	_ = r.ParseForm()
+	data := a.baseData(r)
+	pendingUIDStr := a.sm.GetString(ctx, "pending_2fa_uid")
+	
+	fail := func(msg string) {
+		data.Error = msg
+		data.Requires2FA = true
+		data.Pending2FAUID = pendingUIDStr
+		if data.Captcha = a.newChallenge(w, r, "login2fa"); data.Captcha == nil { return }
+		a.render(w, "login_2fa", http.StatusUnauthorized, data)
+	}
+
+	if pendingUIDStr == "" {
+		http.Redirect(w, r, "/login", http.StatusSeeOther)
+		return
+	}
+	if honeypotTriggered(r) || !a.requireFriction(w, r, "login2fa") {
+		fail("challenge failed, please try again")
+		return
+	}
+
+	uid := parseUUIDText(pendingUIDStr)
+	if !uid.Valid {
+		http.Redirect(w, r, "/login", http.StatusSeeOther)
+		return
+	}
+
+	user, err := a.auth.AuthUserByID(ctx, uid)
+	if err != nil || user == nil {
+		http.Redirect(w, r, "/login", http.StatusSeeOther)
+		return
+	}
+
+	totpCode := strings.TrimSpace(r.FormValue("totp_code"))
+	if !totp.Validate(totpCode, user.TOTPSecret) {
+		fail("invalid authentication code")
+		return
+	}
+
+	a.sm.Remove(ctx, "pending_2fa_uid")
+	if err := RotateOnAuth(ctx, a.sm); err != nil { writeGenericError(w); return }
+	a.sm.Put(ctx, pendingTokenKey, a.sm.Token(ctx))
+	a.sm.Put(ctx, userIDKey, uuidString(user.ID))
+	a.sm.Put(ctx, usernameKey, user.Username)
+	a.sm.Put(ctx, roleKey, user.Role)
+	a.sm.Put(ctx, createdKey, time.Now().UTC().Unix())
+	
+	if err := a.auth.AuthRecordLogin(ctx, user.ID, time.Now().UTC(), r.Host); err != nil {
+		log.Printf("auth: login history write failed (non-fatal): %v", sanitizedErr(err))
+	}
+	a.linkSessionUser(ctx)
+	http.Redirect(w, r, "/account", http.StatusSeeOther)
+}
+
+func (a *App) handle2FASetup(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	data := a.baseData(r)
+	uid := currentUserUUID(ctx, a.sm)
+	if uid == nil { writeGenericError(w); return }
+
+	user, err := a.auth.AuthUserByID(ctx, *uid)
+	if err != nil { writeGenericError(w); return }
+
+	data.TOTPEnabled = user.TOTPEnabled
+	if user.TOTPEnabled {
+		data.BackupCodes = strings.Split(user.BackupCodes, ",")
+		if data.Captcha = a.newChallenge(w, r, "account"); data.Captcha == nil { return }
+		a.render(w, "account", http.StatusOK, data)
+		return
+	}
+
+	key, err := totp.Generate(totp.GenerateOpts{Issuer: "OnionShop", AccountName: user.Username})
+	if err != nil { writeGenericError(w); return }
+
+	img, err := key.Image(200, 200)
+	if err != nil { writeGenericError(w); return }
+	var buf bytes.Buffer
+	if err := png.Encode(&buf, img); err != nil { writeGenericError(w); return }
+	data.TOTPQRCode = "data:image/png;base64," + base64.StdEncoding.EncodeToString(buf.Bytes())
+	
+	a.sm.Put(ctx, "pending_totp_secret", key.Secret())
+
+	var codes []string
+	for i := 0; i < 8; i++ {
+		b := make([]byte, 4)
+		rand.Read(b)
+		codes = append(codes, strings.ToUpper(hex.EncodeToString(b)))
+	}
+	data.BackupCodes = codes
+
+	if data.Captcha = a.newChallenge(w, r, "account"); data.Captcha == nil { return }
+	a.render(w, "account", http.StatusOK, data)
+}
+
+func (a *App) handle2FAEnable(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	_ = r.ParseForm()
+	data := a.baseData(r)
+	uid := currentUserUUID(ctx, a.sm)
+	if uid == nil { writeGenericError(w); return }
+
+	fail := func(msg string) {
+		data.Error = msg
+		user, _ := a.auth.AuthUserByID(ctx, *uid)
+		data.TOTPEnabled = user.TOTPEnabled
+		if data.Captcha = a.newChallenge(w, r, "account"); data.Captcha == nil { return }
+		a.render(w, "account", http.StatusUnprocessableEntity, data)
+	}
+
+	if honeypotTriggered(r) || !a.requireFriction(w, r, "account") {
+		fail("challenge failed, please try again")
+		return
+	}
+
+	totpCode := strings.TrimSpace(r.FormValue("totp_code"))
+	password := r.FormValue("password")
+	user, err := a.auth.AuthUserByID(ctx, *uid)
+	if err != nil { fail("account error"); return }
+
+	ok, err := VerifyPassword(password, user.PasswordHash)
+	if err != nil || !ok { fail("invalid current password"); return }
+
+	pendingSecret := a.sm.GetString(ctx, "pending_totp_secret")
+	if pendingSecret == "" { fail("setup session expired, please restart"); return }
+
+	if !totp.Validate(totpCode, pendingSecret) {
+		fail("invalid authentication code")
+		return
+	}
+
+	backupCodesStr := strings.Join(data.BackupCodes, ",")
+	if pgStore, ok := a.auth.(*PGAuthStore); ok {
+		if _, err := pgStore.pool.Exec(ctx, `UPDATE public.users SET totp_secret = $2, totp_enabled = $3, backup_codes = $4, updated_at = now() WHERE id = $1`, *uid, pendingSecret, true, backupCodesStr); err != nil {
+			fail("could not enable 2FA")
+			return
+		}
+	} else {
+		fail("store error")
+		return
+	}
+
+	a.sm.Remove(ctx, "pending_totp_secret")
+	data.Flash = "Two-Factor Authentication enabled. Save your backup codes!"
+	data.TOTPEnabled = true
+	if data.Captcha = a.newChallenge(w, r, "account"); data.Captcha == nil { return }
+	a.render(w, "account", http.StatusOK, data)
+}
+
+func (a *App) handle2FADisable(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	_ = r.ParseForm()
+	data := a.baseData(r)
+	uid := currentUserUUID(ctx, a.sm)
+	if uid == nil { writeGenericError(w); return }
+
+	fail := func(msg string) {
+		data.Error = msg
+		user, _ := a.auth.AuthUserByID(ctx, *uid)
+		data.TOTPEnabled = user.TOTPEnabled
+		if data.Captcha = a.newChallenge(w, r, "account"); data.Captcha == nil { return }
+		a.render(w, "account", http.StatusUnprocessableEntity, data)
+	}
+
+	if honeypotTriggered(r) || !a.requireFriction(w, r, "account") {
+		fail("challenge failed, please try again")
+		return
+	}
+
+	password := r.FormValue("password")
+	user, err := a.auth.AuthUserByID(ctx, *uid)
+	if err != nil { fail("account error"); return }
+
+	ok, err := VerifyPassword(password, user.PasswordHash)
+	if err != nil || !ok { fail("invalid current password"); return }
+
+	if pgStore, ok := a.auth.(*PGAuthStore); ok {
+		if _, err := pgStore.pool.Exec(ctx, `UPDATE public.users SET totp_secret = '', totp_enabled = false, backup_codes = '', updated_at = now() WHERE id = $1`, *uid); err != nil {
+			fail("could not disable 2FA")
+			return
+		}
+	} else {
+		fail("store error")
+		return
+	}
+
+	data.Flash = "Two-Factor Authentication disabled."
+	data.TOTPEnabled = false
+	if data.Captcha = a.newChallenge(w, r, "account"); data.Captcha == nil { return }
 	a.render(w, "account", http.StatusOK, data)
 }
 
@@ -583,6 +831,7 @@ func uuidString(u pgtype.UUID) string {
 	}
 	return string(out)
 }
+
 func parseUUID(s string) (pgtype.UUID, bool) {
 	s = strings.TrimSpace(s)
 	if len(s) != 36 { return pgtype.UUID{}, false }
@@ -604,6 +853,7 @@ func parseUUID(s string) (pgtype.UUID, bool) {
 	if pos != 16 || nibble >= 0 { return pgtype.UUID{}, false }
 	return pgtype.UUID{Bytes: b, Valid: true}, true
 }
+
 func currentUserUUID(ctx context.Context, sm *scs.SessionManager) *pgtype.UUID {
 	id := sm.GetString(ctx, userIDKey)
 	if id == "" { return nil }
@@ -626,6 +876,7 @@ var templateFuncs = template.FuncMap{
 		}
 		return template.HTML(strings.Join(out, " "))
 	},
+	"split": strings.Split,
 }
 
 func (a *App) buildTemplates(dir string) error {
