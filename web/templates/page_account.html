@@ -30,7 +30,40 @@
   </div>
 
   <div class="auth-card">
-    <h2>PGP Public Key</h2>
+    
+  <div class="auth-card">
+    <h2>Two-Factor Authentication (2FA)</h2>
+    {{if .TOTPEnabled}}
+      <div class="notice" style="border-color: var(--accent-strong); color: var(--accent);">
+        <strong>Enabled</strong><br>
+        Your account is protected by two-factor authentication.
+      </div>
+      <details style="margin-top: 1rem;">
+        <summary style="cursor: pointer; color: var(--accent);">View Backup Codes</summary>
+        <div style="margin-top: 0.5rem; padding: 1rem; background: var(--surface-raised); border-radius: 4px; font-family: monospace; display: grid; grid-template-columns: 1fr 1fr; gap: 0.5rem;">
+          {{range .BackupCodes}}
+            {{if .}}<span>{{.}}</span>{{end}}
+          {{end}}
+        </div>
+      </details>
+      <form method="post" action="/account/2fa/disable" style="margin-top: 1rem;" onsubmit="return confirm('Are you sure you want to disable 2FA?');">
+        {{template "friction" .}}
+        <label for="disable_password">Enter current password to confirm</label>
+        <input id="disable_password" type="password" name="password" required>
+        <div class="form-actions">
+          <button type="submit" class="danger">Disable 2FA</button>
+        </div>
+      </form>
+    {{else}}
+      <p class="lede" style="font-size: 0.9rem; margin-bottom: 1rem;">
+        Protect your account with an authenticator app (e.g., Aegis, Raivo). 
+        You will need to enter a 6-digit code from the app every time you log in.
+      </p>
+      <a href="/account/2fa/setup" class="button">Enable 2FA</a>
+    {{end}}
+  </div>
+
+  <h2>PGP Public Key</h2>
     <p>Only <strong>public</strong> keys are accepted. See the <a href="/pgp">PGP tool page</a> for details.</p>
     {{if .PGPPublicKey}}
       <p>Stored key fingerprint: <code>{{if .PGPFingerprint}}{{.PGPFingerprint}}{{else}}(unparseable){{end}}</code></p>
