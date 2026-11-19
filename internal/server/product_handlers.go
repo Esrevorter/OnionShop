@@ -61,6 +61,8 @@ func (a *App) registerProductRoutes(r chi.Router) {
 	r.Method(http.MethodPost, "/vendor/products/{id}/edit", vendorOrAdmin(http.HandlerFunc(a.handleProductUpdate)))
 	r.Method(http.MethodPost, "/vendor/products/{id}/publish", vendorOrAdmin(http.HandlerFunc(a.handleProductPublish)))
 	r.Method(http.MethodPost, "/vendor/products/{id}/remove", vendorOrAdmin(http.HandlerFunc(a.handleProductRemove)))
+	r.Method(http.MethodPost, "/product/{id}/add-to-cart", a.RequireRole("customer", "vendor", "mod", "admin")(http.HandlerFunc(a.handleAddToCart)))
+
 }
 
 func (a *App) handleProductList(w http.ResponseWriter, r *http.Request) {
@@ -569,3 +571,62 @@ func (a *App) auditProduct(ctx context.Context, actorID pgtype.UUID, action stri
 		log.Printf("server: %s audit write failed (non-fatal): %v", action, sanitizedErr(err))
 	}
 }
+
+// handleAddToCart adds a product to the user's session-based cart.
+func (a *App) handleAddToCart(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	uid := CurrentUserID(ctx, a.sm)
+	if uid == "" {
+		http.Redirect(w, r, "/login", http.StatusSeeOther)
+		return
+	}
+
+	pid, err := parseUUIDParam(r, "id")
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+
+	// Get the product to verify it exists and is active
+	p, err := a.vendor.CatalogGetProduct(ctx, pid)
+	if err != nil {
+		if errorsIsNotFound(err) {
+			http.NotFound(w, r)
+			return
+		}
+		log.Printf("server: add to cart product lookup failed: %v", sanitizedErr(err))
+		writeGenericError(w)
+		return
+	}
+
+	if p.Status != "active" {
+		http.NotFound(w, r)
+		return
+	}
+
+	// Simple session-based cart implementation
+	cartData := a.sm.GetString(ctx, "cart")
+	var items []string
+	if cartData != "" {
+		items = strings.Split(cartData, ",")
+	}
+	
+	// Check if already in cart
+	found := false
+	for _, item := range items {
+		if item == uuidString(pid) {
+			found = true
+			break
+		}
+	}
+	
+	if !found {
+		items = append(items, uuidString(pid))
+		a.sm.Put(ctx, "cart", strings.Join(items, ","))
+	}
+
+	// Redirect back to product page
+	a.sm.Put(ctx, "flash", "Added to cart!")
+	http.Redirect(w, r, "/product/"+uuidString(pid), http.StatusSeeOther)
+}
+
