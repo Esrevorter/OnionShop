@@ -11,41 +11,25 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-// Phase 4 catalog data layer (TASKS.md "Catalog & Vendors"). The statement
-// constants below mirror db/query/catalog.sql verbatim — keep both in sync
-// when columns move, exactly like the qAuth*/qVendor* constants mirror
-// users.sql (see auth_handlers.go).
-
-// ErrNotFound is the sentinel for missing catalog rows (unknown product id,
-// unapproved vendor, non-owned listing). Handlers map it to 404/403 without
-// echoing anything about why the row is absent.
 var ErrNotFound = errors.New("store: not found")
 
-// DefaultLeaderboardSize is the number of top vendors the cron snapshot keeps
-// and the homepage widget shows when no explicit limit is requested
-// (CatalogRefreshTopVendors / CatalogListTopVendors treat limit <= 0 as "use
-// this default"). Ten ranks mirror TASKS.md Phase 4 "top vendors" widget.
 const DefaultLeaderboardSize = 10
 
-// ProductRecord is one row from public.products. Prices are integer satoshis
-// end-to-end (never float, ARCHITECTURE.md §5); ImagePath stays nil-safe —
-// only locally-served static paths ever land there (AGENTS.md §1: no CDNs).
 type ProductRecord struct {
 	ID          pgtype.UUID
 	VendorID    pgtype.UUID
-	CategoryID  int64 // 0 = uncategorized (nullable column)
+	CategoryID  int64
 	Title       string
 	Description string
 	PriceSat    int64
 	Stock       int64
-	ImagePath   string // "" when NULL
-	Status      string // draft|active|removed
+	ImagePath   string
+	ThumbPath   string // derived public thumbnail path
+	Status      string
 	CreatedAt   time.Time
 	UpdatedAt   time.Time
 }
 
-// StorefrontProduct extends a product row with the vendor display fields the
-// storefront needs in one pass (shop name, ETA badge, vendor username).
 type StorefrontProduct struct {
 	ProductRecord
 	ShopName       string
@@ -53,18 +37,12 @@ type StorefrontProduct struct {
 	VendorUsername string
 }
 
-// CategoryRecord is one row from public.categories.
 type CategoryRecord struct {
 	ID   int64
 	Slug string
 	Name string
 }
 
-// ReviewRecord is one reviewable order line as surfaced on the account page
-// (mirrors ReviewableLinesForCustomer in db/query/catalog.sql). HasReview +
-// Rating/Body carry the current state so the form can pre-fill inside the
-// edit window; Editable applies the server-side window (ReviewEditWindow vs
-// Postgres' own order_updated_at clock).
 type ReviewRecord struct {
 	ItemID          int64
 	ProductID       pgtype.UUID
@@ -73,13 +51,12 @@ type ReviewRecord struct {
 	OrderStatus     string
 	OrderUpdatedAt  time.Time
 	HasReview       bool
-	Rating          int64 // 0 when no review yet
+	Rating          int64
 	Body            string
 	ReviewCreatedAt time.Time
 	Editable        bool
 }
 
-// TopVendorRow is one leaderboard entry read from top_vendors_snapshot.
 type TopVendorRow struct {
 	Rank           int64
 	SalesCount     int64
@@ -89,9 +66,6 @@ type TopVendorRow struct {
 	VendorUsername string
 }
 
-// VendorMessage is one outbound "message vendor" note (Phase 7 replaces the
-// inline INSERT with proper threads/messages rows; until then this keeps the
-// button honest instead of dead).
 type VendorMessage struct {
 	ID         pgtype.UUID
 	SenderID   pgtype.UUID
@@ -101,9 +75,6 @@ type VendorMessage struct {
 	ReadByRecv bool
 }
 
-// parseUUIDText converts canonical 8-4-4-4-12 text back into a pgtype.UUID.
-// Invalid input yields the zero UUID (Valid=false), which every store method
-// treats as "no identity" exactly like uuidString's inverse contract.
 func parseUUIDText(s string) pgtype.UUID {
 	var u pgtype.UUID
 	if err := u.Scan(s); err != nil {
@@ -112,38 +83,22 @@ func parseUUIDText(s string) pgtype.UUID {
 	return u
 }
 
-// VendorStore is the Phase 4 catalog surface: products CRUD for vendors,
-// public storefront reads, vendor profiles, reviews, and the leaderboard
-// snapshot the cron maintains. *pgxpool.Pool satisfies it via PGCatalogStore;
-// tests substitute an in-memory fake (no Postgres in CI, AGENTS.md).
 type VendorStore interface {
-	// ---- vendor profile / storefront reads ----
 	CatalogGetVendorByUsername(ctx context.Context, username string) (*VendorRecord, error)
 	CatalogListCategories(ctx context.Context) ([]CategoryRecord, error)
-	// categoryID: -1 = all categories, >= 0 = filter. limit/offset paginate.
 	CatalogListProducts(ctx context.Context, categoryID int64, query string, limit, offset int) ([]StorefrontProduct, error)
 	CatalogCountProducts(ctx context.Context, categoryID int64, query string) (int64, error)
 	CatalogGetProduct(ctx context.Context, id pgtype.UUID) (*StorefrontProduct, error)
-
-	// ---- vendor product CRUD (ownership enforced by vendor_id predicates) ----
 	CatalogListVendorProducts(ctx context.Context, vendorUserID pgtype.UUID) ([]ProductRecord, error)
 	CatalogCreateProduct(ctx context.Context, p ProductRecord) (*ProductRecord, error)
 	CatalogUpdateProduct(ctx context.Context, p ProductRecord) (*ProductRecord, error)
 	CatalogRemoveProduct(ctx context.Context, productID, vendorUserID pgtype.UUID) error
-
-	// ---- reviews (one per order line, bounded edit window) ----
 	CatalogReviewableLines(ctx context.Context, customerID, vendorID pgtype.UUID) ([]ReviewRecord, error)
 	CatalogSubmitReview(ctx context.Context, reviewerID pgtype.UUID, itemID int64, rating int, body string) error
-
-	// ---- leaderboard snapshot (cron writes, homepage reads) ----
 	CatalogRefreshTopVendors(ctx context.Context, limit int) (int, error)
 	CatalogListTopVendors(ctx context.Context, limit int) ([]TopVendorRow, error)
-
-	// ---- "message vendor" (Phase 7 will re-home these rows into threads) ----
 	CatalogSendVendorMessage(ctx context.Context, senderID, recipientID pgtype.UUID, body string) error
 }
-
-// ---- pgx-backed implementation ------------------------------------------------
 
 const (
 	qCatalogVendorByUsername = `SELECT v.id, v.user_id, v.shop_name, v.approved, v.created_at
@@ -152,6 +107,7 @@ WHERE u.username = $1 AND v.approved`
 
 	qCatalogListCategories = `SELECT id, slug, name FROM public.categories ORDER BY slug`
 
+	// FIXED: Changed $3, $4, $5 to $2, $3, $4 to match the 4 arguments passed.
 	qCatalogListProducts = `SELECT p.id, p.vendor_id, COALESCE(p.category_id, 0), p.title, p.description,
        p.price_sat, p.stock, COALESCE(p.image_path, ''), p.status, p.created_at, p.updated_at,
        v.shop_name, v.eta, u.username
@@ -160,12 +116,12 @@ JOIN public.vendors v ON v.id = p.vendor_id
 JOIN public.users u   ON u.id = v.user_id
 WHERE p.status = 'active' AND v.approved
   AND ($1::int IS NULL OR p.category_id = $1)
-  AND ($3::text = '' OR to_tsvector('simple', p.title || ' ' || p.description)
-        @@ plainto_tsquery('simple', $3))
-ORDER BY CASE WHEN $3::text = '' THEN 0 ELSE ts_rank(to_tsvector('simple', p.title || ' ' || p.description),
-                 plainto_tsquery('simple', $3)) END DESC,
+  AND ($2::text = '' OR to_tsvector('simple', p.title || ' ' || p.description)
+        @@ plainto_tsquery('simple', $2))
+ORDER BY CASE WHEN $2::text = '' THEN 0 ELSE ts_rank(to_tsvector('simple', p.title || ' ' || p.description),
+                 plainto_tsquery('simple', $2)) END DESC,
          p.created_at DESC
-LIMIT $4 OFFSET $5`
+LIMIT $3 OFFSET $4`
 
 	qCatalogCountProducts = `SELECT count(*)
 FROM public.products p
@@ -183,8 +139,6 @@ JOIN public.vendors v ON v.id = p.vendor_id
 JOIN public.users u   ON u.id = v.user_id
 WHERE p.id = $1 AND p.status = 'active' AND v.approved`
 
-	// Vendor-scoped listing joins through users so handlers only ever need to
-	// pass the session user id — the ownership predicate lives in SQL.
 	qCatalogVendorProducts = `SELECT p.id, p.vendor_id, COALESCE(p.category_id, 0), p.title, p.description,
        p.price_sat, p.stock, COALESCE(p.image_path, ''), p.status, p.created_at, p.updated_at
 FROM public.products p
@@ -209,8 +163,6 @@ WHERE id = $1 AND vendor_id = $2
 RETURNING id, vendor_id, COALESCE(category_id, 0), title, description, price_sat, stock,
           COALESCE(image_path, ''), status, created_at, updated_at`
 
-	// Soft delete: status='removed' hides the listing everywhere while
-	// order_items/review FKs stay intact (hard deletes would break history).
 	qCatalogRemoveProduct = `UPDATE public.products SET status = 'removed', updated_at = now()
 WHERE id = $1 AND vendor_id = $2 AND status <> 'removed'
 RETURNING id`
@@ -230,11 +182,6 @@ WHERE o.customer_id = $1 AND v.id = $2
   AND o.status IN ('shipped', 'released')
 ORDER BY o.created_at DESC`
 
-	// Submit-time authorization in one read: line's order status/age, the
-	// product's owning vendor+user, and the reviewer identity. The status gate
-	// lives here so a stale form POST can never rate a cancelled/refunded
-	// order, and the window check uses Postgres' own clock (UTC discipline,
-	// same rule as login history).
 	qCatalogReviewLineContext = `SELECT o.customer_id, o.status,
        (now() - o.updated_at) <= ($2::bigint * interval '1 hour')
 FROM public.order_items oi
@@ -273,10 +220,6 @@ JOIN public.vendors v ON v.id = t.vendor_id
 JOIN public.users u   ON u.id = v.user_id
 ORDER BY t.rank ASC LIMIT $1`
 
-	// Inline vendor messaging until Phase 7 owns this surface: find-or-create
-	// the unordered participant pair (threads CHECK a<b enforces one row per
-	// pair), then append the note. The body renders as escaped plain text
-	// wherever it is displayed — never auto-linked (AGENTS.md §3).
 	qCatalogThreadFindOrCreate = `SELECT id FROM public.threads
 WHERE (participant_a, participant_b) = (LEAST($1::uuid, $2::uuid), GREATEST($1::uuid, $2::uuid))`
 
@@ -288,16 +231,15 @@ RETURNING id`
 	qCatalogInsertMessage = `INSERT INTO public.messages (thread_id, sender_id, body) VALUES ($1, $2, $3)`
 )
 
-// PGCatalogStore adapts *pgxpool.Pool to VendorStore.
 type PGCatalogStore struct{ pool *pgxpool.Pool }
 
-// NewPGCatalogStore wraps the production pool.
 func NewPGCatalogStore(pool *pgxpool.Pool) *PGCatalogStore { return &PGCatalogStore{pool: pool} }
 
 func scanProduct(row pgx.Row) (ProductRecord, error) {
 	var p ProductRecord
 	err := row.Scan(&p.ID, &p.VendorID, &p.CategoryID, &p.Title, &p.Description,
 		&p.PriceSat, &p.Stock, &p.ImagePath, &p.Status, &p.CreatedAt, &p.UpdatedAt)
+	p.ThumbPath = deriveThumb(p.ImagePath)
 	return p, err
 }
 
@@ -306,8 +248,11 @@ func scanStorefrontProduct(row pgx.Row) (StorefrontProduct, error) {
 	err := row.Scan(&sp.ID, &sp.VendorID, &sp.CategoryID, &sp.Title, &sp.Description,
 		&sp.PriceSat, &sp.Stock, &sp.ImagePath, &sp.Status, &sp.CreatedAt, &sp.UpdatedAt,
 		&sp.ShopName, &sp.Eta, &sp.VendorUsername)
+	sp.ThumbPath = deriveThumb(sp.ImagePath)
 	return sp, err
 }
+
+// Note: scanVendor is already defined in auth_handlers.go, so it is omitted here.
 
 func (s *PGCatalogStore) CatalogGetVendorByUsername(ctx context.Context, username string) (*VendorRecord, error) {
 	v, err := scanVendor(s.pool.QueryRow(ctx, qCatalogVendorByUsername, username))
@@ -340,8 +285,6 @@ func (s *PGCatalogStore) CatalogListCategories(ctx context.Context) ([]CategoryR
 	return out, nil
 }
 
-// nullableCat maps -1 ("all") onto a SQL NULL so the shared $1::int filter
-// pattern matches ListStorefrontProducts in db/query/catalog.sql.
 func nullableCat(categoryID int64) any {
 	if categoryID < 0 {
 		return nil
@@ -350,7 +293,8 @@ func nullableCat(categoryID int64) any {
 }
 
 func (s *PGCatalogStore) CatalogListProducts(ctx context.Context, categoryID int64, query string, limit, offset int) ([]StorefrontProduct, error) {
-	rows, err := s.pool.Query(ctx, qCatalogListProducts, nullableCat(categoryID), nil, query, int32(limit), int32(offset))
+	// FIXED: Removed the stray 'nil' argument. Now passes exactly 4 arguments matching $1, $2, $3, $4.
+	rows, err := s.pool.Query(ctx, qCatalogListProducts, nullableCat(categoryID), query, int32(limit), int32(offset))
 	if err != nil {
 		return nil, fmt.Errorf("store: list products: %w", err)
 	}
@@ -438,7 +382,7 @@ func (s *PGCatalogStore) CatalogUpdateProduct(ctx context.Context, p ProductReco
 		p.Title, p.Description, p.PriceSat, int32(p.Stock), p.Status)
 	out, err := scanProduct(row)
 	if errors.Is(err, pgx.ErrNoRows) {
-		return nil, ErrNotFound // unknown id or not owned by this vendor
+		return nil, ErrNotFound
 	}
 	if err != nil {
 		return nil, fmt.Errorf("store: update product: %w", err)
@@ -447,8 +391,6 @@ func (s *PGCatalogStore) CatalogUpdateProduct(ctx context.Context, p ProductReco
 }
 
 func (s *PGCatalogStore) CatalogRemoveProduct(ctx context.Context, productID, vendorUserID pgtype.UUID) error {
-	// Resolve the vendor row first: handlers already hold the USER id (session),
-	// but the ownership predicate rides the VENDors id.
 	var vendorID pgtype.UUID
 	err := s.pool.QueryRow(ctx, `SELECT id FROM public.vendors WHERE user_id = $1`, vendorUserID).Scan(&vendorID)
 	if errors.Is(err, pgx.ErrNoRows) {
@@ -506,10 +448,10 @@ func (s *PGCatalogStore) CatalogSubmitReview(ctx context.Context, reviewerID pgt
 		return fmt.Errorf("store: review line context: %w", err)
 	}
 	if uuidString(ownerID) != uuidString(reviewerID) {
-		return ErrNotFound // only the purchaser of the line may review it
+		return ErrNotFound
 	}
 	if status != "shipped" && status != "released" {
-		return ErrNotFound // order moved to cancelled/refunded since the form rendered
+		return ErrNotFound
 	}
 	if !within {
 		return fmt.Errorf("store: review window closed")
@@ -552,13 +494,11 @@ func (s *PGCatalogStore) CatalogRefreshTopVendors(ctx context.Context, limit int
 	}
 	rows.Close()
 
-	// Rewrite atomically: DELETE + INSERTs share one tx so the homepage widget
-	// never observes a half-written board.
 	tx, err := s.pool.Begin(ctx)
 	if err != nil {
 		return 0, fmt.Errorf("store: top vendors begin: %w", err)
 	}
-	defer func() { _ = tx.Rollback(ctx) }() // no-op after Commit
+	defer func() { _ = tx.Rollback(ctx) }()
 	if _, err := tx.Exec(ctx, qCatalogDeleteSnapshot); err != nil {
 		return 0, fmt.Errorf("store: top vendors delete: %w", err)
 	}
@@ -598,16 +538,11 @@ func (s *PGCatalogStore) CatalogListTopVendors(ctx context.Context, limit int) (
 }
 
 func (s *PGCatalogStore) CatalogSendVendorMessage(ctx context.Context, senderID, recipientID pgtype.UUID, body string) error {
-	// Find-or-create the unordered participant pair. The INSERT ... ON
-	// CONFLICT DO NOTHING RETURNING id pattern closes the race: two concurrent
-	// first messages create at most one thread (the CHECK/unique pair makes
-	// the loser re-select).
 	var threadID pgtype.UUID
 	err := s.pool.QueryRow(ctx, qCatalogThreadFindOrCreate, senderID, recipientID).Scan(&threadID)
 	if errors.Is(err, pgx.ErrNoRows) {
 		err = s.pool.QueryRow(ctx, qCatalogThreadCreate, senderID, recipientID).Scan(&threadID)
 		if errors.Is(err, pgx.ErrNoRows) {
-			// Conflict swallowed by DO NOTHING — the row exists now; re-read.
 			err = s.pool.QueryRow(ctx, qCatalogThreadFindOrCreate, senderID, recipientID).Scan(&threadID)
 		}
 	}
@@ -619,5 +554,3 @@ func (s *PGCatalogStore) CatalogSendVendorMessage(ctx context.Context, senderID,
 	}
 	return nil
 }
-
-var _ pgx.Conn // reserved: pgx typing reference for generated adapters

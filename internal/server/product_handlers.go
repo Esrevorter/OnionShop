@@ -8,8 +8,6 @@ import (
 	"errors"
 	"fmt"
 	"image"
-	"image/jpeg"
-	"image/png"
 	"log"
 	"net/http"
 	"os"
@@ -191,17 +189,27 @@ func handleImageUploads(r *http.Request, existingPaths string) (string, error) {
 			return "", fmt.Errorf("failed to create destination file")
 		}
 
-		if outExt == ".png" {
-			err = png.Encode(dst, img)
-		} else {
-			err = jpeg.Encode(dst, img, &jpeg.Options{Quality: 90})
-		}
+		err = encodeScaled(dst, img, outExt, fullMaxEdge, 90)
 		dst.Close()
-
 		if err != nil {
 			os.Remove(destPath)
 			return "", fmt.Errorf("failed to re-encode and scrub image metadata")
 		}
+
+		thumbName := strings.TrimSuffix(safeName, outExt) + "_thumb" + outExt
+		thumbPath := filepath.Join(uploadDir, thumbName)
+		tdst, err := os.Create(thumbPath)
+		if err != nil {
+			os.Remove(destPath)
+			return "", fmt.Errorf("failed to create thumbnail file")
+		}
+		if err := encodeScaled(tdst, img, outExt, thumbMaxEdge, 82); err != nil {
+			tdst.Close()
+			os.Remove(thumbPath)
+			os.Remove(destPath)
+			return "", fmt.Errorf("failed to build thumbnail")
+		}
+		tdst.Close()
 
 		newPaths = append(newPaths, safeName)
 	}
