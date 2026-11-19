@@ -6,7 +6,7 @@
 <li class="product-card">
   <a class="product-card-link" href="/product/{{.ID}}">
     <div class="product-media">
-      {{if .ImagePath}}<img src="{{.ImagePath}}" alt="" width="640" height="480" loading="lazy">{{else}}<span class="product-placeholder" aria-hidden="true">◈</span>{{end}}
+      {{if .ThumbPath}}<img src="{{.ThumbPath}}" alt="" width="480" height="360" loading="lazy">{{else if .ImagePath}}<img src="{{.ImagePath}}" alt="" width="480" height="360" loading="lazy">{{else}}<span class="product-placeholder" aria-hidden="true">◈</span>{{end}}
     </div>
     <div class="product-info">
       <h3>{{.Title}}</h3>

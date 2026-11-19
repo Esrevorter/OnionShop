@@ -183,7 +183,7 @@ input::placeholder, textarea::placeholder { color: #829287; }
 .admin-header h1 { margin: 0; font-size: 2rem; }
 .admin-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
   gap: 1.5rem;
   margin-bottom: 3rem;
 }
@@ -297,4 +297,12 @@ input::placeholder, textarea::placeholder { color: #829287; }
 }
 
 /* Tame the oversized product title on the detail page */
+.product-detail .product-copy h1 { font-size:clamp(1.6rem, 3vw, 2.2rem); }
+
+
+/* --- layout polish v11 --- */
+.breadcrumbs { display:flex; flex-wrap:wrap; align-items:center; gap:.45rem; color:var(--muted); font-size:.9rem; margin-bottom:1.25rem; }
+.breadcrumbs a { text-decoration:none; color:var(--accent); }
+.breadcrumbs [aria-hidden="true"] { color:var(--line); }
+.product-detail-media img { display:block; width:auto; max-width:100%; height:auto; max-height:62vh; aspect-ratio:auto; object-fit:contain; margin-inline:auto; }
 .product-detail .product-copy h1 { font-size:clamp(1.6rem, 3vw, 2.2rem); }

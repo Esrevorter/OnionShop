@@ -24,8 +24,9 @@ const (
 	productTitleMin, productTitleMax = 3, 200
 	productDescMax = 20000
 	productStatusDraft, productStatusActive, productStatusRemoved = "draft", "active", "removed"
-	maxUploadSize = 10 << 20 // 10 MB total
+	maxUploadSize = 10 << 20
 	maxFiles = 5
+	uploadDir = "/var/lib/onionshop/uploads"
 )
 
 type ProductFormData struct {
@@ -144,6 +145,29 @@ func generateRandomFilename(ext string) string {
 	return hex.EncodeToString(b) + ext
 }
 
+// deletePublicImages removes the on-disk full + thumb for each public path,
+// validated to stay inside uploadDir. Used when an image is replaced.
+func deletePublicImages(publicPaths []string) {
+	for _, pp := range publicPaths {
+		pp = strings.TrimSpace(pp)
+		if pp == "" || !strings.HasPrefix(pp, "/uploads/") {
+			continue
+		}
+		name := filepath.Base(pp)
+		if name == "." || name == "/" || name == "\\" {
+			continue
+		}
+		ext := strings.ToLower(filepath.Ext(name))
+		if ext != ".jpg" && ext != ".jpeg" && ext != ".png" {
+			continue
+		}
+		_ = os.Remove(filepath.Join(uploadDir, name))
+		_ = os.Remove(filepath.Join(uploadDir, strings.TrimSuffix(name, filepath.Ext(name))+"_thumb"+ext))
+	}
+}
+
+// handleImageUploads decodes+re-encodes (EXIF scrub), writes a capped full and
+// a 480px thumb, returns a single public path, and deletes replaced files.
 func handleImageUploads(r *http.Request, existingPaths string) (string, error) {
 	if r.MultipartForm == nil || len(r.MultipartForm.File["images"]) == 0 {
 		return existingPaths, nil
@@ -154,7 +178,6 @@ func handleImageUploads(r *http.Request, existingPaths string) (string, error) {
 	}
 
 	var newPaths []string
-	uploadDir := "/var/lib/onionshop/uploads"
 	if err := os.MkdirAll(uploadDir, 0755); err != nil {
 		return "", fmt.Errorf("failed to prepare upload directory")
 	}
@@ -164,38 +187,31 @@ func handleImageUploads(r *http.Request, existingPaths string) (string, error) {
 		if ext != ".jpg" && ext != ".jpeg" && ext != ".png" {
 			return "", fmt.Errorf("invalid file type: %s (allowed: jpg, jpeg, png)", ext)
 		}
-
 		file, err := fileHeader.Open()
 		if err != nil {
 			return "", fmt.Errorf("failed to open uploaded file")
 		}
-
 		img, format, err := image.Decode(file)
 		file.Close()
 		if err != nil {
 			return "", fmt.Errorf("invalid or corrupted image data")
 		}
-
 		outExt := ".jpg"
 		if format == "png" {
 			outExt = ".png"
 		}
-
 		safeName := generateRandomFilename(outExt)
 		destPath := filepath.Join(uploadDir, safeName)
-
 		dst, err := os.Create(destPath)
 		if err != nil {
 			return "", fmt.Errorf("failed to create destination file")
 		}
-
 		err = encodeScaled(dst, img, outExt, fullMaxEdge, 90)
 		dst.Close()
 		if err != nil {
 			os.Remove(destPath)
 			return "", fmt.Errorf("failed to re-encode and scrub image metadata")
 		}
-
 		thumbName := strings.TrimSuffix(safeName, outExt) + "_thumb" + outExt
 		thumbPath := filepath.Join(uploadDir, thumbName)
 		tdst, err := os.Create(thumbPath)
@@ -210,12 +226,18 @@ func handleImageUploads(r *http.Request, existingPaths string) (string, error) {
 			return "", fmt.Errorf("failed to build thumbnail")
 		}
 		tdst.Close()
-
 		newPaths = append(newPaths, safeName)
 	}
 
 	if len(newPaths) > 0 {
-		// Single public URL the storefront/grid templates use directly.
+		// Replace semantics: drop old files, keep only the first new upload.
+		if existingPaths != "" {
+			deletePublicImages(strings.Split(existingPaths, ","))
+		}
+		for _, extra := range newPaths[1:] {
+			_ = os.Remove(filepath.Join(uploadDir, extra))
+			_ = os.Remove(filepath.Join(uploadDir, strings.TrimSuffix(extra, filepath.Ext(extra))+"_thumb"+strings.ToLower(filepath.Ext(extra))))
+		}
 		return "/uploads/" + newPaths[0], nil
 	}
 	return existingPaths, nil
@@ -281,7 +303,6 @@ func (a *App) handleProductCreate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	p.ImagePath = imgPaths
-
 	created, err := a.vendor.CatalogCreateProduct(ctx, *p)
 	if err != nil {
 		log.Printf("server: product create failed: %v", sanitizedErr(err))
@@ -400,14 +421,12 @@ func (a *App) handleProductUpdate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	p.ID = existing.ID
-
 	imgPaths, err := handleImageUploads(r, existing.ImagePath)
 	if err != nil {
 		fail(http.StatusBadRequest, err.Error())
 		return
 	}
 	p.ImagePath = imgPaths
-
 	updated, err := a.vendor.CatalogUpdateProduct(ctx, *p)
 	if err != nil {
 		if errors.Is(err, ErrNotFound) {
@@ -422,10 +441,6 @@ func (a *App) handleProductUpdate(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, "/vendor/products", http.StatusSeeOther)
 }
 
-// handleProductPublish flips a draft listing to active with a single click,
-// without requiring the full edit form. The target row is re-read through the
-// owner-scoped list (loadEditableProduct), so a crafted id can never publish
-// someone else's listing (no IDOR). Removed rows are not publishable.
 func (a *App) handleProductPublish(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	_ = r.ParseForm()
@@ -463,7 +478,6 @@ func (a *App) handleProductPublish(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if existing.Status == productStatusActive {
-		// already live; no-op, just re-render the shelf
 		a.handleProductList(w, r)
 		return
 	}
@@ -475,17 +489,13 @@ func (a *App) handleProductPublish(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	a.auditProduct(ctx, uid, actionProductUpdate, updated)
-
-	// Re-render the shelf with a flash (same in-place pattern as remove).
 	vrow, err := a.vendorRow(ctx, uid)
 	if err != nil {
-		log.Printf("server: product publish post-render lookup failed: %v", sanitizedErr(err))
 		writeGenericError(w)
 		return
 	}
 	products, err := a.vendor.CatalogListVendorProducts(ctx, uid)
 	if err != nil {
-		log.Printf("server: product list after publish failed: %v", sanitizedErr(err))
 		writeGenericError(w)
 		return
 	}
@@ -532,13 +542,11 @@ func (a *App) handleProductRemove(w http.ResponseWriter, r *http.Request) {
 	}
 	vrow, err := a.vendorRow(ctx, uid)
 	if err != nil {
-		log.Printf("server: product remove post-render lookup failed: %v", sanitizedErr(err))
 		writeGenericError(w)
 		return
 	}
 	products, err := a.vendor.CatalogListVendorProducts(ctx, uid)
 	if err != nil {
-		log.Printf("server: product list after remove failed: %v", sanitizedErr(err))
 		writeGenericError(w)
 		return
 	}
