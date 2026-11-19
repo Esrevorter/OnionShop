@@ -46,6 +46,7 @@ COPY --from=build /out/onionshop /usr/local/bin/onionshop
 # web/static is NOT needed here: nginx serves it from a read-only bind mount.
 WORKDIR /app
 COPY --from=build /src/web/templates ./web/templates
+RUN mkdir -p /var/lib/onionshop/uploads && chown 1000:1000 /var/lib/onionshop/uploads
 USER 1000:1000
 ENV ONIONSHOP_ADDR=127.0.0.1:8080
 EXPOSE 8080

@@ -155,7 +155,7 @@ func handleImageUploads(r *http.Request, existingPaths string) (string, error) {
 	}
 
 	var newPaths []string
-	uploadDir := "web/static/listings"
+	uploadDir := "/var/lib/onionshop/uploads"
 	if err := os.MkdirAll(uploadDir, 0755); err != nil {
 		return "", fmt.Errorf("failed to prepare upload directory")
 	}

@@ -41,6 +41,7 @@ services:
       - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
       - ./nginx/ssl:/etc/nginx/ssl:ro
       - ./web/static:/var/www/static:ro
+      - uploads_data:/var/www/uploads:ro
       - appsock:/run/onionshop
     depends_on:
       app:
@@ -81,6 +82,7 @@ services:
     tmpfs: [/tmp]
     volumes:
       - appsock:/run/onionshop
+      - uploads_data:/var/lib/onionshop/uploads
     healthcheck:
       test: ["CMD", "/usr/local/bin/onionshop", "healthcheck"]
       interval: 10s
@@ -144,7 +146,7 @@ services:
     # TODO: REPLACE PLACEHOLDER DIGEST with actual digest from registry.
     # Run: docker pull ghcr.io/sethforprivacy/simple-monerod:v0.18.3.3
     # Run: docker inspect --format='{{index .RepoDigests 0}}' ghcr.io/sethforprivacy/simple-monerod:v0.18.3.3
-    image: ghcr.io/sethforprivacy/simple-monerod@sha256:PLACEHOLDER_DIGEST_REPLACE_ME
+    image: ghcr.io/sethforprivacy/simple-monerod@sha256:d0e5c768e38870ccd22a9a07b3ebe4b2d0f12988388bab499cfa45d08273d4b1
     <<: *default-hardening
     mem_limit: 2000m
     pids_limit: 512
@@ -208,6 +210,7 @@ volumes:
   pgdata:
   backup_data:
   appsock:
+  uploads_data:
   monero_data:
 
 networks:
