@@ -11,8 +11,11 @@
     <div class="product-info">
       <h3>{{.Title}}</h3>
       <span class="product-price">{{.PriceSat}} sat</span>
-      <div class="product-meta"><span>{{.ShopName}}</span><span>{{if gt .Stock 0}}In stock{{else}}Out of stock{{end}}</span></div>
-      <div class="product-meta"><a href="/u/{{.VendorUsername}}">@{{.VendorUsername}}</a>{{if .Eta}}<span>{{.Eta}} dispatch</span>{{end}}</div>
+      <div class="product-meta">
+        <a href="/u/{{.VendorUsername}}">@{{.VendorUsername}}</a>
+        <span title="Units currently available to buy">{{if gt .Stock 0}}In stock ({{.Stock}}){{else}}Out of stock{{end}}</span>
+        {{if .Eta}}<span title="Time from order to dispatch. With completed orders this is the real average; otherwise it is the vendor's own estimate.">{{.Eta}}</span>{{end}}
+      </div>
     </div>
   </a>
 </li>

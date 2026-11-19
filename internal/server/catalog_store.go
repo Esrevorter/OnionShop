@@ -311,6 +311,7 @@ func (s *PGCatalogStore) CatalogListProducts(ctx context.Context, categoryID int
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("store: list products: %w", err)
 	}
+	s.populateRealETA(ctx, out)
 	return out, nil
 }
 
@@ -559,3 +560,54 @@ func (s *PGCatalogStore) CatalogSendVendorMessage(ctx context.Context, senderID,
 	}
 	return nil
 }
+
+// calculateRealDispatchETA computes average dispatch time from order history.
+func (s *PGCatalogStore) calculateRealDispatchETA(ctx context.Context, vendorID pgtype.UUID) (string, error) {
+	var avgHours float64
+	err := s.pool.QueryRow(ctx, `
+		SELECT AVG(EXTRACT(EPOCH FROM (o.shipped_at - o.created_at)) / 3600)
+		FROM public.orders o
+		WHERE o.vendor_id = $1
+		  AND o.status IN ('shipped', 'released')
+		  AND o.shipped_at IS NOT NULL
+	`, vendorID).Scan(&avgHours)
+	if err != nil || avgHours <= 0 {
+		return "", nil
+	}
+	switch {
+	case avgHours < 24:
+		return fmt.Sprintf("%dh dispatch", int(avgHours)), nil
+	case avgHours < 168:
+		return fmt.Sprintf("%dd dispatch", int(avgHours/24)), nil
+	default:
+		return fmt.Sprintf("%dw dispatch", int(avgHours/168)), nil
+	}
+}
+
+// populateRealETA overrides vendor-stated Eta with calculated metrics (cached per vendor).
+func (s *PGCatalogStore) populateRealETA(ctx context.Context, products []StorefrontProduct) {
+	vendorCache := make(map[pgtype.UUID]string)
+	for i := range products {
+		vid := products[i].VendorID
+		if eta, ok := vendorCache[vid]; ok {
+			if eta != "" { products[i].Eta = eta }
+			continue
+		}
+		realETA, err := s.calculateRealDispatchETA(ctx, vid)
+		if err == nil && realETA != "" {
+			vendorCache[vid] = realETA
+			products[i].Eta = realETA
+		} else {
+			vendorCache[vid] = ""
+			switch products[i].Eta {
+			case "low":
+				products[i].Eta = "ships fast (vendor est.)"
+			case "medium":
+				products[i].Eta = "ships standard (vendor est.)"
+			case "high":
+				products[i].Eta = "ships slowly (vendor est.)"
+			}
+		}
+	}
+}
+

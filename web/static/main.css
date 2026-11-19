@@ -149,16 +149,16 @@ input::placeholder, textarea::placeholder { color: #829287; }
 .category-list a, .chip { display: inline-block; padding: .45rem .75rem; border: 1px solid var(--line); border-radius: 999px; background: var(--surface); color: var(--ink); text-decoration: none; }
 .category-list a:hover { border-color: var(--accent-strong); }
 .product-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 15rem), 1fr)); gap: 1rem; padding: 0; list-style: none; }
-.product-card { min-width: 0; overflow: hidden; border: 1px solid var(--line); border-radius: 1rem; background: var(--surface); transition: transform .18s ease, border-color .18s ease; }
+.product-card { min-width: 0; overflow: hidden; border: 1px solid var(--line); border-radius: 1rem; background: var(--surface); transition: transform .18s ease, border-color .18s ease; display: flex; flex-direction: column; }
 .product-card:hover { transform: translateY(-2px); border-color: #64856d; }
-.product-card-link { display: block; height: 100%; color: inherit; text-decoration: none; }
+.product-card-link { display: flex; flex-direction: column; flex: 1; color: inherit; text-decoration: none; }
 .product-media { display: grid; place-items: center; aspect-ratio: 4 / 3; overflow: hidden; background: #202c24; }
 .product-media img { display: block; width: 100%; height: 100%; object-fit: cover; }
 .product-placeholder { color: #91a497; font-size: 2rem; }
-.product-info { padding: 1rem; }
+.product-info { padding: 1rem; color: var(--ink); flex: 1; }
 .product-info h3 { margin: 0 0 .45rem; }
 .product-price { color: var(--accent); font-size: 1.08rem; font-weight: 800; }
-.product-meta { display: flex; flex-wrap: wrap; justify-content: space-between; gap: .5rem; margin-top: .8rem; color: var(--muted); font-size: .85rem; }
+.product-meta { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-start; gap: .75rem; margin-top: .8rem; color: var(--muted); font-size: .85rem; }
 .pagination { display: flex; justify-content: space-between; gap: 1rem; margin-top: 1.5rem; }
 .product-detail { display: grid; grid-template-columns: minmax(0, 1fr) minmax(17rem, .8fr); gap: clamp(1.25rem, 4vw, 3rem); }
 .product-detail-media { overflow: hidden; align-self: start; border: 1px solid var(--line); border-radius: 1rem; background: var(--surface); }
