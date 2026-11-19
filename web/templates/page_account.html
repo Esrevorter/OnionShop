@@ -30,8 +30,6 @@
   </div>
 
   <div class="auth-card">
-    
-  <div class="auth-card">
     <h2>Two-Factor Authentication (2FA)</h2>
     {{if .TOTPEnabled}}
       <div class="notice" style="border-color: var(--accent-strong); color: var(--accent);">
@@ -63,7 +61,8 @@
     {{end}}
   </div>
 
-  <h2>PGP Public Key</h2>
+  <div class="auth-card">
+    <h2>PGP Public Key</h2>
     <p>Only <strong>public</strong> keys are accepted. See the <a href="/pgp">PGP tool page</a> for details.</p>
     {{if .PGPPublicKey}}
       <p>Stored key fingerprint: <code>{{if .PGPFingerprint}}{{.PGPFingerprint}}{{else}}(unparseable){{end}}</code></p>
