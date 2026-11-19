@@ -7,6 +7,7 @@ import (
 	"html/template"
 	"net"
 	"net/http"
+	"strconv"
 	"os"
 	"strings"
 	"time"
@@ -170,6 +171,11 @@ func newApp(cfg Config, deps Deps, sessionStore scs.Store, withRateLimit bool) (
 
 	// Phase 5-8 UI shells (wallet, orders, disputes, tickets, checkout, ...).
 	a.registerPageRoutes(r)
+
+	// --- Custom Error Handlers ---
+	r.NotFound(http.HandlerFunc(a.handleNotFound))
+	r.MethodNotAllowed(http.HandlerFunc(a.handleMethodNotAllowed))
+	// -----------------------------
 	a.registerCheckoutRoutes(r)
 	// Phase A admin surface (dashboard + user management).
 	a.registerAdminRoutes(r)
@@ -330,6 +336,30 @@ func (a *App) handleHealth(w http.ResponseWriter, r *http.Request) {
 	_, _ = w.Write([]byte(body))
 }
 
+// renderErrorPage displays a styled HTML error page.
+func (a *App) renderErrorPage(w http.ResponseWriter, r *http.Request, code int, msg string) {
+	auth := a.baseData(r)
+	data := struct {
+		AuthData
+		ErrorCode    string
+		ErrorMessage string
+	}{
+		AuthData:     auth,
+		ErrorCode:    strconv.Itoa(code),
+		ErrorMessage: msg,
+	}
+	
+	tpl := a.templates["error"]
+	if tpl == nil {
+		http.Error(w, msg, code)
+		return
+	}
+	
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.WriteHeader(code)
+	_ = tpl.ExecuteTemplate(w, "layout", data)
+}
+
 // handleNotFound renders the uniform 404. Anonymous visitors get redirected to
 // "/" as specified (ARCHITECTURE.md §1); authenticated users see the page so
 // they learn a typo cost them nothing operationally.
@@ -338,9 +368,12 @@ func (a *App) handleNotFound(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/", http.StatusSeeOther)
 		return
 	}
-	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
-	w.WriteHeader(http.StatusNotFound)
-	_, _ = w.Write([]byte("404 not found\n"))
+	a.renderErrorPage(w, r, http.StatusNotFound, "The page you were looking for doesn't exist.")
+}
+
+// handleMethodNotAllowed renders the uniform 405.
+func (a *App) handleMethodNotAllowed(w http.ResponseWriter, r *http.Request) {
+	a.renderErrorPage(w, r, http.StatusMethodNotAllowed, "Method not allowed.")
 }
 
 var _ chi.Router // reserved: route mounting stays chi-typed (AGENTS.md §2)
