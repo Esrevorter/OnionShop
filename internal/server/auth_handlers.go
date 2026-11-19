@@ -48,7 +48,7 @@ type AuthData struct {
 	Requires2FA     bool
 	Pending2FAUID   string
 	TOTPEnabled     bool
-	TOTPQRCode      string
+	TOTPQRCode      template.URL
 	TOTPSecret      string
 	BackupCodes     []string
 }
@@ -713,7 +713,7 @@ func (a *App) handle2FASetup(w http.ResponseWriter, r *http.Request) {
 	if err != nil { writeGenericError(w); return }
 	var buf bytes.Buffer
 	if err := png.Encode(&buf, img); err != nil { writeGenericError(w); return }
-	data.TOTPQRCode = "data:image/png;base64," + base64.StdEncoding.EncodeToString(buf.Bytes())
+	data.TOTPQRCode = template.URL("data:image/png;base64," + base64.StdEncoding.EncodeToString(buf.Bytes()))
 	
 	a.sm.Put(ctx, "pending_totp_secret", key.Secret())
 
