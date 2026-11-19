@@ -158,7 +158,7 @@ input::placeholder, textarea::placeholder { color: #829287; }
 .product-info { padding: 1rem; color: var(--ink); flex: 1; }
 .product-info h3 { margin: 0 0 .45rem; }
 .product-price { color: var(--accent); font-size: 1.08rem; font-weight: 800; }
-.product-meta { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-start; gap: .75rem; margin-top: .8rem; color: var(--muted); font-size: .85rem; }
+.product-meta { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-start; gap: .35rem .65rem; margin-top: .8rem; color: var(--muted); font-size: .85rem; }
 .pagination { display: flex; justify-content: space-between; gap: 1rem; margin-top: 1.5rem; }
 .product-detail { display: grid; grid-template-columns: minmax(0, 1fr) minmax(17rem, .8fr); gap: clamp(1.25rem, 4vw, 3rem); }
 .product-detail-media { overflow: hidden; align-self: start; border: 1px solid var(--line); border-radius: 1rem; background: var(--surface); }
