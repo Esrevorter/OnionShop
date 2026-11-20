@@ -320,3 +320,17 @@ input::placeholder, textarea::placeholder { color: #829287; }
   border-radius:999px; background:transparent; color:var(--muted); border:1px solid var(--line); cursor:pointer; }
 .currency-btn:hover { color:var(--ink); border-color:var(--accent-strong); background:transparent; }
 .currency-active, .currency-active:hover { background:var(--accent-strong); color:#102017; border-color:var(--accent-strong); }
+
+/* currency pills v2 — high specificity + !important so the global button rule
+   and any stale cached stylesheet can never override the compact look. */
+.site-nav form.currency-set-form { margin:0 !important; display:inline-flex !important; align-items:center !important; gap:.3rem !important; }
+.site-nav form.currency-set-form .currency-label { font-size:.68rem !important; color:var(--muted) !important; text-transform:uppercase !important; letter-spacing:.06em !important; }
+.site-nav form.currency-set-form button.currency-btn {
+  min-height:0 !important; height:1.6rem !important; padding:0 .6rem !important;
+  font-size:.72rem !important; font-weight:700 !important; line-height:1 !important;
+  border-radius:999px !important; background:transparent !important; color:var(--muted) !important;
+  border:1px solid var(--line) !important; cursor:pointer !important; }
+.site-nav form.currency-set-form button.currency-btn:hover { background:var(--surface-raised) !important; color:var(--ink) !important; }
+.site-nav form.currency-set-form button.currency-btn.currency-active,
+.site-nav form.currency-set-form button.currency-btn.currency-active:hover {
+  background:var(--accent-strong) !important; color:#102017 !important; border-color:var(--accent-strong) !important; }
