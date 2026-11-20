@@ -21,7 +21,7 @@ type ProductRecord struct {
 	CategoryID  int64
 	Title       string
 	Description string
-	PriceSat    int64
+	PriceUSDCents    int64
 	Stock       int64
 	ImagePath   string
 	ThumbPath   string // derived public thumbnail path
@@ -239,7 +239,7 @@ func NewPGCatalogStore(pool *pgxpool.Pool) *PGCatalogStore { return &PGCatalogSt
 func scanProduct(row pgx.Row) (ProductRecord, error) {
 	var p ProductRecord
 	err := row.Scan(&p.ID, &p.VendorID, &p.CategoryID, &p.Title, &p.Description,
-		&p.PriceSat, &p.Stock, &p.ImagePath, &p.Status, &p.CreatedAt, &p.UpdatedAt)
+		&p.PriceUSDCents, &p.Stock, &p.ImagePath, &p.Status, &p.CreatedAt, &p.UpdatedAt)
 	p.ThumbPath = deriveThumb(p.ImagePath)
 	return p, err
 }
@@ -247,7 +247,7 @@ func scanProduct(row pgx.Row) (ProductRecord, error) {
 func scanStorefrontProduct(row pgx.Row) (StorefrontProduct, error) {
 	var sp StorefrontProduct
 	err := row.Scan(&sp.ID, &sp.VendorID, &sp.CategoryID, &sp.Title, &sp.Description,
-		&sp.PriceSat, &sp.Stock, &sp.ImagePath, &sp.Status, &sp.CreatedAt, &sp.UpdatedAt,
+		&sp.PriceUSDCents, &sp.Stock, &sp.ImagePath, &sp.Status, &sp.CreatedAt, &sp.UpdatedAt,
 		&sp.ShopName, &sp.Eta, &sp.VendorUsername)
 	sp.ThumbPath = deriveThumb(sp.ImagePath)
 	return sp, err
@@ -363,7 +363,7 @@ func productArgs(p ProductRecord) []any {
 	if p.ImagePath != "" {
 		imgCol = p.ImagePath
 	}
-	return []any{p.VendorID, catCol, p.Title, p.Description, p.PriceSat, int32(p.Stock), imgCol, p.Status}
+	return []any{p.VendorID, catCol, p.Title, p.Description, p.PriceUSDCents, int32(p.Stock), imgCol, p.Status}
 }
 
 func (s *PGCatalogStore) CatalogCreateProduct(ctx context.Context, p ProductRecord) (*ProductRecord, error) {
@@ -385,7 +385,7 @@ func (s *PGCatalogStore) CatalogUpdateProduct(ctx context.Context, p ProductReco
 		imgCol = p.ImagePath
 	}
 	row := s.pool.QueryRow(ctx, qCatalogUpdateProduct, p.ID, p.VendorID, catCol,
-		p.Title, p.Description, p.PriceSat, int32(p.Stock), p.Status, imgCol)
+		p.Title, p.Description, p.PriceUSDCents, int32(p.Stock), p.Status, imgCol)
 	out, err := scanProduct(row)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, ErrNotFound

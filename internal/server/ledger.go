@@ -23,7 +23,7 @@ func NewLedgerService(pool *pgxpool.Pool) *LedgerService {
 // LedgerLeg represents one side (debit or credit) of a double-entry line.
 type LedgerLeg struct {
 	AccountName string
-	AmountSat   int64
+	AmountPiconero   int64
 	Direction   string // "debit" or "credit"
 }
 
@@ -42,14 +42,14 @@ func (s *LedgerService) RecordLedgerTx(ctx context.Context, txRef pgtype.UUID, i
 	// Verify balance: sum(debits) must equal sum(credits)
 	var totalDebit, totalCredit int64
 	for _, leg := range legs {
-		if leg.AmountSat <= 0 {
+		if leg.AmountPiconero <= 0 {
 			return errors.New("ledger: non-positive amount")
 		}
 		switch leg.Direction {
 		case "debit":
-			totalDebit += leg.AmountSat
+			totalDebit += leg.AmountPiconero
 		case "credit":
-			totalCredit += leg.AmountSat
+			totalCredit += leg.AmountPiconero
 		default:
 			return fmt.Errorf("ledger: invalid direction %q", leg.Direction)
 		}
@@ -67,9 +67,9 @@ func (s *LedgerService) RecordLedgerTx(ctx context.Context, txRef pgtype.UUID, i
 		}
 
 		_, err = tx.Exec(ctx, `
-			INSERT INTO ledger_entries (tx_ref, idempotency_key, account_id, amount_sat, direction, order_id, memo)
+			INSERT INTO ledger_entries (tx_ref, idempotency_key, account_id, amount_piconero, direction, order_id, memo)
 			VALUES ($1, $2, $3, $4, $5, $6, $7)
-		`, txRef, idempotencyKey, accountID, leg.AmountSat, leg.Direction, orderID, memo)
+		`, txRef, idempotencyKey, accountID, leg.AmountPiconero, leg.Direction, orderID, memo)
 		if err != nil {
 			return fmt.Errorf("ledger: insert entry: %w", err)
 		}

@@ -66,7 +66,7 @@ CREATE TABLE products (
     category_id INT  REFERENCES categories(id),
     title       TEXT NOT NULL CHECK (char_length(title) BETWEEN 3 AND 200),
     description TEXT NOT NULL DEFAULT '' CHECK (char_length(description) <= 20000),
-    price_sat   BIGINT NOT NULL CHECK (price_sat > 0),      -- integer satoshis, never float
+    price_usd_cents BIGINT NOT NULL CHECK (price_usd_cents > 0),      -- integer satoshis, never float
     stock       INT NOT NULL DEFAULT 0 CHECK (stock >= 0),
     image_path  TEXT,                                       -- served from web/static only
     status      TEXT NOT NULL DEFAULT 'active'
@@ -90,10 +90,11 @@ CREATE TABLE orders (
     status         TEXT NOT NULL DEFAULT 'awaiting_payment' CHECK (status IN
                    ('awaiting_payment','in_escrow','shipped','disputed',
                     'released','refunded','cancelled')),
-    total_sat      BIGINT NOT NULL CHECK (total_sat > 0),
+    total_usd_cents  BIGINT NOT NULL CHECK (total_usd_cents > 0),
+    xmr_amount_piconero BIGINT NOT NULL DEFAULT 0 CHECK (xmr_amount_piconero >= 0),
     fee_sat        BIGINT NOT NULL DEFAULT 0 CHECK (fee_sat >= 0),
-    btc_address    TEXT,                           -- invoice payout info from BTCPay
-    btcpay_invoice_id TEXT UNIQUE,                 -- our poll target (ARCHITECTURE.md §2)
+    xmr_address     TEXT,                           -- Monero subaddress for this order                           -- Monero subaddress for this specific vendor order
+    xmr_payment_id  TEXT UNIQUE,                 -- Monero payment ID / subaddress index                 -- Monero payment ID or subaddress index for tracking
     shipping_ciphertext TEXT,                      -- PGP-encrypted with VENDOR public key
     shipped_at     TIMESTAMPTZ,
     auto_release_at TIMESTAMPTZ,                   -- shipped_at + 14d, UTC from Postgres
@@ -114,15 +115,15 @@ CREATE TABLE order_items (
     product_id   UUID NOT NULL REFERENCES products(id),
     product_title TEXT NOT NULL,   -- denormalized snapshot at purchase time
     qty          INT NOT NULL CHECK (qty > 0),
-    unit_price_sat BIGINT NOT NULL CHECK (unit_price_sat > 0)
+    unit_price_usd_cents BIGINT NOT NULL CHECK (unit_price_usd_cents > 0)
 );
 
--- Idempotency ledger for payment events derived from BTCPay polls. A duplicate
+-- Idempotency ledger for payment events derived from Monero wallet RPC polls. A duplicate
 -- or replayed (invoice_id, status) can never be applied twice.
 CREATE TABLE payment_events (
     id              BIGSERIAL PRIMARY KEY,
-    invoice_id      TEXT NOT NULL,
-    btcpay_status   TEXT NOT NULL,
+    payment_id      TEXT NOT NULL,
+    payment_status  TEXT NOT NULL,
     order_id        UUID NOT NULL REFERENCES orders(id),
     paid_amount_sat BIGINT,
     raw_payload     JSONB NOT NULL,
@@ -172,7 +173,7 @@ CREATE TABLE ledger_entries (
     tx_ref         UUID NOT NULL,               -- one logical movement shares a tx_ref
     idempotency_key TEXT NOT NULL UNIQUE,       -- e.g. 'pay:<invoice_id>', 'release:<order_id>'
     account_id     INT NOT NULL REFERENCES accounts(id),
-    amount_sat     BIGINT NOT NULL CHECK (amount_sat > 0),
+    amount_piconero  BIGINT NOT NULL CHECK (amount_piconero > 0),
     direction      TEXT NOT NULL CHECK (direction IN ('debit','credit')),
     order_id       UUID REFERENCES orders(id),
     memo           TEXT NOT NULL DEFAULT '' CHECK (char_length(memo) <= 500),
@@ -191,8 +192,8 @@ CREATE VIEW account_balances AS
 CREATE TABLE withdrawals (
     id           UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     vendor_id    UUID NOT NULL REFERENCES vendors(id),
-    amount_sat   BIGINT NOT NULL CHECK (amount_sat > 0),
-    btc_address  TEXT NOT NULL,
+    amount_piconero BIGINT NOT NULL CHECK (amount_piconero > 0),
+    xmr_address   TEXT NOT NULL,
     status       TEXT NOT NULL DEFAULT 'requested'
                  CHECK (status IN ('requested','approved','paid','rejected')),
     reviewed_by  UUID REFERENCES users(id),

@@ -56,6 +56,14 @@
         <a href="/disputes">Disputes</a>
         <a href="/cart">Cart</a>
         <a href="/tickets">Tickets</a>
+              <form method="post" action="/currency/set" class="currency-set-form" style="margin:0; display:inline; margin-left: 0.5rem;">
+        <input type="hidden" name="csrf_token" value="{{.CsrfToken}}">
+        <select name="currency" onchange="this.form.submit()" style="background: var(--surface); color: var(--ink); border: 1px solid var(--line); border-radius: 0.4rem; padding: 0.3rem; font-size: 0.85rem; cursor: pointer;">
+          <option value="USD" {{if eq .PreferredCurrency "USD"}}selected{{end}}>USD</option>
+          <option value="EUR" {{if eq .PreferredCurrency "EUR"}}selected{{end}}>EUR</option>
+          <option value="AUD" {{if eq .PreferredCurrency "AUD"}}selected{{end}}>AUD</option>
+        </select>
+      </form>
         <form method="post" action="/logout" class="nav-form" style="margin:0; display:inline;">
           <input type="hidden" name="csrf_token" value="{{.CsrfToken}}">
           <button class="secondary" type="submit" style="border:none; background:none; cursor:pointer; font-size:inherit; color:var(--accent); padding:.45rem .7rem;">Log out</button>

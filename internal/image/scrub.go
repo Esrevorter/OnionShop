@@ -18,7 +18,6 @@ import (
 	"path/filepath"
 	"strings"
 
-	_ "golang.org/x/image/tiff" // registers the TIFF decoder for stdimage.Decode
 )
 
 // MaxInputBytes bounds the raw upload we are willing to look at. The handler
@@ -55,7 +54,6 @@ type Scrubbed struct {
 //   - PNG  → re-encode PNG via opaque RGBA draw: tRNS/gAMA/tEXt/iTXt/zTXt all
 //     dropped by construction (only pixels survive the Draw).
 //   - GIF  → keep GIF but write WITHOUT the Comment extension
-//     (golang.org/x/image writes none unless asked). Animated GIFs collapse
 //     to their first frame — fine for static listing pictures.
 //   - TIFF → decode only; always re-encoded as PNG (TIFF carries heavy EXIF).
 func Scrub(data []byte) (*Scrubbed, error) {

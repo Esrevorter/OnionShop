@@ -1,5 +1,3 @@
-DATABASE_URL ?= postgres://onionshop:onionshop_dev_only@127.0.0.1:5432/onionshop?sslmode=disable
-
 .PHONY: up down build run test vet lint migrate migrate-down sqlc clean certs check install compose-config panic-wipe-dry
 
 up: ## start full stack (requires .env; see INSTALL.md)
@@ -38,11 +36,30 @@ lint: sqlc vet
 	GOTOOLCHAIN=local go run honnef.co/go/tools/cmd/staticcheck@v0.6.1 ./...
 	GOTOOLCHAIN=local go run github.com/golangci/golangci-lint/cmd/golangci-lint@v1.64.8 run --timeout 5m ./...
 
+# migrate requires DATABASE_URL to be set in the environment. This prevents
+# silent authentication failures when the Makefile's default credential doesn't
+# match the randomly-generated password in .env. Source .env first:
+#   set -a; . ./.env; set +a
+#   make migrate
 migrate:
-	migrate -path db/migrations -database "$(DATABASE_URL)" up
+	@if [ -z "$$DATABASE_URL" ]; then \
+		echo "ERROR: DATABASE_URL not set" >&2; \
+		echo "Source your .env file first:" >&2; \
+		echo "  set -a; . ./.env; set +a" >&2; \
+		echo "  make migrate" >&2; \
+		exit 1; \
+	fi
+	migrate -path db/migrations -database "$$DATABASE_URL" up
 
 migrate-down:
-	migrate -path db/migrations -database "$(DATABASE_URL)" down 1
+	@if [ -z "$$DATABASE_URL" ]; then \
+		echo "ERROR: DATABASE_URL not set" >&2; \
+		echo "Source your .env file first:" >&2; \
+		echo "  set -a; . ./.env; set +a" >&2; \
+		echo "  make migrate-down" >&2; \
+		exit 1; \
+	fi
+	migrate -path db/migrations -database "$$DATABASE_URL" down 1
 
 sqlc: ## generate sqlc bindings from db/schema.sql and db/query/**
 	sqlc generate

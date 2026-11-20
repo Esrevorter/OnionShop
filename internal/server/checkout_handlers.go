@@ -14,14 +14,14 @@ import (
 type CartData struct {
 	AuthData
 	Cart     Cart
-	TotalSat int64
+	TotalUSDCents int64
 }
 
 // CheckoutData represents the checkout page payload.
 type CheckoutData struct {
 	AuthData
 	Cart                 Cart
-	TotalSat             int64
+	TotalUSDCents             int64
 	DeliveryInstructions string
 	OrderPlaced          bool
 }
@@ -46,13 +46,13 @@ func (a *App) handleCartGet(w http.ResponseWriter, r *http.Request) {
 	
 	var total int64
 	for _, item := range cart {
-		total += item.PriceSat * int64(item.Qty)
+		total += item.PriceUSDCents * int64(item.Qty)
 	}
 
 	data := CartData{
 		AuthData: a.baseData(r),
 		Cart:     cart,
-		TotalSat: total,
+		TotalUSDCents: total,
 	}
 	a.renderAs(w, "cart", http.StatusOK, data)
 }
@@ -115,13 +115,13 @@ func (a *App) handleCheckoutGet(w http.ResponseWriter, r *http.Request) {
 
 	var total int64
 	for _, item := range cart {
-		total += item.PriceSat * int64(item.Qty)
+		total += item.PriceUSDCents * int64(item.Qty)
 	}
 
 	data := CheckoutData{
 		AuthData: a.baseData(r),
 		Cart:     cart,
-		TotalSat: total,
+		TotalUSDCents: total,
 	}
 	
 	if data.Captcha = a.newChallenge(w, r, "checkout"); data.Captcha == nil {
@@ -142,9 +142,9 @@ func (a *App) handleCheckoutSubmit(w http.ResponseWriter, r *http.Request) {
 		data.Cart = cart
 		var total int64
 		for _, item := range cart {
-			total += item.PriceSat * int64(item.Qty)
+			total += item.PriceUSDCents * int64(item.Qty)
 		}
-		data.TotalSat = total
+		data.TotalUSDCents = total
 		if data.Captcha = a.newChallenge(w, r, "checkout"); data.Captcha == nil {
 			return
 		}
@@ -190,7 +190,11 @@ func (a *App) handleCheckoutSubmit(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// 3. Generate XMR payment addresses for each order
+	// 3. Calculate XMR settlement amount (locked at checkout)
+	rates := NewExchangeRates() // In prod, inject this into App struct
+	xmrAmount := rates.USDCentsToPiconero(data.TotalUSDCents)
+
+	// 4. Generate XMR payment addresses for each order
 	provider := &MockMoneroProvider{}
 
 	for _, orderID := range orderIDs {
@@ -204,9 +208,9 @@ func (a *App) handleCheckoutSubmit(w http.ResponseWriter, r *http.Request) {
 		// Update the order with the XMR payment details
 		_, err = pool.Exec(ctx, `
 			UPDATE orders 
-			SET xmr_address = $1, xmr_payment_id = $2, status = 'awaiting_payment'
+			SET xmr_address = $1, xmr_payment_id = $2, xmr_amount_piconero = $3, status = 'awaiting_payment'
 			WHERE id = $3
-		`, addr, pid, orderID)
+		`, addr, pid, xmrAmount, orderID)
 		if err != nil {
 			log.Printf("server: failed to update order %s with XMR details: %v", uuidString(orderID), err)
 			fail("Failed to save payment details.")

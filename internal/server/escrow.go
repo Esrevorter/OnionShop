@@ -6,14 +6,14 @@ import (
 )
 
 // Escrow state machine (ARCHITECTURE.md §4) as PURE logic — the highest-risk
-// invariant in the marketplace lives here, decoupled from Postgres/BTCPay so
+// invariant in the marketplace lives here, decoupled from Postgres/Monero so
 // CI can exhaustively test every transition without infrastructure
 // (TASKS.md "Cross-Cutting": escrow transitions first).
 //
 // The DB enforces the same graph a second time: migration 0002's CHECK keeps
 // status within this set, and Phase 6's service layer routes every write
 // through NextEscrowState before touching SQL. Payment confirmation arrives by
-// BTCPay POLLING (never webhooks — the hidden service is unreachable inbound,
+// Monero POLLING (never webhooks — the hidden service is unreachable inbound,
 // ARCHITECTURE.md §2); poll results are applied with idempotency keys, so a
 // duplicate observation must be an accepted no-op rather than an error. That
 // is why Apply(PaymentConfirmed) on a non-awaiting state returns (state, nil).

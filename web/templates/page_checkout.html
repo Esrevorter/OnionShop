@@ -24,12 +24,12 @@
           {{range $pid, $item := .Cart}}
           <tr>
             <td>{{$item.Title}} <span class="text-muted">(x{{$item.Qty}})</span></td>
-            <td style="text-align: right;">{{mul $item.PriceUSDCents $item.Qty}} sat</td>
+            <td style="text-align: right;">{{fmtFiat (mul $item.PriceUSDCents $item.Qty) $.PreferredCurrency}}</td>
           </tr>
           {{end}}
           <tr style="border-top: 2px solid var(--line); font-weight: bold;">
             <td>Total</td>
-            <td style="text-align: right; color: var(--accent);">{{.TotalUSDCents}} sat</td>
+            <td style="text-align: right; color: var(--accent);">{{fmtFiat .TotalUSDCents $.PreferredCurrency}}</td>
           </tr>
         </tbody>
       </table>

@@ -169,13 +169,13 @@ services:
       --enforce-dns-checkpointing
       --check-updates=disabled
       --restricted-rpc
-      --rpc-bind-ip 127.0.0.1
+      --rpc-bind-ip 0.0.0.0
       --rpc-login monero:moneropassword
       --disable-md5
     extra_hosts:
       - "host.docker.internal:host-gateway"
     volumes:
-      - monero_data:/home/monero/.bitmonero
+      - /mnt/secure_monero/daemon:/home/monero/.bitmonero
     networks: [internal_net]
     tmpfs: [/tmp]
     healthcheck:
@@ -185,6 +185,31 @@ services:
       timeout: 10s
       retries: 5
       start_period: 120s
+
+  # 3. Monero Wallet RPC (escrow hot wallet)
+  # Provides the JSON-RPC the Go MoneroProvider calls to mint per-order
+  # subaddresses and poll for confirmations. Stays on internal_net ONLY: no
+  # host port is published, so the RPC is reachable by the app container but
+  # never by the host or the internet. The wallet file lives in a named volume.
+  monero-wallet-rpc:
+    image: ${WALLET_RPC_IMAGE:-ghcr.io/sethforprivacy/simple-monero-wallet-rpc:v0.18.3.3}  # verify tag exists / pin digest
+    <<: *default-hardening
+    mem_limit: 1000m
+    pids_limit: 256
+    environment:
+      - MONERO_DAEMON_ADDRESS=http://monerod:18081
+      - MONERO_WALLET_NAME=onionshop
+      - MONERO_WALLET_PASSWORD=${XMR_WALLET_PASSWORD}
+      - RPC_BIND_IP=0.0.0.0
+      - RPC_BIND_PORT=18083
+      - RPC_LOGIN=monero:${XMR_WALLET_RPC_PASSWORD}
+    depends_on:
+      monerod:
+        condition: service_healthy
+    networks: [internal_net]
+    tmpfs: [/tmp]
+    volumes:
+      - /mnt/secure_monero/wallet:/home/monero/wallet_data
 
   backup:
     build:
@@ -211,7 +236,6 @@ volumes:
   backup_data:
   appsock:
   uploads_data:
-  monero_data:
 
 networks:
   internal_net:

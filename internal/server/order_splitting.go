@@ -43,17 +43,17 @@ func SplitCartIntoVendorOrders(ctx context.Context, pool *pgxpool.Pool, customer
 			return pgtype.UUID{}, nil, fmt.Errorf("server: invalid vendor id %s: %w", vendorIDStr, err)
 		}
 
-		var totalSat int64
+		var totalUSDCents int64
 		for _, item := range items {
-			totalSat += item.PriceSat * int64(item.Qty)
+			totalUSDCents += item.PriceUSDCents * int64(item.Qty)
 		}
 
 		var orderID pgtype.UUID
 		err := tx.QueryRow(ctx, `
-			INSERT INTO orders (checkout_ref, customer_id, vendor_id, status, total_sat)
+			INSERT INTO orders (checkout_ref, customer_id, vendor_id, status, total_usd_cents)
 			VALUES ($1, $2, $3, 'awaiting_payment', $4)
 			RETURNING id
-		`, checkoutRef, customerID, vendorUUID, totalSat).Scan(&orderID)
+		`, checkoutRef, customerID, vendorUUID, totalUSDCents).Scan(&orderID)
 		if err != nil {
 			return pgtype.UUID{}, nil, fmt.Errorf("server: insert order: %w", err)
 		}
@@ -64,9 +64,9 @@ func SplitCartIntoVendorOrders(ctx context.Context, pool *pgxpool.Pool, customer
 				return pgtype.UUID{}, nil, fmt.Errorf("server: invalid product id %s: %w", item.ProductID, err)
 			}
 			_, err = tx.Exec(ctx, `
-				INSERT INTO order_items (order_id, product_id, product_title, qty, unit_price_sat)
+				INSERT INTO order_items (order_id, product_id, product_title, qty, unit_price_usd_cents)
 				VALUES ($1, $2, $3, $4, $5)
-			`, orderID, productUUID, item.Title, item.Qty, item.PriceSat)
+			`, orderID, productUUID, item.Title, item.Qty, item.PriceUSDCents)
 			if err != nil {
 				return pgtype.UUID{}, nil, fmt.Errorf("server: insert order item: %w", err)
 			}

@@ -25,7 +25,6 @@ type CatalogData struct {
 	Vendor       *VendorRecord
 	Query        string
 	CategoryName string
-	DisplayPrice string
 	Total        int64
 	Limit        int
 	Offset       int
@@ -34,19 +33,6 @@ type CatalogData struct {
 	ShopHandle   string
 }
 
-func formatDisplayPrice(sat int64) string {
-	neg := ""
-	if sat < 0 {
-		neg = "-"
-		sat = -sat
-	}
-	whole := strconv.FormatInt(sat/100000000, 10)
-	frac := strconv.FormatInt(sat%100000000, 10)
-	for len(frac) < 8 {
-		frac = "0" + frac
-	}
-	return neg + whole + "." + frac
-}
 
 func (a *App) catalogBase(r *http.Request) *CatalogData {
 	d := &CatalogData{AuthData: a.baseData(r)}
@@ -233,7 +219,6 @@ func (a *App) handleProductPage(w http.ResponseWriter, r *http.Request) {
 	data := a.catalogBase(r)
 	data.Product = p
 	data.ShopName = p.ShopName
-	data.DisplayPrice = formatDisplayPrice(p.PriceSat)
 	a.renderCatalog(w, r, "product", http.StatusOK, data)
 }
 

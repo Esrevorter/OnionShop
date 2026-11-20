@@ -15,8 +15,8 @@ import (
 type WithdrawalRecord struct {
 	ID         pgtype.UUID
 	VendorID   pgtype.UUID
-	AmountSat  int64
-	BtcAddress string
+	AmountPiconero  int64
+	XmrAddress string
 	Status     string
 	CreatedAt  time.Time
 }
@@ -25,7 +25,7 @@ type WithdrawalRecord struct {
 type WithdrawalStore interface {
 	VendorGetByUser(ctx context.Context, userID pgtype.UUID) (*VendorRecord, error)
 	GetVendorBalanceSat(ctx context.Context, vendorID pgtype.UUID) (int64, error)
-	CreateWithdrawalRequest(ctx context.Context, vendorID pgtype.UUID, amountSat int64, btcAddress string) error
+	CreateWithdrawalRequest(ctx context.Context, vendorID pgtype.UUID, amountPiconero int64, xmrAddress string) error
 	ListWithdrawalsByVendor(ctx context.Context, vendorID pgtype.UUID) ([]WithdrawalRecord, error)
 	ListPendingWithdrawals(ctx context.Context) ([]WithdrawalRecord, error)
 	ReviewWithdrawal(ctx context.Context, withdrawalID pgtype.UUID, reviewerID pgtype.UUID, status string) error
@@ -93,22 +93,23 @@ func (a *App) handleWithdrawSubmit(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	amountStr := strings.TrimSpace(r.FormValue("amount_sat"))
-	btcAddress := strings.TrimSpace(r.FormValue("btc_address"))
-	amountSat, err := strconv.ParseInt(amountStr, 10, 64)
-	if err != nil || amountSat <= 0 {
+	amountStr := strings.TrimSpace(r.FormValue("amount_piconero"))
+	xmrAddress := strings.TrimSpace(r.FormValue("xmr_address"))
+	amountXMR, err := strconv.ParseFloat(amountStr, 64)
+	if err != nil || amountXMR <= 0 {
 		fail("invalid withdrawal amount")
 		return
 	}
 
-	if btcAddress == "" {
-		fail("bitcoin address is required")
+	if xmrAddress == "" {
+		fail("monero address is required")
 		return
 	}
 
 	// Create withdrawal request (store implementation handles balance checks)
 	if ws, ok := a.vendor.(WithdrawalStore); ok {
-		if err := ws.CreateWithdrawalRequest(ctx, v.ID, amountSat, btcAddress); err != nil {
+		amountPiconero := int64(amountXMR * 1e12)
+	if err := ws.CreateWithdrawalRequest(ctx, v.ID, amountPiconero, xmrAddress); err != nil {
 			fail("could not create withdrawal request: " + err.Error())
 			return
 		}

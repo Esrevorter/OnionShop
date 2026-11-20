@@ -36,11 +36,11 @@
     <form method="post" action="/wallet/withdraw" autocomplete="off">
       {{template "friction" .}}
       
-      <label for="amount_sat">Amount (in Satoshis)</label>
-      <input id="amount_sat" type="number" name="amount_sat" min="10000" placeholder="10000" required>
+      <label for="amount_xmr">Amount (XMR)</label>
+      <input id="amount_xmr" type="text" name="amount_xmr" placeholder="0.00000000" required>
       
-      <label for="btc_address">Destination Bitcoin Address</label>
-      <input id="btc_address" type="text" name="btc_address" placeholder="bc1q..." required>
+      <label for="xmr_address">Destination Monero Address</label>
+      <input id="xmr_address" type="text" name="xmr_address" placeholder="4..." required>
       
       <div class="form-actions">
         <button type="submit" class="button">Submit Withdrawal Request</button>

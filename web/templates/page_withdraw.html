@@ -11,9 +11,9 @@
     {{template "friction" .}}
     <input type="hidden" name="csrf_token" value="{{.CsrfToken}}">
     <label for="amount">Amount (XMR)</label>
-    <input id="amount" type="text" name="amount" required placeholder="0.00000000">
+    <input id="amount" type="text" name="amount_xmr" required placeholder="0.00000000">
     <label for="address">Destination Monero Address</label>
-    <input id="address" type="text" name="address" required placeholder="4...">
+    <input id="address" type="text" name="xmr_address" required placeholder="4...">
     <div class="notice"><strong>Security Notice</strong><br>Ensure this address is correct. Withdrawals cannot be reversed.</div>
     <div class="form-actions"><button type="submit">Submit Request</button></div>
     <div class="form-actions"><a href="/wallet" class="secondary">Cancel</a></div>

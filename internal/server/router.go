@@ -162,6 +162,7 @@ func newApp(cfg Config, deps Deps, sessionStore scs.Store, withRateLimit bool) (
 	r.Use(a.CSRFProtect())
 
 	r.Get("/healthz", a.handleHealth)
+	r.Post("/currency/set", http.HandlerFunc(a.handleSetCurrency))
 	// CAPTCHA images ride the same router as the forms that embed them.
 	// The id contains a dot (nonce.mac), so the route is keyed on the whole
 	// segment ({id}) with NO trailing literal: a "{id}.png" pattern makes chi
