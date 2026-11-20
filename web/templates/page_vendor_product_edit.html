@@ -21,8 +21,24 @@
 
       <div class="form-grid">
         <div>
+          <label for="price_usd">Price (USD)</label>
+          <input id="price_usd" type="number" step="0.01" min="0.01" name="price_usd" placeholder="10.00" {{if .Editing}}value="{{fmtUSD .Editing.PriceUSDCents}}"{{end}} required>
         </div>
-        Category</label>
+        <div>
+          <label for="stock">Available Stock</label>
+          <input id="stock" type="number" name="stock" min="0" value="{{if .Editing}}{{.Editing.Stock}}{{else}}0{{end}}" required>
+        </div>
+      </div>
+
+      <label for="images">Product Images (Max 5, JPG/PNG, 10MB total)</label>
+      <input id="images" type="file" name="images" multiple accept="image/jpeg,image/png">
+      {{if .Editing}}
+        {{if .Editing.ImagePath}}
+        <p class="form-help">New uploads replace the current images. Leave empty to keep them.</p>
+        {{end}}
+      {{end}}
+
+      <label for="category_id">Category</label>
       <select id="category_id" name="category_id">
         <option value="0">Uncategorized</option>
         {{range .Categories}}
