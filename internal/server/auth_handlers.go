@@ -41,6 +41,7 @@ type AuthData struct {
 	PersonalPhrase  string
 	PGPPublicKey    string
 	PGPFingerprint  string
+        PreferredCurrency string
 	Products        []ProductRecord
 	Categories      []CategoryRecord
 	Pending         []VendorRecord
@@ -879,6 +880,12 @@ func currentUserUUID(ctx context.Context, sm *scs.SessionManager) *pgtype.UUID {
 }
 
 var templateFuncs = template.FuncMap{
+	"fmtFiat": func(cents int64, currency string) string {
+		if ratesOracle == nil {
+			return fmt.Sprintf("%d", cents)
+		}
+		return ratesOracle.Format(cents, currency)
+	},
 	"fmtUSD": func(cents int64) string {
 		sign := ""
 		if cents < 0 {
@@ -941,6 +948,11 @@ func (a *App) baseData(r *http.Request) AuthData {
 		IsVendor:        CurrentRole(r.Context(), a.sm) == "vendor",
 	}
 	d.HoneypotHidden = true
+	curr := a.sm.GetString(r.Context(), "sess_currency")
+	if curr == "" {
+		curr = "USD"
+	}
+	d.PreferredCurrency = curr
 	return d
 }
 
@@ -960,3 +972,21 @@ func (a *App) render(w http.ResponseWriter, name string, code int, data AuthData
 
 var _ chi.Router
 var _ = scs.New
+
+func (a *App) handleSetCurrency(w http.ResponseWriter, r *http.Request) {
+    ctx := r.Context()
+    _ = r.ParseForm()
+    curr := strings.ToUpper(strings.TrimSpace(r.FormValue("currency")))
+    if curr != "USD" && curr != "EUR" && curr != "AUD" {
+        curr = "USD"
+    }
+    a.sm.Put(ctx, "sess_currency", curr)
+    
+    // Redirect back to referer or home
+    ref := r.Referer()
+    if ref == "" {
+        ref = "/"
+    }
+    http.Redirect(w, r, ref, http.StatusSeeOther)
+}
+
