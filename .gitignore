@@ -1,2 +1,6 @@
 internal/store/gen/
 .env
+
+*.swp
+*.swo
+onionshop
