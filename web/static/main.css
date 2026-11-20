@@ -306,3 +306,9 @@ input::placeholder, textarea::placeholder { color: #829287; }
 .breadcrumbs [aria-hidden="true"] { color:var(--line); }
 .product-detail-media img { display:block; width:auto; max-width:100%; height:auto; max-height:62vh; aspect-ratio:auto; object-fit:contain; margin-inline:auto; }
 .product-detail .product-copy h1 { font-size:clamp(1.6rem, 3vw, 2.2rem); }
+
+/* Currency selector buttons (CSP-safe, no JS) */
+.currency-btn { min-height: 1.7rem; padding: .15rem .55rem; font-size: .75rem; font-weight: 700;
+  border-radius: .45rem; background: transparent; color: var(--muted); border: 1px solid var(--line); }
+.currency-btn:hover { background: var(--surface-raised); color: var(--ink); }
+.currency-active { background: var(--accent-strong); color: #102017; border-color: var(--accent-strong); }

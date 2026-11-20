@@ -365,6 +365,7 @@ func (a *App) RegisterAuthRoutesFull(auth AuthStore, captcha *CaptchaService, se
 	a.linker = sessions
 	r := a.router
 	r.Get("/", a.handleHome)
+	r.Post("/currency/set", http.HandlerFunc(a.handleSetCurrency))
 	r.Get("/register", a.handleRegisterForm)
 	r.Post("/register", a.handleRegisterSubmit)
 	r.Get("/login", a.handleLoginForm)
