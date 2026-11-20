@@ -12,7 +12,7 @@ import (
 
 type OrderItemView struct {
 	Title         string
-	Qty           int
+	Qty           int64
 	PriceUSDCents int64
 }
 
