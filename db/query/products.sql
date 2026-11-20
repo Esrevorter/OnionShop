@@ -3,7 +3,7 @@
 -- UPDATE so a checkout can never oversell (single-statement atomicity).
 
 -- name: CreateProduct :one
-INSERT INTO products (vendor_id, category_id, title, description, price_sat, stock, image_path, status)
+INSERT INTO products (vendor_id, category_id, title, description, price_usd_cents, stock, image_path, status)
 VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
 RETURNING *;
 
@@ -34,7 +34,7 @@ UPDATE products SET
     category_id = $2,
     title       = $3,
     description = $4,
-    price_sat   = $5,
+    price_usd_cents   = $5,
     stock       = $6,
     image_path  = $7,
     status      = $8,

@@ -40,7 +40,7 @@ UPDATE products SET
     category_id = $3,
     title       = $4,
     description = $5,
-    price_sat   = $6,
+    price_usd_cents   = $6,
     stock       = $7,
     status      = $8,
     updated_at  = now()

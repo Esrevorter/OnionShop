@@ -3,7 +3,7 @@
 -- the DB CHECK constraint (migration 0002) is the second line of defense.
 
 -- name: CreateOrder :one
-INSERT INTO orders (checkout_ref, customer_id, vendor_id, total_sat, fee_sat, btc_address, btcpay_invoice_id, shipping_ciphertext)
+INSERT INTO orders (checkout_ref, customer_id, vendor_id, total_usd_cents, fee_sat, xmr_address, xmr_payment_id, shipping_ciphertext)
 VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
 RETURNING *;
 
@@ -11,7 +11,7 @@ RETURNING *;
 SELECT * FROM orders WHERE id = $1;
 
 -- name: GetOrderByInvoice :one
-SELECT * FROM orders WHERE btcpay_invoice_id = $1;
+SELECT * FROM orders WHERE xmr_payment_id = $1;
 
 -- name: ListCustomerOrders :many
 SELECT * FROM orders
@@ -46,16 +46,16 @@ ORDER BY auto_release_at
 LIMIT sqlc.arg(lim);
 
 -- name: CreateOrderItem :exec
-INSERT INTO order_items (order_id, product_id, product_title, qty, unit_price_sat)
+INSERT INTO order_items (order_id, product_id, product_title, qty, unit_price_usd_cents)
 VALUES ($1, $2, $3, $4, $5);
 
 -- name: ListOrderItems :many
 SELECT * FROM order_items WHERE order_id = $1 ORDER BY id;
 
 -- name: InsertPaymentEvent :exec
--- UNIQUE (invoice_id, btcpay_status) makes BTCPay poll replays idempotent;
+-- UNIQUE (payment_id, payment_status) makes BTCPay poll replays idempotent;
 -- callers must treat a unique-violation as "already applied", not an error.
-INSERT INTO payment_events (invoice_id, btcpay_status, order_id, paid_amount_sat, raw_payload, applied)
+INSERT INTO payment_events (payment_id, payment_status, order_id, paid_amount_sat, raw_payload, applied)
 VALUES ($1, $2, $3, $4, $5, $6);
 
 -- name: OpenDispute :one

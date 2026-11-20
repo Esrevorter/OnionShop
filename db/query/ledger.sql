@@ -12,7 +12,7 @@ VALUES ($1, $2)
 RETURNING *;
 
 -- name: InsertLedgerEntry :exec
-INSERT INTO ledger_entries (tx_ref, idempotency_key, account_id, amount_sat, direction, order_id, memo)
+INSERT INTO ledger_entries (tx_ref, idempotency_key, account_id, amount_piconero, direction, order_id, memo)
 VALUES ($1, $2, $3, $4, $5, $6, $7);
 
 -- name: AccountBalance :one
@@ -28,7 +28,7 @@ LIMIT sqlc.arg(lim) OFFSET sqlc.arg(off);
 SELECT * FROM ledger_entries WHERE order_id = $1 ORDER BY id;
 
 -- name: RequestWithdrawal :one
-INSERT INTO withdrawals (vendor_id, amount_sat, btc_address)
+INSERT INTO withdrawals (vendor_id, amount_piconero, xmr_address)
 VALUES ($1, $2, $3)
 RETURNING *;
 
