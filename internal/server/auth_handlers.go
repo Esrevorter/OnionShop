@@ -881,6 +881,13 @@ func currentUserUUID(ctx context.Context, sm *scs.SessionManager) *pgtype.UUID {
 }
 
 var templateFuncs = template.FuncMap{
+		"fmtXMR": func(piconero int64) string {
+		neg := ""
+		if piconero < 0 {
+			neg, piconero = "-", -piconero
+		}
+		return fmt.Sprintf("%s%d.%012d", neg, piconero/1000000000000, piconero%1000000000000)
+	},
 	"fmtFiat": func(cents int64, currency string) string {
 		if ratesOracle == nil {
 			return fmtUSDCents(cents)

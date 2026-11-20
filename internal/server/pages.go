@@ -25,7 +25,7 @@ func (a *App) registerPageRoutes(r chi.Router) {
 	}
 
 	mountPage("/wallet", "wallet")
-	mountPage("/orders", "orders")
+	r.Get("/orders", a.renderOrdersPage)
 	mountPage("/disputes", "disputes")
 	mountPage("/tickets", "tickets")
 	mountPage("/withdraw", "withdraw")
