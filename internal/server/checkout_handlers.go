@@ -1,6 +1,7 @@
 package server
 
 import (
+	"context"
 	"log"
 	"net/http"
 	"sort"
@@ -31,6 +32,8 @@ type CheckoutShippingOption struct {
 // CheckoutVendorGroup groups one vendor's cart items plus its shipping choices.
 type CheckoutVendorGroup struct {
 	VendorID   string
+	ShopName   string
+	ShopHandle string
 	Items      []CartItem
 	ItemsTotal int64
 	Options    []CheckoutShippingOption
@@ -96,6 +99,13 @@ func (a *App) handleCartGet(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 		groups = append(groups, *g)
+	}
+	if pool, ok := a.deps.Pool.(*pgxpool.Pool); ok {
+		for i := range groups {
+			if vuid, ok := parseUUID(groups[i].VendorID); ok {
+				groups[i].ShopName, groups[i].ShopHandle = vendorShopInfo(ctx, pool, vuid)
+			}
+		}
 	}
 	sort.Slice(groups, func(i, j int) bool { return groups[i].VendorID < groups[j].VendorID })
 	a.renderAs(w, "cart", http.StatusOK, CartData{AuthData: a.baseData(r), Cart: cart, TotalSat: total, VendorGroups: groups})
@@ -177,6 +187,13 @@ func (a *App) handleCheckoutGet(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 		groups = append(groups, *g)
+	}
+	if pool, ok := a.deps.Pool.(*pgxpool.Pool); ok {
+		for i := range groups {
+			if vuid, ok := parseUUID(groups[i].VendorID); ok {
+				groups[i].ShopName, groups[i].ShopHandle = vendorShopInfo(ctx, pool, vuid)
+			}
+		}
 	}
 	sort.Slice(groups, func(i, j int) bool { return groups[i].VendorID < groups[j].VendorID })
 
@@ -319,4 +336,22 @@ func (a *App) handleCheckoutSubmit(w http.ResponseWriter, r *http.Request) {
 		log.Printf("server: clear cart after checkout failed: %v", sanitizedErr(err))
 	}
 	http.Redirect(w, r, "/orders?ref="+uuidString(checkoutRef), http.StatusSeeOther)
+}
+
+// vendorShopInfo resolves a vendor's display name and shop handle for UI.
+// Degrades gracefully: join fails -> shop_name only; that fails -> empty and
+// the template falls back to the raw vendor id.
+func vendorShopInfo(ctx context.Context, pool *pgxpool.Pool, vendorID pgtype.UUID) (string, string) {
+	var name, handle string
+	err := pool.QueryRow(ctx, `
+		SELECT v.shop_name, COALESCE(u.username, '')
+		FROM vendors v LEFT JOIN users u ON u.id = v.user_id
+		WHERE v.id = $1`, vendorID).Scan(&name, &handle)
+	if err == nil {
+		return name, handle
+	}
+	if err2 := pool.QueryRow(ctx, `SELECT shop_name FROM vendors WHERE id=$1`, vendorID).Scan(&name); err2 == nil {
+		return name, ""
+	}
+	return "", ""
 }
