@@ -139,7 +139,7 @@ func (a *App) parseProductForm(r *http.Request, vendorID pgtype.UUID) (*ProductR
 	}
 	return &ProductRecord{
 		VendorID: vendorID, CategoryID: catID, Title: title, Description: desc,
-		PriceSat: price, Stock: stock, Status: status,
+		PriceUSDCents: price, Stock: stock, Status: status,
 	}, ""
 }
 
@@ -444,6 +444,9 @@ func (a *App) handleProductUpdate(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, "/vendor/products", http.StatusSeeOther)
 }
 
+// handleProductPublish makes a vendor's own draft listing public. CSRF (global) +
+// RequireRole + honeypot guard this; the list page never mints a CAPTCHA, so a
+// requireFriction gate here would silently reject every click (see git history).
 func (a *App) handleProductPublish(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	_ = r.ParseForm()
@@ -457,7 +460,7 @@ func (a *App) handleProductPublish(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/login", http.StatusSeeOther)
 		return
 	}
-	if honeypotTriggered(r) || !a.requireFriction(w, r, productPurpose) {
+	if honeypotTriggered(r) {
 		a.handleProductList(w, r)
 		return
 	}
@@ -523,7 +526,7 @@ func (a *App) handleProductRemove(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/login", http.StatusSeeOther)
 		return
 	}
-	if honeypotTriggered(r) || !a.requireFriction(w, r, productPurpose) {
+	if honeypotTriggered(r) {
 		a.handleProductList(w, r)
 		return
 	}
@@ -612,7 +615,7 @@ func (a *App) handleAddToCart(w http.ResponseWriter, r *http.Request) {
 		cart[key] = CartItem{
 			ProductID: key,
 			Title:     p.Title,
-			PriceSat:  p.PriceSat,
+			PriceUSDCents:  p.PriceUSDCents,
 			Qty:       1,
 			VendorID:  uuidString(p.VendorID),
 		}
@@ -633,7 +636,7 @@ func (a *App) auditProduct(ctx context.Context, actorID pgtype.UUID, action stri
 	details, _ := json.Marshal(map[string]any{
 		"product_id": uuidString(p.ID),
 		"title":      p.Title,
-		"price_sat":  p.PriceSat,
+		"price_sat":  p.PriceUSDCents,
 		"status":     p.Status,
 	})
 	if err := a.auth.AuditAppend(ctx, actorID, "user", action, "product:"+uuidString(p.ID), string(details)); err != nil {
