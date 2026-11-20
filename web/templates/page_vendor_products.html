@@ -32,7 +32,7 @@
         <tr>
           <td><strong>{{.Title}}</strong></td>
           <td>{{if gt .CategoryID 0}}#{{.CategoryID}}{{else}}Uncategorized{{end}}</td>
-          <td>{{.PriceSat}}</td>
+          <td>{{.PriceUSDCents}}</td>
           <td>{{.Stock}}</td>
           <td>
             {{if eq .Status "active"}}

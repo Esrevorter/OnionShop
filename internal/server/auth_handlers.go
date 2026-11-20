@@ -269,7 +269,7 @@ func (s *PGAuthStore) CategoryList(ctx context.Context) ([]CategoryRecord, error
 	return out, nil
 }
 func (s *PGAuthStore) ProductCreate(ctx context.Context, p *ProductRecord) error {
-	return s.pool.QueryRow(ctx, qProductInsert, p.VendorID, p.CategoryID, p.Title, p.Description, p.PriceSat, p.Stock, p.ImagePath, p.Status).Scan(&p.ID)
+	return s.pool.QueryRow(ctx, qProductInsert, p.VendorID, p.CategoryID, p.Title, p.Description, p.PriceUSDCents, p.Stock, p.ImagePath, p.Status).Scan(&p.ID)
 }
 func (s *PGAuthStore) ProductGet(ctx context.Context, id pgtype.UUID) (*ProductRecord, error) {
 	p, err := scanProduct(s.pool.QueryRow(ctx, qProductGet, id))
@@ -278,7 +278,7 @@ func (s *PGAuthStore) ProductGet(ctx context.Context, id pgtype.UUID) (*ProductR
 	return &p, nil
 }
 func (s *PGAuthStore) ProductUpdate(ctx context.Context, p *ProductRecord) error {
-	_, err := s.pool.Exec(ctx, qProductUpdate, p.ID, p.CategoryID, p.Title, p.Description, p.PriceSat, p.Stock, p.ImagePath, p.Status)
+	_, err := s.pool.Exec(ctx, qProductUpdate, p.ID, p.CategoryID, p.Title, p.Description, p.PriceUSDCents, p.Stock, p.ImagePath, p.Status)
 	if err != nil { return fmt.Errorf("store: update product: %w", err) }
 	return nil
 }
@@ -879,6 +879,13 @@ func currentUserUUID(ctx context.Context, sm *scs.SessionManager) *pgtype.UUID {
 }
 
 var templateFuncs = template.FuncMap{
+	"fmtUSD": func(cents int64) string {
+		sign := ""
+		if cents < 0 {
+			sign, cents = "-", -cents
+		}
+		return fmt.Sprintf("%s%d.%02d", sign, cents/100, cents%100)
+	},
 	"inertURL": func(s string) template.HTML {
 		fields := strings.Fields(s)
 		out := make([]string, len(fields))

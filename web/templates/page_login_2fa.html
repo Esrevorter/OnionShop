@@ -1,0 +1,24 @@
+{{template "layout" .}}
+
+{{define "title"}}Two-Factor Authentication · OnionShop{{end}}
+
+{{define "body"}}
+<section class="auth-layout">
+  <div class="auth-intro">
+    <p class="eyebrow">Security Check</p>
+    <h1>Enter Authentication Code</h1>
+    <p class="lede">Please enter the 6-digit code from your authenticator app to complete your login.</p>
+  </div>
+
+  <form method="post" action="/login/2fa" autocomplete="off" class="auth-card">
+    {{template "friction" .}}
+    
+    <label for="totp_code">Authentication Code</label>
+    <input id="totp_code" type="text" name="totp_code" inputmode="numeric" pattern="[0-9]*" maxlength="6" required autofocus>
+    
+    <div class="form-actions">
+      <button type="submit">Verify & Log In</button>
+    </div>
+  </form>
+</section>
+{{end}}

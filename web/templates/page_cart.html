@@ -30,7 +30,7 @@
         {{range $pid, $item := .Cart}}
         <tr>
           <td><strong>{{$item.Title}}</strong></td>
-          <td>{{$item.PriceSat}} sat</td>
+          <td>{{$item.PriceUSDCents}} sat</td>
           <td>
             <form method="post" action="/cart/action" style="display:flex; gap:0.5rem; align-items:center;">
               <input type="hidden" name="csrf_token" value="{{$.CsrfToken}}">
@@ -40,7 +40,7 @@
               <button type="submit" class="button secondary">Update</button>
             </form>
           </td>
-          <td>{{mul $item.PriceSat $item.Qty}} sat</td>
+          <td>{{mul $item.PriceUSDCents $item.Qty}} sat</td>
           <td>
             <form method="post" action="/cart/action">
               <input type="hidden" name="csrf_token" value="{{$.CsrfToken}}">
@@ -55,7 +55,7 @@
       <tfoot>
         <tr>
           <td colspan="3" style="text-align: right; font-weight: bold;">Total:</td>
-          <td colspan="2" style="font-weight: bold; color: var(--accent);">{{.TotalSat}} sat</td>
+          <td colspan="2" style="font-weight: bold; color: var(--accent);">{{.TotalUSDCents}} sat</td>
         </tr>
       </tfoot>
     </table>
