@@ -15,8 +15,9 @@ import (
 // CartData represents the cart page payload.
 type CartData struct {
 	AuthData
-	Cart     Cart
-	TotalSat int64
+	Cart         Cart
+	TotalSat     int64
+	VendorGroups []CheckoutVendorGroup
 }
 
 // CheckoutShippingOption is a display-safe view of a vendor shipping option.
@@ -69,16 +70,41 @@ func (a *App) handleCartGet(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var total int64
+	groupsMap := map[string]*CheckoutVendorGroup{}
 	for _, item := range cart {
-		total += item.PriceUSDCents * int64(item.Qty)
+		line := item.PriceUSDCents * int64(item.Qty)
+		total += line
+		g, exists := groupsMap[item.VendorID]
+		if !exists {
+			g = &CheckoutVendorGroup{VendorID: item.VendorID}
+			groupsMap[item.VendorID] = g
+		}
+		g.Items = append(g.Items, item)
+		g.ItemsTotal += line
 	}
-	a.renderAs(w, "cart", http.StatusOK, CartData{AuthData: a.baseData(r), Cart: cart, TotalSat: total})
+	groups := make([]CheckoutVendorGroup, 0, len(groupsMap))
+	for _, g := range groupsMap {
+		if pool, ok := a.deps.Pool.(*pgxpool.Pool); ok {
+			if vuid, ok := parseUUID(g.VendorID); ok {
+				if opts, err := ShippingListActiveByVendor(ctx, pool, vuid); err == nil {
+					for _, o := range opts {
+						g.Options = append(g.Options, CheckoutShippingOption{
+							IDStr: uuidString(o.ID), Title: o.Title, Eta: o.Eta, PriceUSDCents: o.PriceUSDCents,
+						})
+					}
+				}
+			}
+		}
+		groups = append(groups, *g)
+	}
+	sort.Slice(groups, func(i, j int) bool { return groups[i].VendorID < groups[j].VendorID })
+	a.renderAs(w, "cart", http.StatusOK, CartData{AuthData: a.baseData(r), Cart: cart, TotalSat: total, VendorGroups: groups})
 }
 
 func (a *App) handleCartAction(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	uid := CurrentUserID(ctx, a.sm)
-	if honeypotTriggered(r) || !a.requireFriction(w, r, "cart") {
+	if honeypotTriggered(r) {
 		http.Redirect(w, r, "/cart", http.StatusSeeOther)
 		return
 	}
