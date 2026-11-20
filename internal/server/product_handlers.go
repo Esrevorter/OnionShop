@@ -114,10 +114,11 @@ func (a *App) parseProductForm(r *http.Request, vendorID pgtype.UUID) (*ProductR
 	if len(desc) > productDescMax {
 		return nil, "description too long"
 	}
-	price, err := strconv.ParseInt(strings.TrimSpace(r.FormValue("price_sat")), 10, 64)
-	if err != nil || price <= 0 {
-		return nil, "price must be a positive number of satoshis"
+	priceUSD, err := strconv.ParseFloat(strings.TrimSpace(r.FormValue("price_usd")), 64)
+	if err != nil || priceUSD <= 0 {
+		return nil, "price must be a positive USD amount"
 	}
+	priceCents := int64(priceUSD * 100)
 	stock, err := strconv.ParseInt(strings.TrimSpace(r.FormValue("stock")), 10, 64)
 	if err != nil || stock < 0 {
 		return nil, "stock must be zero or more"
@@ -139,7 +140,7 @@ func (a *App) parseProductForm(r *http.Request, vendorID pgtype.UUID) (*ProductR
 	}
 	return &ProductRecord{
 		VendorID: vendorID, CategoryID: catID, Title: title, Description: desc,
-		PriceUSDCents: price, Stock: stock, Status: status,
+		PriceUSDCents: priceCents, Stock: stock, Status: status,
 	}, ""
 }
 
