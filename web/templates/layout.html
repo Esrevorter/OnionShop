@@ -6,7 +6,7 @@
 <meta name="color-scheme" content="dark">
 <title>{{block "title" .}}OnionShop{{end}}</title>
 <link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
-<link rel="stylesheet" href="/static/main.css?v=20261120">
+<link rel="stylesheet" href="/static/main.css?v=20261121">
 </head>
 <body>
 <header class="site-header">
@@ -64,7 +64,8 @@
       {{end}}
     </nav>
   </div>
-<div class="session-bar">
+
+      <div class="session-bar">
         <form method="post" action="/currency/set" class="currency-set-form">
         <input type="hidden" name="csrf_token" value="{{.CsrfToken}}">
         <span class="currency-label">Prices in</span>
@@ -77,7 +78,7 @@
           <button class="secondary" type="submit" style="border:none; background:none; cursor:pointer; font-size:inherit; color:var(--accent); padding:.45rem .7rem;">Log out</button>
         </form>
       </div>
-      </header>
+    </header>
 <main class="page-shell">
   {{if .Error}}<div class="error" role="alert"><strong>Something needs attention</strong><br>{{.Error}}</div>{{end}}
   {{if .Flash}}<div class="flash" role="status">{{.Flash}}</div>{{end}}

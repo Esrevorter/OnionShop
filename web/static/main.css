@@ -344,3 +344,7 @@ input::placeholder, textarea::placeholder { color: #829287; }
   font-size:.72rem !important; font-weight:700 !important; line-height:1 !important; border-radius:999px !important;
   background:transparent !important; color:var(--muted) !important; border:1px solid var(--line) !important; cursor:pointer !important; }
 .session-bar form button:hover { background:var(--surface-raised) !important; color:var(--ink) !important; }
+
+/* session bar v3: right-aligned; horizontal bounds come from header container */
+.session-bar { justify-content:flex-end !important; padding:.35rem 0 .55rem !important;
+  border-top:1px solid var(--line) !important; width:100% !important; }
