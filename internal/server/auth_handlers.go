@@ -883,7 +883,7 @@ func currentUserUUID(ctx context.Context, sm *scs.SessionManager) *pgtype.UUID {
 var templateFuncs = template.FuncMap{
 	"fmtFiat": func(cents int64, currency string) string {
 		if ratesOracle == nil {
-			return fmt.Sprintf("%d", cents)
+			return fmtUSDCents(cents)
 		}
 		return ratesOracle.Format(cents, currency)
 	},

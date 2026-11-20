@@ -312,3 +312,11 @@ input::placeholder, textarea::placeholder { color: #829287; }
   border-radius: .45rem; background: transparent; color: var(--muted); border: 1px solid var(--line); }
 .currency-btn:hover { background: var(--surface-raised); color: var(--ink); }
 .currency-active { background: var(--accent-strong); color: #102017; border-color: var(--accent-strong); }
+
+/* Compact currency pill group (CSP-safe, no JS) */
+.currency-set-form { margin:0; display:inline-flex; align-items:center; gap:.3rem; margin-left:.6rem; }
+.currency-label { font-size:.68rem; color:var(--muted); text-transform:uppercase; letter-spacing:.06em; }
+.currency-btn { min-height:0; height:1.5rem; padding:0 .55rem; font-size:.7rem; font-weight:700;
+  border-radius:999px; background:transparent; color:var(--muted); border:1px solid var(--line); cursor:pointer; }
+.currency-btn:hover { color:var(--ink); border-color:var(--accent-strong); background:transparent; }
+.currency-active, .currency-active:hover { background:var(--accent-strong); color:#102017; border-color:var(--accent-strong); }

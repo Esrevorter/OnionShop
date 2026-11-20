@@ -56,8 +56,9 @@
         <a href="/disputes">Disputes</a>
         <a href="/cart">Cart</a>
         <a href="/tickets">Tickets</a>
-              <form method="post" action="/currency/set" class="currency-set-form" style="margin:0; display:inline-flex; gap:0.25rem; margin-left:0.5rem;">
+              <form method="post" action="/currency/set" class="currency-set-form">
         <input type="hidden" name="csrf_token" value="{{.CsrfToken}}">
+        <span class="currency-label">Prices in</span>
         <button type="submit" name="currency" value="USD" class="currency-btn {{if eq .PreferredCurrency "USD"}}currency-active{{end}}">USD</button>
         <button type="submit" name="currency" value="EUR" class="currency-btn {{if eq .PreferredCurrency "EUR"}}currency-active{{end}}">EUR</button>
         <button type="submit" name="currency" value="AUD" class="currency-btn {{if eq .PreferredCurrency "AUD"}}currency-active{{end}}">AUD</button>

@@ -23,6 +23,7 @@
         <div>
           <label for="price_usd">Price (USD)</label>
           <input id="price_usd" type="number" step="0.01" min="0.01" name="price_usd" placeholder="10.00" {{if .Editing}}value="{{fmtUSD .Editing.PriceUSDCents}}"{{end}} required>
+          <p class="form-help">Enter the price in <strong>USD</strong> (base currency). Buyers see it converted to their preferred currency (currently <strong>{{.PreferredCurrency}}</strong>).</p>
         </div>
         <div>
           <label for="stock">Available Stock</label>

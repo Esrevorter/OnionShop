@@ -10,7 +10,7 @@ import (
 
 // ExchangeRates holds the cached fiat-to-USD and XMR-to-USD rates.
 // Base currency is always USD cents.
-var ratesOracle *ExchangeRates
+var ratesOracle = NewExchangeRates()
 
 type ExchangeRates struct {
 	mu        sync.RWMutex
@@ -100,3 +100,13 @@ func (e *ExchangeRates) Format(usdCents int64, currency string) string {
     return fmt.Sprintf("%s%d.%02d", symbol, whole, frac)
 }
 
+
+// fmtUSDCents formats integer cents as a USD string; used as the safe fallback
+// so a missing oracle can never render a bare cent integer.
+func fmtUSDCents(cents int64) string {
+	sign := ""
+	if cents < 0 {
+		sign, cents = "-", -cents
+	}
+	return fmt.Sprintf("%s%d.%02d", sign, cents/100, cents%100)
+}
