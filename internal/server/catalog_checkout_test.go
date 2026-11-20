@@ -24,7 +24,7 @@ func TestCartOperations(t *testing.T) {
 
 	// SaveCart with nil rdb should be a safe no-op.
 	err = SaveCart(ctx, nil, "user-123", Cart{
-		"prod-1": {ProductID: "prod-1", Title: "Test", PriceSat: 100, Qty: 2, VendorID: "v-1"},
+		"prod-1": {ProductID: "prod-1", Title: "Test", PriceUSDCents: 100, Qty: 2, VendorID: "v-1"},
 	})
 	if err != nil {
 		t.Errorf("SaveCart with nil rdb error: %v", err)
@@ -38,7 +38,7 @@ func TestParseProductFormValidation(t *testing.T) {
 	req := httptest.NewRequest(http.MethodPost, "/", strings.NewReader(url.Values{
 		"title":       {"Cool Gadget"},
 		"description": {"A very nice gadget"},
-		"price_sat":   {"50000"},
+		"price_usd":   {"500.00"},
 		"stock":       {"10"},
 		"status":      {"active"},
 	}.Encode()))
@@ -52,14 +52,14 @@ func TestParseProductFormValidation(t *testing.T) {
 	if msg != "" {
 		t.Fatalf("unexpected validation error: %s", msg)
 	}
-	if p.Title != "Cool Gadget" || p.PriceSat != 50000 || p.Stock != 10 {
+	if p.Title != "Cool Gadget" || p.PriceUSDCents != 50000 || p.Stock != 10 {
 		t.Errorf("parsed product fields incorrect: %+v", p)
 	}
 
 	// Test invalid title (too short)
 	reqBad := httptest.NewRequest(http.MethodPost, "/", strings.NewReader(url.Values{
 		"title":     {"Ab"},
-		"price_sat": {"50000"},
+		"price_usd": {"500.00"},
 		"stock":     {"10"},
 	}.Encode()))
 	reqBad.Header.Set("Content-Type", "application/x-www-form-urlencoded")

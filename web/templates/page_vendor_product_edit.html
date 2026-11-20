@@ -21,24 +21,8 @@
 
       <div class="form-grid">
         <div>
-          <label for="price_sat">Price (in Satoshis)</label>
-          <input id="price_sat" type="number" name="price_sat" min="1" value="{{if .Editing}}{{.Editing.PriceUSDCents}}{{end}}" required>
         </div>
-        <div>
-          <label for="stock">Available Stock</label>
-          <input id="stock" type="number" name="stock" min="0" value="{{if .Editing}}{{.Editing.Stock}}{{else}}0{{end}}" required>
-        </div>
-      </div>
-
-      <label for="images">Product Images (Max 5, JPG/PNG, 10MB total)</label>
-      <input id="images" type="file" name="images" multiple accept="image/jpeg,image/png">
-      {{if .Editing}}
-        {{if .Editing.ImagePath}}
-          <p class="form-help">New uploads replace the current images. Leave empty to keep them.</p>
-        {{end}}
-      {{end}}
-
-      <label for="category_id">Category</label>
+        Category</label>
       <select id="category_id" name="category_id">
         <option value="0">Uncategorized</option>
         {{range .Categories}}
