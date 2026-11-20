@@ -3,10 +3,12 @@ package server
 import (
 	"log"
 	"net/http"
+	"sort"
 	"strconv"
 	"strings"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -14,14 +16,37 @@ import (
 type CartData struct {
 	AuthData
 	Cart     Cart
-	TotalUSDCents int64
+	TotalSat int64
+}
+
+// CheckoutShippingOption is a display-safe view of a vendor shipping option.
+type CheckoutShippingOption struct {
+	IDStr         string
+	Title         string
+	Eta           string
+	PriceUSDCents int64
+}
+
+// CheckoutVendorGroup groups one vendor's cart items plus its shipping choices.
+type CheckoutVendorGroup struct {
+	VendorID   string
+	Items      []CartItem
+	ItemsTotal int64
+	Options    []CheckoutShippingOption
+}
+
+// ShippingChoice is the validated per-vendor selection made at checkout.
+type ShippingChoice struct {
+	OptionID pgtype.UUID
+	Cents    int64
 }
 
 // CheckoutData represents the checkout page payload.
 type CheckoutData struct {
 	AuthData
 	Cart                 Cart
-	TotalUSDCents             int64
+	TotalSat             int64
+	VendorGroups         []CheckoutVendorGroup
 	DeliveryInstructions string
 	OrderPlaced          bool
 }
@@ -43,58 +68,43 @@ func (a *App) handleCartGet(w http.ResponseWriter, r *http.Request) {
 		writeGenericError(w)
 		return
 	}
-	
 	var total int64
 	for _, item := range cart {
 		total += item.PriceUSDCents * int64(item.Qty)
 	}
-
-	data := CartData{
-		AuthData: a.baseData(r),
-		Cart:     cart,
-		TotalUSDCents: total,
-	}
-	a.renderAs(w, "cart", http.StatusOK, data)
+	a.renderAs(w, "cart", http.StatusOK, CartData{AuthData: a.baseData(r), Cart: cart, TotalSat: total})
 }
 
 func (a *App) handleCartAction(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	uid := CurrentUserID(ctx, a.sm)
-	
 	if honeypotTriggered(r) || !a.requireFriction(w, r, "cart") {
 		http.Redirect(w, r, "/cart", http.StatusSeeOther)
 		return
 	}
-
 	action := r.FormValue("action")
 	productID := r.FormValue("product_id")
-
 	cart, err := GetCart(ctx, a.deps.RDB, uid)
 	if err != nil {
 		log.Printf("server: get cart for action failed: %v", err)
 		writeGenericError(w)
 		return
 	}
-
 	if action == "remove" {
 		delete(cart, productID)
 	} else if action == "update" {
 		qtyStr := r.FormValue("qty")
-		qty, err := strconv.ParseInt(qtyStr, 10, 64)
+		qty, err := strconv.Atoi(qtyStr)
 		if err != nil || qty <= 0 {
 			delete(cart, productID)
-		} else {
-			if item, ok := cart[productID]; ok {
-				item.Qty = qty
-				cart[productID] = item
-			}
+		} else if item, ok := cart[productID]; ok {
+			item.Qty = int64(qty)
+			cart[productID] = item
 		}
 	}
-
 	if err := SaveCart(ctx, a.deps.RDB, uid, cart); err != nil {
 		log.Printf("server: save cart failed: %v", err)
 	}
-
 	http.Redirect(w, r, "/cart", http.StatusSeeOther)
 }
 
@@ -107,23 +117,44 @@ func (a *App) handleCheckoutGet(w http.ResponseWriter, r *http.Request) {
 		writeGenericError(w)
 		return
 	}
-
 	if len(cart) == 0 {
 		http.Redirect(w, r, "/cart", http.StatusSeeOther)
 		return
 	}
-
+	pool, ok := a.deps.Pool.(*pgxpool.Pool)
+	if !ok {
+		writeGenericError(w)
+		return
+	}
 	var total int64
+	groupsMap := map[string]*CheckoutVendorGroup{}
 	for _, item := range cart {
-		total += item.PriceUSDCents * int64(item.Qty)
+		line := item.PriceUSDCents * int64(item.Qty)
+		total += line
+		g, exists := groupsMap[item.VendorID]
+		if !exists {
+			g = &CheckoutVendorGroup{VendorID: item.VendorID}
+			groupsMap[item.VendorID] = g
+		}
+		g.Items = append(g.Items, item)
+		g.ItemsTotal += line
 	}
+	groups := make([]CheckoutVendorGroup, 0, len(groupsMap))
+	for _, g := range groupsMap {
+		if vuid, ok := parseUUID(g.VendorID); ok {
+			if opts, err := ShippingListActiveByVendor(ctx, pool, vuid); err == nil {
+				for _, o := range opts {
+					g.Options = append(g.Options, CheckoutShippingOption{
+						IDStr: uuidString(o.ID), Title: o.Title, Eta: o.Eta, PriceUSDCents: o.PriceUSDCents,
+					})
+				}
+			}
+		}
+		groups = append(groups, *g)
+	}
+	sort.Slice(groups, func(i, j int) bool { return groups[i].VendorID < groups[j].VendorID })
 
-	data := CheckoutData{
-		AuthData: a.baseData(r),
-		Cart:     cart,
-		TotalUSDCents: total,
-	}
-	
+	data := CheckoutData{AuthData: a.baseData(r), Cart: cart, TotalSat: total, VendorGroups: groups}
 	if data.Captcha = a.newChallenge(w, r, "checkout"); data.Captcha == nil {
 		return
 	}
@@ -133,7 +164,6 @@ func (a *App) handleCheckoutGet(w http.ResponseWriter, r *http.Request) {
 func (a *App) handleCheckoutSubmit(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	uid := CurrentUserID(ctx, a.sm)
-
 	data := CheckoutData{AuthData: a.baseData(r)}
 
 	fail := func(msg string) {
@@ -144,7 +174,7 @@ func (a *App) handleCheckoutSubmit(w http.ResponseWriter, r *http.Request) {
 		for _, item := range cart {
 			total += item.PriceUSDCents * int64(item.Qty)
 		}
-		data.TotalUSDCents = total
+		data.TotalSat = total
 		if data.Captcha = a.newChallenge(w, r, "checkout"); data.Captcha == nil {
 			return
 		}
@@ -155,32 +185,63 @@ func (a *App) handleCheckoutSubmit(w http.ResponseWriter, r *http.Request) {
 		fail("Human verification failed, please try again.")
 		return
 	}
-
 	cart, err := GetCart(ctx, a.deps.RDB, uid)
 	if err != nil || len(cart) == 0 {
 		http.Redirect(w, r, "/cart", http.StatusSeeOther)
 		return
 	}
-
 	delivery := strings.TrimSpace(r.FormValue("delivery_instructions"))
 	if len(delivery) > 2000 {
 		fail("Delivery instructions are too long (max 2000 characters).")
 		return
 	}
-
-	// 1. Type assert the interface to *pgxpool.Pool for transaction support
 	pool, ok := a.deps.Pool.(*pgxpool.Pool)
 	if !ok {
-		log.Printf("server: database pool type assertion failed")
 		fail("Internal server error: database pool unavailable.")
 		return
 	}
-
-	// 2. Split cart into vendor-scoped orders
 	customerUUID, ok := parseUUID(uid)
 	if !ok {
 		fail("Invalid user session.")
 		return
+	}
+
+	// Validate one shipping selection per vendor that offers options.
+	vendorSet := map[string]bool{}
+	for _, item := range cart {
+		vendorSet[item.VendorID] = true
+	}
+	selected := map[string]ShippingChoice{}
+	for vid := range vendorSet {
+		vuid, ok := parseUUID(vid)
+		if !ok {
+			continue
+		}
+		opts, err := ShippingListActiveByVendor(ctx, pool, vuid)
+		if err != nil || len(opts) == 0 {
+			continue
+		}
+		selStr := strings.TrimSpace(r.FormValue("shipping_" + vid))
+		if selStr == "" {
+			fail("Please choose a shipping method for every vendor.")
+			return
+		}
+		selID, ok := parseUUID(selStr)
+		if !ok {
+			fail("Invalid shipping selection.")
+			return
+		}
+		found := false
+		for _, o := range opts {
+			if uuidString(o.ID) == uuidString(selID) {
+				selected[vid] = ShippingChoice{OptionID: o.ID, Cents: o.PriceUSDCents}
+				found = true
+			}
+		}
+		if !found {
+			fail("Invalid shipping selection.")
+			return
+		}
 	}
 
 	checkoutRef, orderIDs, err := SplitCartIntoVendorOrders(ctx, pool, customerUUID, cart)
@@ -190,40 +251,46 @@ func (a *App) handleCheckoutSubmit(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// 3. Calculate XMR settlement amount (locked at checkout)
-	rates := NewExchangeRates() // In prod, inject this into App struct
-	xmrAmount := rates.USDCentsToPiconero(data.TotalUSDCents)
-
-	// 4. Generate XMR payment addresses for each order
-	provider := &MockMoneroProvider{}
+	oracle := ratesOracle
+	if oracle == nil {
+		oracle = NewExchangeRates()
+	}
+	provider := NewMoneroProvider()
 
 	for _, orderID := range orderIDs {
-		addr, pid, err := provider.CreatePaymentAddress(ctx, orderID, 0)
+		var vendorUUID pgtype.UUID
+		var orderItemsTotal int64
+		if err := pool.QueryRow(ctx, `SELECT vendor_id, total_usd_cents FROM orders WHERE id=$1`, orderID).
+			Scan(&vendorUUID, &orderItemsTotal); err != nil {
+			log.Printf("server: order total lookup failed: %v", sanitizedErr(err))
+			fail("Failed to finalize order totals.")
+			return
+		}
+		choice := selected[uuidString(vendorUUID)]
+		newTotal := orderItemsTotal + choice.Cents
+		xmrAmount := oracle.USDCentsToPiconero(newTotal)
+
+		addr, pid, err := provider.CreatePaymentAddress(ctx, orderID)
 		if err != nil {
 			log.Printf("server: failed to create XMR address for order %s: %v", uuidString(orderID), err)
 			fail("Failed to generate payment address.")
 			return
 		}
-
-		// Update the order with the XMR payment details
-		_, err = pool.Exec(ctx, `
-			UPDATE orders 
-			SET xmr_address = $1, xmr_payment_id = $2, xmr_amount_piconero = $3, status = 'awaiting_payment'
-			WHERE id = $3
-		`, addr, pid, xmrAmount, orderID)
-		if err != nil {
-			log.Printf("server: failed to update order %s with XMR details: %v", uuidString(orderID), err)
+		if _, err := pool.Exec(ctx, `
+			UPDATE orders
+			SET total_usd_cents=$1, shipping_option_id=$2, shipping_usd_cents=$3,
+			    xmr_address=$4, xmr_payment_id=$5, xmr_amount_piconero=$6, status='awaiting_payment'
+			WHERE id=$7
+		`, newTotal, choice.OptionID, choice.Cents, addr, pid, xmrAmount, orderID); err != nil {
+			log.Printf("server: failed to update order %s: %v", uuidString(orderID), err)
 			fail("Failed to save payment details.")
 			return
 		}
 	}
 
-	// 4. Clear the cart upon successful order creation
 	emptyCart := make(Cart)
 	if err := SaveCart(ctx, a.deps.RDB, uid, emptyCart); err != nil {
 		log.Printf("server: clear cart after checkout failed: %v", sanitizedErr(err))
 	}
-
-	// 5. Redirect to the orders page so the user can see their pending payments
 	http.Redirect(w, r, "/orders?ref="+uuidString(checkoutRef), http.StatusSeeOther)
 }
