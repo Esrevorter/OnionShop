@@ -1,0 +1,69 @@
+{{template "layout" .}}
+
+{{define "title"}}Shipping Options · OnionShop{{end}}
+
+{{define "body"}}
+<section class="admin-layout">
+  <div class="admin-header">
+    <h1>Shipping Options</h1>
+    <a href="/vendor/products" class="btn-secondary">← Back to Listings</a>
+  </div>
+  <p class="lede">Define the shipping methods buyers can select at checkout. Prices are entered in USD (base); buyers see them in their preferred currency.</p>
+
+  <div class="auth-card" style="max-width:600px;">
+    <h2>Add Shipping Option</h2>
+    <form method="post" action="/vendor/shipping" autocomplete="off">
+      <input type="hidden" name="csrf_token" value="{{.CsrfToken}}">
+      <label for="title">Title (2-80 characters)</label>
+      <input id="title" name="title" maxlength="80" required placeholder="Standard tracked mail">
+      <label for="description">Description (max 500)</label>
+      <input id="description" name="description" maxlength="500" placeholder="7-14 days, tracked">
+      <div class="form-grid">
+        <div>
+          <label for="price_usd">Price (USD, 0 = free)</label>
+          <input id="price_usd" type="number" step="0.01" min="0" name="price_usd" placeholder="5.00" required>
+        </div>
+        <div>
+          <label for="eta">Speed</label>
+          <select id="eta" name="eta">
+            <option value="fast">Fast</option>
+            <option value="medium" selected>Medium</option>
+            <option value="slow">Slow</option>
+          </select>
+        </div>
+      </div>
+      <div class="form-actions"><button type="submit">Add Option</button></div>
+    </form>
+  </div>
+
+  {{if .ShippingOptions}}
+  <div class="table-container">
+    <table class="data-table">
+      <thead><tr><th>Title</th><th>Speed</th><th>Price</th><th>Status</th><th>Actions</th></tr></thead>
+      <tbody>
+      {{range .ShippingOptions}}
+        <tr>
+          <td><strong>{{.Title}}</strong><br><span class="muted">{{.Description}}</span></td>
+          <td>{{.Eta}}</td>
+          <td>{{fmtFiat .PriceUSDCents $.PreferredCurrency}}</td>
+          <td>{{if .Active}}<span class="badge badge-success">Active</span>{{else}}<span class="badge badge-muted">Disabled</span>{{end}}</td>
+          <td>
+            <form method="post" action="/vendor/shipping/{{.ID}}/toggle" style="display:inline;">
+              <input type="hidden" name="csrf_token" value="{{$.CsrfToken}}">
+              <button type="submit" class="button secondary btn-sm">{{if .Active}}Disable{{else}}Enable{{end}}</button>
+            </form>
+            <form method="post" action="/vendor/shipping/{{.ID}}/delete" style="display:inline;">
+              <input type="hidden" name="csrf_token" value="{{$.CsrfToken}}">
+              <button type="submit" class="btn-danger btn-sm">Delete</button>
+            </form>
+          </td>
+        </tr>
+      {{end}}
+      </tbody>
+    </table>
+  </div>
+  {{else}}
+  <div class="empty-state"><p>No shipping options yet. Add at least one so buyers can choose delivery at checkout.</p></div>
+  {{end}}
+</section>
+{{end}}

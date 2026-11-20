@@ -180,6 +180,7 @@ func newApp(cfg Config, deps Deps, sessionStore scs.Store, withRateLimit bool) (
 	a.registerCheckoutRoutes(r)
 	// Phase A admin surface (dashboard + user management).
 	a.registerAdminRoutes(r)
+	a.registerShippingRoutes(r)
 
 	r.NotFound(a.handleNotFound)
 

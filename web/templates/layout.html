@@ -46,6 +46,7 @@
         {{end}}
         {{if or .IsAdmin .IsVendor}}
           <a href="/vendor/products" class="nav-admin-link">My Listings</a>
+        {{if .IsVendor}}<a href="/vendor/shipping">Shipping</a>{{end}}
         {{end}}
         {{if .IsAdmin}}
           <a href="/admin" class="nav-admin-link">Admin</a>

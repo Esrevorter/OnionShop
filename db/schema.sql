@@ -92,6 +92,8 @@ CREATE TABLE orders (
                     'released','refunded','cancelled')),
     total_usd_cents  BIGINT NOT NULL CHECK (total_usd_cents > 0),
     xmr_amount_piconero BIGINT NOT NULL DEFAULT 0 CHECK (xmr_amount_piconero >= 0),
+    shipping_option_id UUID REFERENCES shipping_options(id),
+    shipping_usd_cents BIGINT NOT NULL DEFAULT 0 CHECK (shipping_usd_cents >= 0),
     fee_sat        BIGINT NOT NULL DEFAULT 0 CHECK (fee_sat >= 0),
     xmr_address     TEXT,                           -- Monero subaddress for this order                           -- Monero subaddress for this specific vendor order
     xmr_payment_id  TEXT UNIQUE,                 -- Monero payment ID / subaddress index                 -- Monero payment ID or subaddress index for tracking
@@ -299,3 +301,20 @@ CREATE TABLE top_vendors_snapshot (
     avg_rating   NUMERIC(3,2) NOT NULL DEFAULT 0 CHECK (avg_rating BETWEEN 0 AND 5),
     refreshed_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+
+-- ---------------------------------------------------------------------------
+-- 0010_shipping_options — vendor-defined shipping profiles
+-- ---------------------------------------------------------------------------
+
+CREATE TABLE shipping_options (
+    id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    vendor_id       UUID NOT NULL REFERENCES vendors(id) ON DELETE CASCADE,
+    title           TEXT NOT NULL CHECK (char_length(title) BETWEEN 2 AND 80),
+    description     TEXT NOT NULL DEFAULT '' CHECK (char_length(description) <= 500),
+    price_usd_cents BIGINT NOT NULL CHECK (price_usd_cents >= 0),
+    eta             TEXT NOT NULL DEFAULT 'medium' CHECK (eta IN ('fast','medium','slow')),
+    active          BOOLEAN NOT NULL DEFAULT TRUE,
+    created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at      TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX shipping_options_vendor_idx ON shipping_options (vendor_id);
