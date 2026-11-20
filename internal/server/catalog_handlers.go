@@ -25,7 +25,7 @@ type CatalogData struct {
 	Vendor       *VendorRecord
 	Query        string
 	CategoryName string
-	SatToBTC     string
+	DisplayPrice string
 	Total        int64
 	Limit        int
 	Offset       int
@@ -34,7 +34,7 @@ type CatalogData struct {
 	ShopHandle   string
 }
 
-func satToBTC(sat int64) string {
+func formatDisplayPrice(sat int64) string {
 	neg := ""
 	if sat < 0 {
 		neg = "-"
@@ -233,7 +233,7 @@ func (a *App) handleProductPage(w http.ResponseWriter, r *http.Request) {
 	data := a.catalogBase(r)
 	data.Product = p
 	data.ShopName = p.ShopName
-	data.SatToBTC = satToBTC(p.PriceSat)
+	data.DisplayPrice = formatDisplayPrice(p.PriceSat)
 	a.renderCatalog(w, r, "product", http.StatusOK, data)
 }
 

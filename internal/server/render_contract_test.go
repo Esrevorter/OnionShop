@@ -24,7 +24,7 @@ func TestRenderContract(t *testing.T) {
 	p := &StorefrontProduct{ProductRecord: ProductRecord{Title: "T", Description: "D", PriceSat: 10, Stock: 5, ImagePath: "/uploads/x.jpg", ThumbPath: "/uploads/x_thumb.jpg", Status: "active"}, ShopName: "shop", VendorUsername: "vend", Eta: "1d"}
 
 	cases := []struct{ name string; data any }{
-		{"product", &CatalogData{Product: p, ShopName: "shop", SatToBTC: "0.00000010"}},
+		{"product", &CatalogData{Product: p, ShopName: "shop", DisplayPrice: "0.00000010"}},
 		{"catalog_home", &CatalogData{Products: []StorefrontProduct{withThumb, noThumb, noImage}, Categories: []CategoryRecord{{ID: 1, Slug: "s", Name: "S"}}}},
 		{"category", &CatalogData{Products: []StorefrontProduct{withThumb}, CategoryName: "s"}},
 		{"search", &CatalogData{Products: []StorefrontProduct{noThumb}, Query: "q"}},
