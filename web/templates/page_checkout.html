@@ -23,7 +23,7 @@
         <h2>Order Summary</h2>
         {{range $g := .VendorGroups}}
         <div style="margin-bottom: 1.5rem;">
-          <p class="eyebrow">Ships from vendor {{$g.VendorID}}</p>
+          <p class="eyebrow">Ships from {{if $g.ShopHandle}}<a href="/u/{{$g.ShopHandle}}"><strong>{{$g.ShopName}}</strong></a>{{else if $g.ShopName}}<strong>{{$g.ShopName}}</strong>{{else}}vendor {{$g.VendorID}}{{end}}</p>
           <table class="data-table" style="font-size: 0.9rem;">
             <tbody>
               {{range $g.Items}}

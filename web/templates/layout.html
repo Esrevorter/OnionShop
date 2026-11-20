@@ -67,7 +67,8 @@
   </div>
 
       <div class="session-bar">
-        <form method="post" action="/currency/set" class="currency-set-form">
+        <a href="/messages" class="currency-btn" style="text-decoration:none;">Messages{{if .MessagesUnread}} ({{.MessagesUnread}}){{end}}</a>
+      <form method="post" action="/currency/set" class="currency-set-form">
         <input type="hidden" name="csrf_token" value="{{.CsrfToken}}">
         <span class="currency-label">Prices in</span>
         <button type="submit" name="currency" value="USD" class="currency-btn {{if eq .PreferredCurrency "USD"}}currency-active{{end}}">USD</button>

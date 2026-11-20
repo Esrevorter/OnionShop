@@ -51,6 +51,7 @@ type AuthData struct {
 	TOTPEnabled     bool
 	TOTPQRCode      template.URL
 	TOTPSecret      string
+	MessagesUnread  int64
 	BackupCodes     []string
 }
 
@@ -961,6 +962,13 @@ func (a *App) baseData(r *http.Request) AuthData {
 		curr = "USD"
 	}
 	d.PreferredCurrency = curr
+	if pool, ok := a.deps.Pool.(*pgxpool.Pool); ok {
+		if uid := CurrentUserID(r.Context(), a.sm); uid != "" {
+			if u, ok := parseUUID(uid); ok {
+				d.MessagesUnread = CountUnreadForUser(r.Context(), pool, u)
+			}
+		}
+	}
 	return d
 }
 

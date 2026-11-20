@@ -19,7 +19,7 @@
     <div>
       {{range $g := .VendorGroups}}
       <div class="auth-card" style="margin-bottom: 1.25rem;">
-        <p class="eyebrow">Ships from vendor {{$g.VendorID}}</p>
+        <p class="eyebrow">Ships from {{if $g.ShopHandle}}<a href="/u/{{$g.ShopHandle}}"><strong>{{$g.ShopName}}</strong></a>{{else if $g.ShopName}}<strong>{{$g.ShopName}}</strong>{{else}}vendor {{$g.VendorID}}{{end}}</p>
         {{range $g.Items}}
         <form method="post" action="/cart/action" style="display:flex; gap:.75rem; align-items:center; margin:.6rem 0; flex-wrap:wrap;">
           <input type="hidden" name="csrf_token" value="{{$.CsrfToken}}">

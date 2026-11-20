@@ -1,13 +1,49 @@
 {{template "layout" .}}
+
 {{define "title"}}Orders · OnionShop{{end}}
+
 {{define "body"}}
-<section class="auth-layout">
-  <div class="auth-intro">
-    <p class="eyebrow">Account</p>
+<section class="admin-layout">
+  <div class="admin-header">
     <h1>Order History</h1>
+    <a href="/" class="btn-secondary">← Browse Marketplace</a>
   </div>
-  <div class="auth-card">
-    <p>You have no orders yet. <a href="/">Browse the marketplace</a> to get started.</p>
-  </div>
+
+  {{if not .Orders}}
+    <div class="empty-state">
+      <p>You have no orders yet. <a href="/">Browse the marketplace</a> to get started.</p>
+    </div>
+  {{else}}
+    {{range .Orders}}
+    <div class="auth-card" style="margin-bottom: 1.25rem;">
+      <div style="display:flex; justify-content:space-between; flex-wrap:wrap; gap:.5rem;">
+        <p class="eyebrow">Order {{.IDStr}} · {{.CreatedAt}}</p>
+        <span class="badge {{if eq .Status "awaiting_payment"}}badge-muted{{else}}badge-success{{end}}">{{.Status}}</span>
+      </div>
+      <p class="muted">Vendor: {{.ShopName}}{{if .ShippingTitle}} · Shipping: {{.ShippingTitle}}{{end}}</p>
+      <table class="data-table" style="font-size: 0.9rem;">
+        <tbody>
+          {{range .Items}}
+          <tr>
+            <td>{{.Title}} <span class="text-muted">(x{{.Qty}})</span></td>
+            <td style="text-align: right;">{{fmtFiat (mul .PriceUSDCents .Qty) $.PreferredCurrency}}</td>
+          </tr>
+          {{end}}
+          <tr><td>Shipping</td><td style="text-align: right;">{{fmtFiat .ShippingUSDCents $.PreferredCurrency}}</td></tr>
+          <tr style="font-weight: bold;"><td>Total</td><td style="text-align: right;">{{fmtFiat .TotalUSDCents $.PreferredCurrency}}</td></tr>
+        </tbody>
+      </table>
+      {{if eq .Status "awaiting_payment"}}
+      <div class="notice" style="margin-top: .75rem;">
+        <strong>Payment required</strong><br>
+        Send exactly <strong>{{fmtXMR .XmrPiconero}} XMR</strong> to:<br>
+        <code style="word-break: break-all;">{{.XmrAddress}}</code>
+        {{if .XmrPaymentID}}<br><span class="muted">Payment reference: {{.XmrPaymentID}}</span>{{end}}
+        <br><a href="/messages/start?order={{.IDStr}}">Message vendor about this order</a>
+      </div>
+      {{end}}
+    </div>
+    {{end}}
+  {{end}}
 </section>
 {{end}}

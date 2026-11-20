@@ -1,0 +1,29 @@
+{{template "layout" .}}
+{{define "title"}}Conversation · OnionShop{{end}}
+{{define "body"}}
+<section class="admin-layout">
+  <div class="admin-header">
+    <h1>{{.OtherName}}</h1>
+    <a href="/messages" class="btn-secondary">← Inbox</a>
+  </div>
+  {{if .HasOrder}}<p class="muted">This conversation is linked to an order.</p>{{end}}
+  <div class="auth-card" style="margin-bottom:1rem;">
+    {{range .Messages}}
+    <div style="margin:.6rem 0; padding:.6rem .8rem; border-radius:.6rem;
+                background: {{if .Mine}}var(--surface-raised){{else}}var(--surface){{end}};
+                border:1px solid var(--line);">
+      <p class="eyebrow">{{.Sender}} · {{.CreatedAt.Format "2006-01-02 15:04"}}</p>
+      <p style="margin:0; white-space:pre-wrap;">{{.Body}}</p>
+    </div>
+    {{else}}
+    <p class="muted">No messages yet — say hello below.</p>
+    {{end}}
+  </div>
+  <form method="post" action="/messages/{{.ThreadID}}/reply" class="auth-card" autocomplete="off">
+    <input type="hidden" name="csrf_token" value="{{.CsrfToken}}">
+    <label for="body">Reply (max 5000 characters)</label>
+    <textarea id="body" name="body" rows="4" maxlength="5000" required></textarea>
+    <div class="form-actions"><button type="submit">Send</button></div>
+  </form>
+</section>
+{{end}}
