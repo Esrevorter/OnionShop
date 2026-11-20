@@ -348,3 +348,13 @@ input::placeholder, textarea::placeholder { color: #829287; }
 /* session bar v3: right-aligned; horizontal bounds come from header container */
 .session-bar { justify-content:flex-end !important; padding:.35rem 0 .55rem !important;
   border-top:1px solid var(--line) !important; width:100% !important; }
+
+/* currency pills v4 — active pill uses RED for high visibility */
+.site-nav form.currency-set-form button.currency-btn.currency-active,
+.site-nav form.currency-set-form button.currency-btn.currency-active:hover,
+.session-bar form button.currency-btn.currency-active,
+.session-bar form button.currency-btn.currency-active:hover {
+  background: #dc2626 !important;
+  color: #ffffff !important;
+  border-color: #dc2626 !important;
+}
