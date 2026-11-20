@@ -121,7 +121,7 @@ type MockMoneroProvider struct{}
 
 func (m *MockMoneroProvider) CreatePaymentAddress(ctx context.Context, orderID pgtype.UUID) (string, string, error) {
 	addr := fmt.Sprintf("4MockXmrAddressForOrder%s", uuidString(orderID)[:8])
-	return addr, "mock_pid", nil
+	return addr, "mock-" + uuidString(orderID), nil
 }
 
 func (m *MockMoneroProvider) CheckPayments(ctx context.Context, pendingOrders map[pgtype.UUID]string) (map[pgtype.UUID]int64, error) {
