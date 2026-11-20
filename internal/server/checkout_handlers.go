@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 // CartData represents the cart page payload.
@@ -53,7 +54,6 @@ func (a *App) handleCartGet(w http.ResponseWriter, r *http.Request) {
 		Cart:     cart,
 		TotalSat: total,
 	}
-	// Use renderAs which accepts 'any' and is already proven to work
 	a.renderAs(w, "cart", http.StatusOK, data)
 }
 
@@ -61,9 +61,11 @@ func (a *App) handleCartAction(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	uid := CurrentUserID(ctx, a.sm)
 	
-	// No CAPTCHA/honeypot friction here: handleCartGet never mints a challenge,
-	// so requiring it would silently reject every update/remove. CSRF (enforced
-	// globally) + the user-scoped Redis cart key are sufficient for this action.
+	if honeypotTriggered(r) || !a.requireFriction(w, r, "cart") {
+		http.Redirect(w, r, "/cart", http.StatusSeeOther)
+		return
+	}
+
 	action := r.FormValue("action")
 	productID := r.FormValue("product_id")
 
@@ -125,16 +127,15 @@ func (a *App) handleCheckoutGet(w http.ResponseWriter, r *http.Request) {
 	if data.Captcha = a.newChallenge(w, r, "checkout"); data.Captcha == nil {
 		return
 	}
-	// renderCheckout is already defined in render.go, so we use it here safely
 	a.renderCheckout(w, "checkout", http.StatusOK, data)
 }
 
 func (a *App) handleCheckoutSubmit(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	uid := CurrentUserID(ctx, a.sm)
-	
+
 	data := CheckoutData{AuthData: a.baseData(r)}
-	
+
 	fail := func(msg string) {
 		data.Error = msg
 		cart, _ := GetCart(ctx, a.deps.RDB, uid)
@@ -167,20 +168,58 @@ func (a *App) handleCheckoutSubmit(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	log.Printf("server: order placed by user %s, delivery: %s", uid, delivery)
-	
-	// Clear the cart upon successful "order" placement
-	emptyCart := make(Cart)
-	if err := SaveCart(ctx, a.deps.RDB, uid, emptyCart); err != nil {
-		log.Printf("server: clear cart after checkout failed: %v", err)
-	}
-
-	data.OrderPlaced = true
-	data.Cart = emptyCart
-	data.TotalSat = 0
-	
-	if data.Captcha = a.newChallenge(w, r, "checkout"); data.Captcha == nil {
+	// 1. Type assert the interface to *pgxpool.Pool for transaction support
+	pool, ok := a.deps.Pool.(*pgxpool.Pool)
+	if !ok {
+		log.Printf("server: database pool type assertion failed")
+		fail("Internal server error: database pool unavailable.")
 		return
 	}
-	a.renderCheckout(w, "checkout", http.StatusOK, data)
+
+	// 2. Split cart into vendor-scoped orders
+	customerUUID, ok := parseUUID(uid)
+	if !ok {
+		fail("Invalid user session.")
+		return
+	}
+
+	checkoutRef, orderIDs, err := SplitCartIntoVendorOrders(ctx, pool, customerUUID, cart)
+	if err != nil {
+		log.Printf("server: order splitting failed: %v", sanitizedErr(err))
+		fail("Failed to create orders. Please try again.")
+		return
+	}
+
+	// 3. Generate XMR payment addresses for each order
+	provider := &MockMoneroProvider{}
+
+	for _, orderID := range orderIDs {
+		addr, pid, err := provider.CreatePaymentAddress(ctx, orderID, 0)
+		if err != nil {
+			log.Printf("server: failed to create XMR address for order %s: %v", uuidString(orderID), err)
+			fail("Failed to generate payment address.")
+			return
+		}
+
+		// Update the order with the XMR payment details
+		_, err = pool.Exec(ctx, `
+			UPDATE orders 
+			SET xmr_address = $1, xmr_payment_id = $2, status = 'awaiting_payment'
+			WHERE id = $3
+		`, addr, pid, orderID)
+		if err != nil {
+			log.Printf("server: failed to update order %s with XMR details: %v", uuidString(orderID), err)
+			fail("Failed to save payment details.")
+			return
+		}
+	}
+
+	// 4. Clear the cart upon successful order creation
+	emptyCart := make(Cart)
+	if err := SaveCart(ctx, a.deps.RDB, uid, emptyCart); err != nil {
+		log.Printf("server: clear cart after checkout failed: %v", sanitizedErr(err))
+	}
+
+	// 5. Redirect to the orders page so the user can see their pending payments
+	http.Redirect(w, r, "/orders?ref="+uuidString(checkoutRef), http.StatusSeeOther)
 }
