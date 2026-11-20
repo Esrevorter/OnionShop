@@ -109,7 +109,7 @@ WHERE u.username = $1 AND v.approved`
 
 	// FIXED: Changed $3, $4, $5 to $2, $3, $4 to match the 4 arguments passed.
 	qCatalogListProducts = `SELECT p.id, p.vendor_id, COALESCE(p.category_id, 0), p.title, p.description,
-       p.price_sat, p.stock, COALESCE(p.image_path, ''), p.status, p.created_at, p.updated_at,
+       p.price_usd_cents, p.stock, COALESCE(p.image_path, ''), p.status, p.created_at, p.updated_at,
        v.shop_name, v.eta, u.username
 FROM public.products p
 JOIN public.vendors v ON v.id = p.vendor_id
@@ -132,7 +132,7 @@ WHERE p.status = 'active' AND v.approved
         @@ plainto_tsquery('simple', $2))`
 
 	qCatalogGetProduct = `SELECT p.id, p.vendor_id, COALESCE(p.category_id, 0), p.title, p.description,
-       p.price_sat, p.stock, COALESCE(p.image_path, ''), p.status, p.created_at, p.updated_at,
+       p.price_usd_cents, p.stock, COALESCE(p.image_path, ''), p.status, p.created_at, p.updated_at,
        v.shop_name, v.eta, u.username
 FROM public.products p
 JOIN public.vendors v ON v.id = p.vendor_id
@@ -140,28 +140,28 @@ JOIN public.users u   ON u.id = v.user_id
 WHERE p.id = $1 AND p.status = 'active' AND v.approved`
 
 	qCatalogVendorProducts = `SELECT p.id, p.vendor_id, COALESCE(p.category_id, 0), p.title, p.description,
-       p.price_sat, p.stock, COALESCE(p.image_path, ''), p.status, p.created_at, p.updated_at
+       p.price_usd_cents, p.stock, COALESCE(p.image_path, ''), p.status, p.created_at, p.updated_at
 FROM public.products p
 JOIN public.vendors v ON v.id = p.vendor_id
 WHERE v.user_id = $1
 ORDER BY p.created_at DESC`
 
-	qCatalogCreateProduct = `INSERT INTO public.products (vendor_id, category_id, title, description, price_sat, stock, image_path, status)
+	qCatalogCreateProduct = `INSERT INTO public.products (vendor_id, category_id, title, description, price_usd_cents, stock, image_path, status)
 VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-RETURNING id, vendor_id, COALESCE(category_id, 0), title, description, price_sat, stock,
+RETURNING id, vendor_id, COALESCE(category_id, 0), title, description, price_usd_cents, stock,
           COALESCE(image_path, ''), status, created_at, updated_at`
 
 	qCatalogUpdateProduct = `UPDATE public.products SET
     category_id = $3,
     title       = $4,
     description = $5,
-    price_sat   = $6,
+    price_usd_cents   = $6,
     stock       = $7,
     status      = $8,
     image_path  = $9,
     updated_at  = now()
 WHERE id = $1 AND vendor_id = $2
-RETURNING id, vendor_id, COALESCE(category_id, 0), title, description, price_sat, stock,
+RETURNING id, vendor_id, COALESCE(category_id, 0), title, description, price_usd_cents, stock,
           COALESCE(image_path, ''), status, created_at, updated_at`
 
 	qCatalogRemoveProduct = `UPDATE public.products SET status = 'removed', updated_at = now()

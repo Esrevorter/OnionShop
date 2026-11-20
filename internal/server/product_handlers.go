@@ -637,7 +637,7 @@ func (a *App) auditProduct(ctx context.Context, actorID pgtype.UUID, action stri
 	details, _ := json.Marshal(map[string]any{
 		"product_id": uuidString(p.ID),
 		"title":      p.Title,
-		"price_sat":  p.PriceUSDCents,
+		"price_usd_cents":  p.PriceUSDCents,
 		"status":     p.Status,
 	})
 	if err := a.auth.AuditAppend(ctx, actorID, "user", action, "product:"+uuidString(p.ID), string(details)); err != nil {
