@@ -56,7 +56,16 @@
         <a href="/disputes">Disputes</a>
         <a href="/cart">Cart</a>
         <a href="/tickets">Tickets</a>
-              <form method="post" action="/currency/set" class="currency-set-form">
+              
+        
+      {{else}}
+        <a href="/login">Log in</a>
+        <a class="button" href="/register">Create account</a>
+      {{end}}
+    </nav>
+  </div>
+<div class="session-bar">
+        <form method="post" action="/currency/set" class="currency-set-form">
         <input type="hidden" name="csrf_token" value="{{.CsrfToken}}">
         <span class="currency-label">Prices in</span>
         <button type="submit" name="currency" value="USD" class="currency-btn {{if eq .PreferredCurrency "USD"}}currency-active{{end}}">USD</button>
@@ -67,13 +76,8 @@
           <input type="hidden" name="csrf_token" value="{{.CsrfToken}}">
           <button class="secondary" type="submit" style="border:none; background:none; cursor:pointer; font-size:inherit; color:var(--accent); padding:.45rem .7rem;">Log out</button>
         </form>
-      {{else}}
-        <a href="/login">Log in</a>
-        <a class="button" href="/register">Create account</a>
-      {{end}}
-    </nav>
-  </div>
-</header>
+      </div>
+      </header>
 <main class="page-shell">
   {{if .Error}}<div class="error" role="alert"><strong>Something needs attention</strong><br>{{.Error}}</div>{{end}}
   {{if .Flash}}<div class="flash" role="status">{{.Flash}}</div>{{end}}
