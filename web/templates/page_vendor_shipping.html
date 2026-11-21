@@ -1,18 +1,12 @@
 {{template "layout" .}}
-
 {{define "title"}}Shipping Options · OnionShop{{end}}
-
 {{define "body"}}
 <section class="admin-layout">
-  {{if .Error}}
-  <div class="flash" role="alert" style="border-color:var(--danger,#f87171); color:#fca5a5; margin-bottom:1rem;">{{.Error}}</div>
-  {{end}}
-
   <div class="admin-header">
     <h1>Shipping Options</h1>
     <a href="/vendor/products" class="btn-secondary">← Back to Listings</a>
   </div>
-  <p class="lede">Define the shipping methods buyers can select at checkout. Prices are entered in USD (base); buyers see them in their preferred currency.</p>
+  <p class="lede">Define the shipping methods buyers can select at checkout. Prices are entered in USD (base); buyers see them in their preferred currency. Estimated delivery (days) drives escrow auto-release.</p>
 
   <div class="auth-card" style="max-width:600px;">
     <h2>Add Shipping Option</h2>
@@ -20,7 +14,6 @@
       <input type="hidden" name="csrf_token" value="{{.CsrfToken}}">
       <label for="title">Title (2-80 characters)</label>
       <input id="title" name="title" maxlength="80" required placeholder="Standard tracked mail">
-
       <div class="form-grid">
         <div>
           <label for="price_usd">Price (USD, 0 = free)</label>
@@ -51,7 +44,8 @@
       {{range .ShippingOptions}}
         <tr>
           <td><strong>{{.Title}}</strong></td>
-          <td>{{.EtaDays}}d</td><td>{{.Eta}}</td>
+          <td>{{.EtaDays}}d</td>
+          <td>{{.Eta}}</td>
           <td>{{fmtFiat .PriceUSDCents $.PreferredCurrency}}</td>
           <td>{{if .Active}}<span class="badge badge-success">Active</span>{{else}}<span class="badge badge-muted">Disabled</span>{{end}}</td>
           <td>

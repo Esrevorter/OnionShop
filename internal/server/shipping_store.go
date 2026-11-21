@@ -49,7 +49,7 @@ func ShippingListActiveByVendor(ctx context.Context, pool *pgxpool.Pool, vendorI
 	for rows.Next() {
 		var o ShippingOption
 		if err := rows.Scan(&o.ID, &o.VendorID, &o.Title, &o.Description, &o.PriceUSDCents, &o.Eta, &o.EtaDays, &o.Active); err != nil {
-			return nil, fmt.Errorf("server: scan shipping option: %w", err)
+			return nil, fmt.Errorf("server: scan active shipping option: %w", err)
 		}
 		out = append(out, o)
 	}
