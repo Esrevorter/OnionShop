@@ -20,7 +20,8 @@ CREATE TABLE users (
     password_hash   TEXT NOT NULL,             -- argon2id encoded w/ params (AGENTS.md §4)
     role            TEXT NOT NULL DEFAULT 'customer'
                     CHECK (role IN ('customer','vendor','mod','admin')),
-    pgp_public_key  TEXT,                       -- armored PUBLIC key only; private keys never stored
+    pgp_public_key  TEXT,
+    anti_phishing_phrase TEXT NOT NULL DEFAULT '',                       -- armored PUBLIC key only; private keys never stored
     status          TEXT NOT NULL DEFAULT 'active'
                     CHECK (status IN ('pending','active','suspended','banned')),
     created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),

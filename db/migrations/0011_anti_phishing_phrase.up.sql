@@ -1,0 +1,1 @@
+ALTER TABLE users ADD COLUMN IF NOT EXISTS anti_phishing_phrase TEXT NOT NULL DEFAULT '';

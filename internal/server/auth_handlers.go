@@ -969,6 +969,18 @@ func (a *App) baseData(r *http.Request) AuthData {
 			}
 		}
 	}
+	if d.PersonalPhrase == "" {
+		if pool, ok := a.deps.Pool.(*pgxpool.Pool); ok {
+			if uid := CurrentUserID(r.Context(), a.sm); uid != "" {
+				if u, ok := parseUUID(uid); ok {
+					var ph string
+					if err := pool.QueryRow(r.Context(), `SELECT anti_phishing_phrase FROM users WHERE id=$1`, u).Scan(&ph); err == nil {
+						d.PersonalPhrase = ph
+					}
+				}
+			}
+		}
+	}
 	return d
 }
 
