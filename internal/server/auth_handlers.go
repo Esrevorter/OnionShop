@@ -356,6 +356,7 @@ func (a *App) RegisterAuthRoutes(auth AuthStore, captcha *CaptchaService, sessio
 
 func (a *App) RegisterAuthRoutesFull(auth AuthStore, captcha *CaptchaService, sessions SessionLinker, invalid SessionInvalidator, catalog VendorStore, templateDir string) error {
 	if err := a.buildTemplates(templateDir); err != nil { return err }
+	go StartLiveRates(context.Background())
 	installGenericErrorRenderer(func(w http.ResponseWriter) { a.renderStaticError(w, http.StatusInternalServerError, "Something went wrong on our side. Please try again.") })
 	genericErrorRenderer = func(w http.ResponseWriter) { a.renderStaticError(w, http.StatusInternalServerError, "Something went wrong on our side. Please try again.") }
 	if invalid == nil && sessions != nil {
@@ -912,6 +913,9 @@ var templateFuncs = template.FuncMap{
 		return fmt.Sprintf("%s%d.%012d", neg, piconero/1000000000000, piconero%1000000000000)
 	},
 	"fmtFiat": func(cents int64, currency string) string {
+		if mult, ok := liveRate(currency); ok {
+			return formatFiatWith(cents, mult, currency)
+		}
 		if ratesOracle == nil {
 			return fmtUSDCents(cents)
 		}
