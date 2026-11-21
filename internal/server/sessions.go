@@ -217,7 +217,9 @@ func (a *App) CSRFProtect() func(http.Handler) http.Handler {
 }
 
 func writeGenericError(w http.ResponseWriter) {
-	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
-	w.WriteHeader(http.StatusInternalServerError)
-	_, _ = w.Write([]byte("internal error\n"))
+	if genericErrorRenderer != nil {
+		genericErrorRenderer(w)
+		return
+	}
+	http.Error(w, "internal error", http.StatusInternalServerError)
 }
