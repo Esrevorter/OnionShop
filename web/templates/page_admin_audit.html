@@ -1,0 +1,28 @@
+{{template "layout" .}}
+{{define "title"}}Admin · Audit Log · OnionShop{{end}}
+{{define "body"}}
+<section class="admin-layout">
+  <div class="admin-header"><h1>Audit Log</h1><a href="/admin" class="btn-secondary">← Dashboard</a></div>
+  <p class="muted">Last 500 privileged actions. Entries are immutable.</p>
+  <div class="table-container">
+    <table class="data-table">
+      <thead><tr><th>When</th><th>Actor</th><th>Action</th><th>Target</th><th>Details</th></tr></thead>
+      <tbody>
+      {{if .Entries}}
+        {{range .Entries}}
+        <tr>
+          <td>{{.CreatedAt}}</td>
+          <td>{{if .Actor}}{{.Actor}}{{else}}<span class="muted">system</span>{{end}} ({{.ActorKind}})</td>
+          <td><code>{{.Action}}</code></td>
+          <td><code>{{.Target}}</code></td>
+          <td style="max-width:400px; overflow:hidden; text-overflow:ellipsis;">{{.Details}}</td>
+        </tr>
+        {{end}}
+      {{else}}
+        <tr><td colspan="5" class="text-muted" style="text-align:center;">No audit entries.</td></tr>
+      {{end}}
+      </tbody>
+    </table>
+  </div>
+</section>
+{{end}}
