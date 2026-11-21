@@ -30,6 +30,7 @@ import (
 const honeypotField = "sta"
 
 type AuthData struct {
+	IsSignedIn       bool
 	CsrfToken       string
 	IsAuthenticated bool
 	IsAdmin         bool
@@ -981,6 +982,7 @@ func (a *App) baseData(r *http.Request) AuthData {
 			}
 		}
 	}
+	d.IsSignedIn = CurrentUserID(r.Context(), a.sm) != ""
 	return d
 }
 

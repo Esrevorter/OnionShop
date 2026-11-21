@@ -76,7 +76,7 @@
         <button type="submit" name="currency" value="EUR" class="currency-btn {{if eq .PreferredCurrency "EUR"}}currency-active{{end}}">EUR</button>
         <button type="submit" name="currency" value="AUD" class="currency-btn {{if eq .PreferredCurrency "AUD"}}currency-active{{end}}">AUD</button>
       </form>
-        {{if .IsAdmin}}
+        {{if .IsSignedIn}}
         <a href="/messages" class="currency-btn" style="text-decoration:none;">Messages{{if .MessagesUnread}} ({{.MessagesUnread}}){{end}}</a>
       
         <form method="post" action="/logout" class="nav-form" style="margin:0; display:inline;">
