@@ -1,4 +1,4 @@
-
+DROP TABLE IF EXISTS order_messages;
 ALTER TABLE orders DROP COLUMN IF EXISTS extended;
 ALTER TABLE orders DROP COLUMN IF EXISTS auto_release_at;
 ALTER TABLE orders DROP COLUMN IF EXISTS shipped_at;
