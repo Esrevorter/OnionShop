@@ -261,8 +261,13 @@ func (a *App) handleCheckoutSubmit(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 		opts, err := ShippingListActiveByVendor(ctx, pool, vuid)
-		if err != nil || len(opts) == 0 {
-			continue
+		if err != nil {
+			fail("Failed to load shipping options.")
+			return
+		}
+		if len(opts) == 0 {
+			fail("A vendor in your cart no longer has active shipping options. Please remove their items.")
+			return
 		}
 		selStr := strings.TrimSpace(r.FormValue("shipping_" + vid))
 		if selStr == "" {

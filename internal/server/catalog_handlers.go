@@ -39,7 +39,9 @@ type CatalogData struct {
 
 func (a *App) catalogBase(r *http.Request) *CatalogData {
 	d := &CatalogData{AuthData: a.baseData(r)}
-	d.PersonalPhrase = a.sm.GetString(r.Context(), phraseKey)
+	if pv := a.sm.GetString(r.Context(), phraseKey); pv != "" {
+		d.PersonalPhrase = pv
+	}
 	return d
 }
 

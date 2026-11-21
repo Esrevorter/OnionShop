@@ -246,7 +246,9 @@ func (a *App) handlePGPUpload(w http.ResponseWriter, r *http.Request) {
 	data := a.baseData(r)
 	fail := func(msg string) {
 		data.Error = msg
-		data.PersonalPhrase = a.sm.GetString(ctx, phraseKey)
+		if pv := a.sm.GetString(ctx, phraseKey); pv != "" {
+			data.PersonalPhrase = pv
+		}
 		a.loadPGPState(ctx, &data)
 		if data.Captcha = a.newChallenge(w, r, accountPurpose); data.Captcha == nil {
 			return // newChallenge already answered the generic 500
@@ -295,7 +297,9 @@ func (a *App) handlePGPClear(w http.ResponseWriter, r *http.Request) {
 	data := a.baseData(r)
 	fail := func(msg string) {
 		data.Error = msg
-		data.PersonalPhrase = a.sm.GetString(ctx, phraseKey)
+		if pv := a.sm.GetString(ctx, phraseKey); pv != "" {
+			data.PersonalPhrase = pv
+		}
 		a.loadPGPState(ctx, &data)
 		if data.Captcha = a.newChallenge(w, r, accountPurpose); data.Captcha == nil {
 			return
