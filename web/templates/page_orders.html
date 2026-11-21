@@ -11,7 +11,7 @@
 
   {{if not .Orders}}
     <div class="empty-state">
-      <p>You have no orders yet. <a href="/">Browse the marketplace</a> to get started.</p>
+      {{if .IsVendorView}}<p>You have no incoming orders yet.</p>{{else}}<p>You have no orders yet. <a href="/">Browse the marketplace</a> to get started.</p>{{end}}
     </div>
   {{else}}
     {{range .Orders}}
@@ -20,7 +20,7 @@
         <p class="eyebrow">Order {{.IDStr}} · {{.CreatedAt}}</p>
         <span class="badge {{if eq .Status "awaiting_payment"}}badge-muted{{else}}badge-success{{end}}">{{.Status}}</span>
       </div>
-      <p class="muted">Vendor: {{.ShopName}}{{if .ShippingTitle}} · Shipping: {{.ShippingTitle}}{{end}}</p>
+      <p class="muted">{{if .IsVendorView}}Customer: {{.CustomerName}}{{else}}Vendor: {{.ShopName}}{{end}}{{if .ShippingTitle}} · Shipping: {{.ShippingTitle}}{{end}}</p>
       <table class="data-table" style="font-size: 0.9rem;">
         <tbody>
           {{range .Items}}
