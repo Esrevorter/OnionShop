@@ -17,6 +17,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 const (
@@ -41,6 +42,11 @@ func (a *App) productData(r *http.Request) *ProductFormData {
 	return &ProductFormData{AuthData: a.baseData(r)}
 }
 
+
+func (a *App) hasActiveShippingOptions(ctx context.Context, pool *pgxpool.Pool, vendorID pgtype.UUID) bool {
+	opts, err := ShippingListActiveByVendor(ctx, pool, vendorID)
+	return err == nil && len(opts) > 0
+}
 func (a *App) vendorRow(ctx context.Context, userID pgtype.UUID) (*VendorRecord, error) {
 	v, err := a.auth.VendorGetByUser(ctx, userID)
 	if err != nil {
@@ -292,6 +298,15 @@ func (a *App) handleProductCreate(w http.ResponseWriter, r *http.Request) {
 		fail("no approved vendor profile on this account")
 		return
 	}
+	pool, ok := a.deps.Pool.(*pgxpool.Pool)
+	if !ok {
+		fail("Internal server error.")
+		return
+	}
+	if !a.hasActiveShippingOptions(ctx, pool, vrow.ID) {
+		fail("You must define at least one active shipping option in your Shipping settings before creating a listing.")
+		return
+	}
 	if err := r.ParseMultipartForm(maxUploadSize); err != nil {
 		fail("invalid form data or upload too large (max 10MB)")
 		return
@@ -413,6 +428,15 @@ func (a *App) handleProductUpdate(w http.ResponseWriter, r *http.Request) {
 	vrow, err := a.vendorRow(ctx, uid)
 	if err != nil {
 		fail(http.StatusBadRequest, "no approved vendor profile on this account")
+		return
+	}
+	pool, ok := a.deps.Pool.(*pgxpool.Pool)
+	if !ok {
+		fail(http.StatusInternalServerError, "Internal server error.")
+		return
+	}
+	if !a.hasActiveShippingOptions(ctx, pool, vrow.ID) {
+		fail(http.StatusBadRequest, "You must define at least one active shipping option before updating a listing.")
 		return
 	}
 	if err := r.ParseMultipartForm(maxUploadSize); err != nil {
