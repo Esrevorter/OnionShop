@@ -4,3 +4,7 @@ internal/store/gen/
 *.swp
 *.swo
 onionshop
+
+__pycache__/
+*.py
+
