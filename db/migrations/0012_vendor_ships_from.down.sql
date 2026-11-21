@@ -1,0 +1,1 @@
+ALTER TABLE vendors DROP COLUMN IF EXISTS ships_from;

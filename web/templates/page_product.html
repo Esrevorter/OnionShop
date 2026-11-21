@@ -12,7 +12,7 @@
   <div class="product-copy">
     <p class="eyebrow">{{.ShopName}}</p>
     <h1>{{.Title}}</h1>
-    <p class="muted">Sold by <a href="/u/{{.VendorUsername}}">@{{.VendorUsername}}</a>{{if .Eta}} · {{.Eta}} dispatch{{end}}</p>
+    <p class="muted">Sold by <a href="/u/{{.VendorUsername}}">@{{.VendorUsername}}</a>{{if .Eta}} · {{.Eta}} dispatch{{end}}{{if $.ShipsFrom}} · ships from {{$.ShipsFrom}}{{end}}{{if and $.ShipsFrom $.ShippingFromCents}} · {{end}}{{if $.ShippingFromCents}}shipping from {{fmtFiat $.ShippingFromCents $.PreferredCurrency}}{{end}}</p>
     <div class="description">{{inertURL .Description}}</div>
     <aside class="price-panel">
       <p class="eyebrow">Price</p>
