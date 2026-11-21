@@ -30,6 +30,7 @@ import (
 const honeypotField = "sta"
 
 type AuthData struct {
+	VendorApplicationPending bool
 	IsSignedIn       bool
 	CsrfToken       string
 	IsAuthenticated bool
@@ -983,6 +984,17 @@ func (a *App) baseData(r *http.Request) AuthData {
 		}
 	}
 	d.IsSignedIn = CurrentUserID(r.Context(), a.sm) != ""
+	if pool, ok := a.deps.Pool.(*pgxpool.Pool); ok {
+		if uid := CurrentUserID(r.Context(), a.sm); uid != "" {
+			if u, ok := parseUUID(uid); ok {
+				var approved bool
+				if err := pool.QueryRow(r.Context(), `SELECT approved FROM vendors WHERE user_id=$1`, u).Scan(&approved); err == nil {
+					d.VendorApplicationPending = !approved
+				}
+			}
+		}
+	}
+
 	return d
 }
 

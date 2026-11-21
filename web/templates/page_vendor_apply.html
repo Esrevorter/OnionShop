@@ -7,12 +7,20 @@
     <h1>Become a Vendor</h1>
     <p class="lede">Submit your shop name for admin review. Approval grants you vendor privileges.</p>
   </div>
-  <form method="post" action="/vendor/apply" autocomplete="off" class="auth-card">
+  {{if .IsVendor}}
+<div class="notice" style="margin-bottom:1rem;">You already run a shop — head to <a href="/vendor/products">My Listings</a>.</div>
+{{end}}
+{{if .VendorApplicationPending}}
+<div class="notice" style="margin-bottom:1rem;">Your vendor application is under review. The decision will appear on this page.</div>
+{{end}}
+{{if not .IsVendor}}{{if not .VendorApplicationPending}}
+<form method="post" action="/vendor/apply" autocomplete="off" class="auth-card">
     {{template "friction" .}}
     <input type="hidden" name="csrf_token" value="{{.CsrfToken}}">
     <label for="shop_name">Shop Name (3-60 characters)</label>
     <input id="shop_name" type="text" name="shop_name" minlength="3" maxlength="60" required>
     <div class="form-actions"><button type="submit">Submit Application</button></div>
   </form>
+{{end}}{{end}}
 </section>
 {{end}}
