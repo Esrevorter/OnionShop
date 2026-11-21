@@ -24,6 +24,10 @@
           <input id="price_usd" type="number" step="0.01" min="0" name="price_usd" placeholder="5.00" required>
         </div>
         <div>
+          <label for="eta_days">Est. delivery (days)</label>
+          <input id="eta_days" type="number" min="1" max="60" name="eta_days" value="14" required>
+        </div>
+        <div>
           <label for="eta">Speed</label>
           <select id="eta" name="eta">
             <option value="fast">Fast</option>
@@ -39,12 +43,12 @@
   {{if .ShippingOptions}}
   <div class="table-container">
     <table class="data-table">
-      <thead><tr><th>Title</th><th>Speed</th><th>Price</th><th>Status</th><th>Actions</th></tr></thead>
+      <thead><tr><th>Title</th><th>Est. days</th><th>Speed</th><th>Price</th><th>Status</th><th>Actions</th></tr></thead>
       <tbody>
       {{range .ShippingOptions}}
         <tr>
           <td><strong>{{.Title}}</strong><br><span class="muted">{{.Description}}</span></td>
-          <td>{{.Eta}}</td>
+          <td>{{.EtaDays}}d</td><td>{{.Eta}}</td>
           <td>{{fmtFiat .PriceUSDCents $.PreferredCurrency}}</td>
           <td>{{if .Active}}<span class="badge badge-success">Active</span>{{else}}<span class="badge badge-muted">Disabled</span>{{end}}</td>
           <td>

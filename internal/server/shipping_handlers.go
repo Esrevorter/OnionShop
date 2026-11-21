@@ -83,6 +83,10 @@ func (a *App) handleShippingCreate(w http.ResponseWriter, r *http.Request) {
 	default:
 		eta = "medium"
 	}
+	etaDays, _ := strconv.Atoi(strings.TrimSpace(r.FormValue("eta_days")))
+	if etaDays < 1 || etaDays > 60 {
+		etaDays = 14
+	}
 	priceUSD, err := strconv.ParseFloat(strings.TrimSpace(r.FormValue("price_usd")), 64)
 	if err != nil || priceUSD < 0 {
 		http.Redirect(w, r, "/vendor/shipping", http.StatusSeeOther)
@@ -90,7 +94,7 @@ func (a *App) handleShippingCreate(w http.ResponseWriter, r *http.Request) {
 	}
 	err = ShippingCreate(r.Context(), pool, ShippingOption{
 		VendorID: vrow.ID, Title: title, Description: desc,
-		PriceUSDCents: int64(priceUSD * 100), Eta: eta, Active: true,
+		PriceUSDCents: int64(priceUSD * 100), Eta: eta, EtaDays: etaDays, Active: true,
 	})
 	if err != nil {
 		writeGenericError(w)

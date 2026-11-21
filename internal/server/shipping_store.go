@@ -16,10 +16,11 @@ type ShippingOption struct {
 	Description   string
 	PriceUSDCents int64
 	Eta           string
+	EtaDays       int
 	Active        bool
 }
 
-const qShippingCols = `id, vendor_id, title, description, price_usd_cents, eta, active`
+const qShippingCols = `id, vendor_id, title, description, price_usd_cents, eta, eta_days, active`
 
 func ShippingListByVendor(ctx context.Context, pool *pgxpool.Pool, vendorID pgtype.UUID) ([]ShippingOption, error) {
 	rows, err := pool.Query(ctx, `SELECT `+qShippingCols+` FROM shipping_options WHERE vendor_id=$1 ORDER BY price_usd_cents, title`, vendorID)
@@ -30,7 +31,7 @@ func ShippingListByVendor(ctx context.Context, pool *pgxpool.Pool, vendorID pgty
 	var out []ShippingOption
 	for rows.Next() {
 		var o ShippingOption
-		if err := rows.Scan(&o.ID, &o.VendorID, &o.Title, &o.Description, &o.PriceUSDCents, &o.Eta, &o.Active); err != nil {
+		if err := rows.Scan(&o.ID, &o.VendorID, &o.Title, &o.Description, &o.PriceUSDCents, &o.Eta, &o.EtaDays, &o.Active); err != nil {
 			return nil, fmt.Errorf("server: scan shipping option: %w", err)
 		}
 		out = append(out, o)
@@ -47,7 +48,7 @@ func ShippingListActiveByVendor(ctx context.Context, pool *pgxpool.Pool, vendorI
 	var out []ShippingOption
 	for rows.Next() {
 		var o ShippingOption
-		if err := rows.Scan(&o.ID, &o.VendorID, &o.Title, &o.Description, &o.PriceUSDCents, &o.Eta, &o.Active); err != nil {
+		if err := rows.Scan(&o.ID, &o.VendorID, &o.Title, &o.Description, &o.PriceUSDCents, &o.Eta, &o.EtaDays, &o.Active); err != nil {
 			return nil, fmt.Errorf("server: scan shipping option: %w", err)
 		}
 		out = append(out, o)
@@ -58,7 +59,7 @@ func ShippingListActiveByVendor(ctx context.Context, pool *pgxpool.Pool, vendorI
 func ShippingGet(ctx context.Context, pool *pgxpool.Pool, id pgtype.UUID) (*ShippingOption, error) {
 	var o ShippingOption
 	err := pool.QueryRow(ctx, `SELECT `+qShippingCols+` FROM shipping_options WHERE id=$1`, id).
-		Scan(&o.ID, &o.VendorID, &o.Title, &o.Description, &o.PriceUSDCents, &o.Eta, &o.Active)
+		Scan(&o.ID, &o.VendorID, &o.Title, &o.Description, &o.PriceUSDCents, &o.Eta, &o.EtaDays, &o.Active)
 	if err != nil {
 		return nil, err
 	}
@@ -67,9 +68,9 @@ func ShippingGet(ctx context.Context, pool *pgxpool.Pool, id pgtype.UUID) (*Ship
 
 func ShippingCreate(ctx context.Context, pool *pgxpool.Pool, o ShippingOption) error {
 	_, err := pool.Exec(ctx, `
-		INSERT INTO shipping_options (vendor_id, title, description, price_usd_cents, eta, active)
-		VALUES ($1,$2,$3,$4,$5,$6)`,
-		o.VendorID, o.Title, o.Description, o.PriceUSDCents, o.Eta, o.Active)
+		INSERT INTO shipping_options (vendor_id, title, description, price_usd_cents, eta, eta_days, active)
+		VALUES ($1,$2,$3,$4,$5,$6,$7)`,
+		o.VendorID, o.Title, o.Description, o.PriceUSDCents, o.Eta, o.EtaDays, o.Active)
 	if err != nil {
 		return fmt.Errorf("server: create shipping option: %w", err)
 	}
