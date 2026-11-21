@@ -49,7 +49,11 @@ func (a *App) handleShippingList(w http.ResponseWriter, r *http.Request) {
 		writeGenericError(w)
 		return
 	}
-	a.renderAs(w, "vendor_shipping", http.StatusOK, ShippingData{AuthData: a.baseData(r), ShippingOptions: opts})
+	data := ShippingData{AuthData: a.baseData(r), ShippingOptions: opts}
+	if r.URL.Query().Get("error") == "cannot_delete_in_use" {
+		data.Error = "Cannot delete: this shipping option is attached to existing orders. Please Disable it instead."
+	}
+	a.renderAs(w, "vendor_shipping", http.StatusOK, data)
 }
 
 func (a *App) handleShippingCreate(w http.ResponseWriter, r *http.Request) {
@@ -69,14 +73,10 @@ func (a *App) handleShippingCreate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	title := strings.TrimSpace(r.FormValue("title"))
-	desc := strings.TrimSpace(r.FormValue("description"))
 	eta := strings.TrimSpace(r.FormValue("eta"))
 	if len(title) < 2 || len(title) > 80 {
 		http.Redirect(w, r, "/vendor/shipping", http.StatusSeeOther)
 		return
-	}
-	if len(desc) > 500 {
-		desc = desc[:500]
 	}
 	switch eta {
 	case "fast", "medium", "slow":
@@ -93,7 +93,7 @@ func (a *App) handleShippingCreate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	err = ShippingCreate(r.Context(), pool, ShippingOption{
-		VendorID: vrow.ID, Title: title, Description: desc,
+		VendorID: vrow.ID, Title: title, Description: "",
 		PriceUSDCents: int64(priceUSD * 100), Eta: eta, EtaDays: etaDays, Active: true,
 	})
 	if err != nil {
@@ -149,6 +149,19 @@ func (a *App) handleShippingDelete(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-	_ = ShippingDelete(r.Context(), pool, id, vrow.ID)
+	
+	// Check if this option is used in any orders
+	var usageCount int
+	_ = pool.QueryRow(r.Context(), `SELECT COUNT(*) FROM orders WHERE shipping_option_id=$1`, id).Scan(&usageCount)
+	if usageCount > 0 {
+		// Cannot delete, redirect with error
+		http.Redirect(w, r, "/vendor/shipping?error=cannot_delete_in_use", http.StatusSeeOther)
+		return
+	}
+
+	if err := ShippingDelete(r.Context(), pool, id, vrow.ID); err != nil {
+		writeGenericError(w)
+		return
+	}
 	http.Redirect(w, r, "/vendor/shipping", http.StatusSeeOther)
 }
