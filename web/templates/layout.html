@@ -6,7 +6,7 @@
 <meta name="color-scheme" content="dark">
 <title>{{block "title" .}}OnionShop{{end}}</title>
 <link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
-<link rel="stylesheet" href="/static/main.css?v=20261122">
+<link rel="stylesheet" href="/static/main.css?v=20261121b">
 </head>
 <body>
 <header class="site-header">
@@ -67,7 +67,8 @@
   </div>
 
       <div class="session-bar">
-        <a href="/messages" class="currency-btn" style="text-decoration:none;">Messages{{if .MessagesUnread}} ({{.MessagesUnread}}){{end}}</a>
+      <div class="header-inner session-bar-inner">
+        {{if .IsAdmin}}<a href="/messages" class="currency-btn" style="text-decoration:none;">Messages{{if .MessagesUnread}} ({{.MessagesUnread}}){{end}}</a>
       <form method="post" action="/currency/set" class="currency-set-form">
         <input type="hidden" name="csrf_token" value="{{.CsrfToken}}">
         <span class="currency-label">Prices in</span>
@@ -78,8 +79,9 @@
         <form method="post" action="/logout" class="nav-form" style="margin:0; display:inline;">
           <input type="hidden" name="csrf_token" value="{{.CsrfToken}}">
           <button class="secondary" type="submit" style="border:none; background:none; cursor:pointer; font-size:inherit; color:var(--accent); padding:.45rem .7rem;">Log out</button>
-        </form>
-      </div>
+        </form>{{end}}
+      
+      </div></div>
     </header>
 <main class="page-shell">
   {{if .Error}}<div class="error" role="alert"><strong>Something needs attention</strong><br>{{.Error}}</div>{{end}}

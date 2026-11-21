@@ -358,3 +358,9 @@ input::placeholder, textarea::placeholder { color: #829287; }
   color: #ffffff !important;
   border-color: #dc2626 !important;
 }
+
+/* session bar v5: row padding on the bar, flex alignment on the inner container */
+.session-bar { display:block !important; width:100% !important;
+  padding:.35rem 0 .55rem !important; border-top:1px solid var(--line) !important; }
+.session-bar-inner { display:flex !important; justify-content:flex-end !important;
+  align-items:center !important; gap:.9rem !important; }

@@ -1,6 +1,7 @@
 package server
 
 import (
+	"github.com/jackc/pgx/v5/pgxpool"
 	"log"
 	"net/http"
 	"strconv"
@@ -219,6 +220,9 @@ func (a *App) handleProductPage(w http.ResponseWriter, r *http.Request) {
 	data := a.catalogBase(r)
 	data.Product = p
 	data.ShopName = p.ShopName
+	if pool, ok := a.deps.Pool.(*pgxpool.Pool); ok {
+		IncrementSiteStat(r.Context(), pool, p.VendorID, "product_views")
+	}
 	a.renderCatalog(w, r, "product", http.StatusOK, data)
 }
 
@@ -262,6 +266,9 @@ func (a *App) handleShopPage(w http.ResponseWriter, r *http.Request) {
 	data := a.catalogBase(r)
 	data.Vendor = v
 	data.ShopName = v.ShopName
+	if pool, ok := a.deps.Pool.(*pgxpool.Pool); ok {
+		IncrementSiteStat(r.Context(), pool, v.ID, "shop_views")
+	}
 	data.ShopHandle = handle
 	data.Products = own
 	if data.Captcha = a.newChallenge(w, r, messagePurpose); data.Captcha == nil {
