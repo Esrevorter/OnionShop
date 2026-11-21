@@ -55,6 +55,8 @@ type AuthData struct {
 	TOTPSecret      string
 	MessagesUnread  int64
 	BackupCodes     []string
+	ShipsFrom       string
+	ShipsFromOptions []string
 }
 
 type UserRecord struct {
@@ -593,6 +595,11 @@ func (a *App) handleAccount(w http.ResponseWriter, r *http.Request) {
 	}
 	a.loadPGPState(r.Context(), &data)
 	if uid := currentUserUUID(r.Context(), a.sm); uid != nil {
+		if pool, ok := a.deps.Pool.(*pgxpool.Pool); ok {
+			_ = pool.QueryRow(r.Context(), `SELECT ships_from FROM vendors WHERE user_id=$1`, *uid).Scan(&data.ShipsFrom)
+		}
+	}
+	if uid := currentUserUUID(r.Context(), a.sm); uid != nil {
 		if u, uerr := a.auth.AuthUserByID(r.Context(), *uid); uerr == nil && u != nil {
 			data.TOTPEnabled = u.TOTPEnabled
 			if u.BackupCodes != "" {
@@ -977,6 +984,7 @@ func (a *App) baseData(r *http.Request) AuthData {
 		curr = "USD"
 	}
 	d.PreferredCurrency = curr
+	d.ShipsFromOptions = CountryOptions()
 	if pool, ok := a.deps.Pool.(*pgxpool.Pool); ok {
 		if uid := CurrentUserID(r.Context(), a.sm); uid != "" {
 			if u, ok := parseUUID(uid); ok {

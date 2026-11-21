@@ -32,6 +32,8 @@ type CatalogData struct {
 	PrevOffset   int
 	NextOffset   int
 	ShopHandle   string
+	ShipsFrom          string
+	ShippingFromCents  int64
 }
 
 
@@ -222,6 +224,12 @@ func (a *App) handleProductPage(w http.ResponseWriter, r *http.Request) {
 	data.ShopName = p.ShopName
 	if pool, ok := a.deps.Pool.(*pgxpool.Pool); ok {
 		IncrementSiteStat(r.Context(), pool, p.VendorID, "product_views")
+		var sf string
+		_ = pool.QueryRow(r.Context(), `SELECT ships_from FROM vendors WHERE id=$1`, p.VendorID).Scan(&sf)
+		data.ShipsFrom = sf
+		var mc int64
+		_ = pool.QueryRow(r.Context(), `SELECT COALESCE(MIN(price_usd_cents),0) FROM shipping_options WHERE vendor_id=$1 AND active`, p.VendorID).Scan(&mc)
+		data.ShippingFromCents = mc
 	}
 	a.renderCatalog(w, r, "product", http.StatusOK, data)
 }
@@ -268,6 +276,12 @@ func (a *App) handleShopPage(w http.ResponseWriter, r *http.Request) {
 	data.ShopName = v.ShopName
 	if pool, ok := a.deps.Pool.(*pgxpool.Pool); ok {
 		IncrementSiteStat(r.Context(), pool, v.ID, "shop_views")
+		var sf string
+		_ = pool.QueryRow(r.Context(), `SELECT ships_from FROM vendors WHERE id=$1`, v.ID).Scan(&sf)
+		data.ShipsFrom = sf
+		var mc int64
+		_ = pool.QueryRow(r.Context(), `SELECT COALESCE(MIN(price_usd_cents),0) FROM shipping_options WHERE vendor_id=$1 AND active`, v.ID).Scan(&mc)
+		data.ShippingFromCents = mc
 	}
 	data.ShopHandle = handle
 	data.Products = own

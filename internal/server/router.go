@@ -187,6 +187,7 @@ func newApp(cfg Config, deps Deps, sessionStore scs.Store, withRateLimit bool) (
 	a.registerAdminOrderRoutes(r)
 	a.registerAdminSessionRoutes(r)
 	a.registerWalletRoutes(r)
+	a.registerShipsFromRoutes(r)
 	a.registerAdminUserAdminRoutes(r)
 	a.registerShippingRoutes(r)
 	a.registerMessagingRoutes(r)
