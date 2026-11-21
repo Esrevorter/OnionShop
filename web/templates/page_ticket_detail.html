@@ -1,14 +1,33 @@
 {{template "layout" .}}
-{{define "title"}}Ticket Detail · OnionShop{{end}}
+{{define "title"}}Ticket · OnionShop{{end}}
 {{define "body"}}
-<section class="auth-layout">
-  <div class="auth-intro">
-    <p class="eyebrow">Support</p>
-    <h1>Ticket Details</h1>
+<section class="admin-layout">
+  <div class="admin-header">
+    <h1>{{.Ticket.Subject}}</h1>
+    <a href="/tickets" class="btn-secondary">← All Tickets</a>
   </div>
-  <div class="auth-card">
-    <p>Ticket conversation and admin responses will appear here.</p>
-    <div class="form-actions" style="justify-content: flex-start;"><a href="/tickets" class="button">Back to Tickets</a></div>
+  <p class="muted">{{.Ticket.Category}} · status: <strong>{{.Ticket.Status}}</strong> · updated {{.Ticket.UpdatedAt}}</p>
+  <div class="auth-card" style="margin-bottom:1rem;">
+    {{range .Messages}}
+    <div style="margin:.6rem 0; padding:.6rem .8rem; border-radius:.6rem; background:var(--surface); border:1px solid var(--line);">
+      <p class="eyebrow">{{.Author}}{{if .IsStaff}} · staff{{end}} · {{.CreatedAt}}</p>
+      <p style="margin:0; white-space:pre-wrap;">{{.Body}}</p>
+    </div>
+    {{end}}
   </div>
+  {{if ne .Ticket.Status "closed"}}
+  <form method="post" action="/tickets/{{.Ticket.IDStr}}/reply" class="auth-card" autocomplete="off">
+    {{template "friction" .}}
+    <label for="body">Reply (max 10000 characters)</label>
+    <textarea id="body" name="body" rows="4" maxlength="10000" required></textarea>
+    <div class="form-actions"><button type="submit">Send Reply</button></div>
+  </form>
+  <form method="post" action="/tickets/{{.Ticket.IDStr}}/close" style="margin-top:.75rem;">
+    <input type="hidden" name="csrf_token" value="{{.CsrfToken}}">
+    <button type="submit" class="btn-danger btn-sm">Close Ticket</button>
+  </form>
+  {{else}}
+  <p class="muted">This ticket is closed.</p>
+  {{end}}
 </section>
 {{end}}

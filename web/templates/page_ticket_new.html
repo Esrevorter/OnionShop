@@ -1,0 +1,32 @@
+{{template "layout" .}}
+{{define "title"}}New Ticket · OnionShop{{end}}
+{{define "body"}}
+<section class="auth-layout">
+  <div class="auth-intro">
+    <p class="eyebrow">Support</p>
+    <h1>Open a Support Ticket</h1>
+  </div>
+  <div class="auth-card" style="max-width:600px;">
+    <form method="post" action="/tickets/new" autocomplete="off">
+      {{template "friction" .}}
+      <label for="category">Category</label>
+      <select id="category" name="category" required>
+        <option value="general">General question</option>
+        <option value="order_problem">Order problem</option>
+        <option value="vendor_report">Report a vendor</option>
+        <option value="payment_issue">Payment issue</option>
+        <option value="bug_bounty">Bug bounty</option>
+        <option value="account_recovery">Account recovery</option>
+      </select>
+      <label for="subject">Subject (3-200 characters)</label>
+      <input id="subject" type="text" name="subject" maxlength="200" required>
+      <label for="body">Message (max 10000 characters)</label>
+      <textarea id="body" name="body" rows="6" maxlength="10000" required></textarea>
+      <div class="form-actions">
+        <button type="submit">Submit Ticket</button>
+        <a href="/tickets" class="btn-secondary">Cancel</a>
+      </div>
+    </form>
+  </div>
+</section>
+{{end}}

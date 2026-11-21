@@ -95,6 +95,9 @@ func (a *App) handleAdminUsers(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	data.Users = users
+	if data.Captcha = a.newChallenge(w, r, "admin"); data.Captcha == nil {
+		return
+	}
 	a.renderAs(w, "admin_users", http.StatusOK, data)
 }
 

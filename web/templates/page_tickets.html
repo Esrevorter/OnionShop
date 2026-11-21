@@ -1,54 +1,30 @@
 {{template "layout" .}}
-
 {{define "title"}}Support Tickets · OnionShop{{end}}
-
 {{define "body"}}
 <section class="admin-layout">
   <div class="admin-header">
     <h1>Support Tickets</h1>
-    <button class="button" onclick="document.getElementById('new-ticket-form').style.display='block'">+ New Ticket</button>
+    <a href="/tickets/new" class="button">+ New Ticket</a>
   </div>
-
-  <div id="new-ticket-form" class="auth-card" style="max-width: 600px; display: none; margin-bottom: 2rem;">
-    <h2>Create New Ticket</h2>
-    <form method="post" action="/tickets" autocomplete="off">
-      {{template "friction" .}}
-      <label for="subject">Subject</label>
-      <input id="subject" type="text" name="subject" maxlength="100" required>
-      
-      <label for="body">Message</label>
-      <textarea id="body" name="body" rows="5" maxlength="2000" required></textarea>
-      
-      <div class="form-actions">
-        <button type="submit">Submit Ticket</button>
-        <button type="button" class="secondary" onclick="document.getElementById('new-ticket-form').style.display='none'">Cancel</button>
-      </div>
-    </form>
-  </div>
-
   <div class="table-container">
     <table class="data-table">
-      <thead>
-        <tr>
-          <th>Ticket ID</th>
-          <th>Subject</th>
-          <th>Status</th>
-          <th>Last Updated</th>
-          <th>Actions</th>
-        </tr>
-      </thead>
+      <thead><tr><th>Ticket</th><th>Category</th><th>Status</th><th>Last Updated</th><th>Actions</th></tr></thead>
       <tbody>
+      {{if .Tickets}}
+        {{range .Tickets}}
         <tr>
-          <td colspan="5" class="text-muted" style="text-align: center; padding: 2rem;">
-            You have no open support tickets.
-          </td>
+          <td><a href="/tickets/{{.IDStr}}">{{.Subject}}</a></td>
+          <td>{{.Category}}</td>
+          <td><span class="badge {{if eq .Status "open"}}badge-success{{else if eq .Status "closed"}}badge-muted{{else}}badge-muted{{end}}">{{.Status}}</span></td>
+          <td>{{.UpdatedAt}}</td>
+          <td><a href="/tickets/{{.IDStr}}" class="btn-secondary">View</a></td>
         </tr>
+        {{end}}
+      {{else}}
+        <tr><td colspan="5" class="text-muted" style="text-align:center; padding:2rem;">You have no support tickets.</td></tr>
+      {{end}}
       </tbody>
     </table>
   </div>
 </section>
-
-<script>
-  // Simple toggle for the new ticket form (no external JS libraries)
-</script>
 {{end}}

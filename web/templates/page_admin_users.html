@@ -1,73 +1,74 @@
 {{template "layout" .}}
-
-{{define "title"}}User Management · OnionShop{{end}}
-
+{{define "title"}}Admin · Users · OnionShop{{end}}
 {{define "body"}}
 <section class="admin-layout">
   <div class="admin-header">
-    <h1>User Management</h1>
-    <a href="/admin" class="btn-secondary">← Back to Dashboard</a>
+    <h1>User Administration</h1>
+    <a href="/admin" class="btn-secondary">← Dashboard</a>
   </div>
 
-  {{if not .Users}}
-    <div class="empty-state"><p>No users registered yet.</p></div>
-  {{else}}
+  {{if .Error}}<div class="flash" role="alert" style="border-color:var(--danger,#f87171); color:#fca5a5;">{{.Error}}</div>{{end}}
+
+  <div class="auth-card" style="max-width:520px; margin-bottom:2rem;">
+    <h2>Create User</h2>
+    <form method="post" action="/admin/users/create" autocomplete="off">
+      {{template "friction" .}}
+      <label for="username">Username (3-32, lowercase letters/numbers/underscore)</label>
+      <input id="username" name="username" maxlength="32" required>
+      <label for="password">Initial password (min 8 characters)</label>
+      <input id="password" type="password" name="password" minlength="8" required>
+      <label for="role">Role</label>
+      <select id="role" name="role">
+        <option value="customer">customer</option>
+        <option value="vendor">vendor</option>
+        <option value="mod">mod (operator)</option>
+        <option value="admin">admin</option>
+      </select>
+      <label for="shop_name">Shop name (vendors only; defaults to username)</label>
+      <input id="shop_name" name="shop_name" maxlength="60">
+      <div class="form-actions"><button type="submit">Create User</button></div>
+    </form>
+    <p class="muted">Vendors are created pre-approved with their shop row. Share the initial password securely; the user should change it after first login.</p>
+  </div>
+
   <div class="table-container">
     <table class="data-table">
-      <thead>
-        <tr>
-          <th>Username</th>
-          <th>Role</th>
-          <th>Status</th>
-          <th>Joined</th>
-          <th>Actions</th>
-        </tr>
-      </thead>
+      <thead><tr><th>Username</th><th>Role</th><th>Status</th><th>Joined</th><th>Actions</th></tr></thead>
       <tbody>
-        {{range .Users}}
-        <tr>
-          <td><strong>{{.Username}}</strong></td>
-          <td><span class="badge badge-role">{{.Role}}</span></td>
-          <td>
-            {{if eq .Status "active"}}
-              <span class="badge badge-success">Active</span>
-            {{else if eq .Status "banned"}}
-              <span class="badge badge-danger">Banned</span>
-            {{else if eq .Status "suspended"}}
-              <span class="badge badge-warning">Suspended</span>
-            {{else}}
-              <span class="badge badge-muted">{{.Status}}</span>
-            {{end}}
-          </td>
-          <td class="text-muted">{{.CreatedAt.Format "2006-01-02"}}</td>
-          <td>
-            <div style="display: flex; gap: 0.5rem; flex-wrap: wrap;">
-              {{if eq .Status "active"}}
-                <form method="post" action="/admin/users/ban" style="display:inline;">
-                  {{template "friction" $}}
-                  <input type="hidden" name="user_id" value="{{.ID}}">
-                  <input type="hidden" name="action" value="ban">
-                  <button type="submit" class="btn-danger btn-sm">Ban</button>
-                </form>
-              {{else}}
-                <form method="post" action="/admin/users/ban" style="display:inline;">
-                  {{template "friction" $}}
-                  <input type="hidden" name="user_id" value="{{.ID}}">
-                  <input type="hidden" name="action" value="unban">
-                  <button type="submit" class="btn-success btn-sm">Unban</button>
-                </form>
-              {{end}}
-              <form method="post" action="/admin/users/{{.ID}}/reset-password" style="display:inline;" onsubmit="return confirm('This will invalidate all user sessions and generate a temporary password. Are you sure?');">
-                {{template "friction" $}}
-                <button type="submit" class="btn-sm" style="background: var(--warning); color: #102017; border: 1px solid var(--warning); font-weight: 700;">Reset PW</button>
-              </form>
-            </div>
-          </td>
-        </tr>
-        {{end}}
+      {{range .Users}}
+      <tr>
+        <td><strong>{{.Username}}</strong></td>
+        <td><span class="badge badge-success">{{.Role}}</span></td>
+        <td><span class="badge {{if eq .Status "active"}}badge-success{{else}}badge-muted{{end}}">{{.Status}}</span></td>
+        <td>{{.CreatedAt.Format "2006-01-02"}}</td>
+        <td>
+          <div style="display:flex; gap:.4rem; flex-wrap:wrap; align-items:center;">
+            <form method="post" action="/admin/users/ban" style="display:inline;">
+              <input type="hidden" name="csrf_token" value="{{$.CsrfToken}}">
+              <input type="hidden" name="user_id" value="{{.ID}}">
+              <input type="hidden" name="action" value="{{if eq .Status "banned"}}unban{{else}}ban{{end}}">
+              <button type="submit" class="btn-danger btn-sm">{{if eq .Status "banned"}}Unban{{else}}Ban{{end}}</button>
+            </form>
+            <form method="post" action="/admin/users/{{.ID}}/reset-password" style="display:inline;">
+              <input type="hidden" name="csrf_token" value="{{$.CsrfToken}}">
+              <button type="submit" class="button secondary btn-sm">Reset PW</button>
+            </form>
+            <form method="post" action="/admin/users/{{.ID}}/role" style="display:inline-flex; gap:.3rem; align-items:center;">
+              <input type="hidden" name="csrf_token" value="{{$.CsrfToken}}">
+              <select name="role" aria-label="New role for {{.Username}}">
+                <option value="customer">customer</option>
+                <option value="vendor">vendor</option>
+                <option value="mod">mod</option>
+                <option value="admin">admin</option>
+              </select>
+              <button type="submit" class="button secondary btn-sm">Set Role</button>
+            </form>
+          </div>
+        </td>
+      </tr>
+      {{end}}
       </tbody>
     </table>
   </div>
-  {{end}}
 </section>
 {{end}}
