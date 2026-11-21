@@ -355,6 +355,9 @@ func TestConfigValidate(t *testing.T) {
 // TestRecoverMiddlewareGeneric500 asserts panics never surface values or
 // stack traces to the client (SECURITY_AND_OPSEC.md §1).
 func TestRecoverMiddlewareGeneric500(t *testing.T) {
+	prev := genericErrorRenderer
+	genericErrorRenderer = nil
+	defer func() { genericErrorRenderer = prev }()
 	app := &App{}
 	mw := app.recoverMiddleware()(http.HandlerFunc(func(_ http.ResponseWriter, _ *http.Request) {
 		panic("secret internal detail: password=hunter2")
@@ -370,6 +373,35 @@ func TestRecoverMiddlewareGeneric500(t *testing.T) {
 	}
 	if body != "internal error\n" {
 		t.Errorf("body = %q, want generic", body)
+	}
+}
+
+// TestRecoverMiddlewareBranded500 pins the dispatch contract: once templates
+// install a renderer, panics surface the branded page — still with zero
+// panic detail leakage (SECURITY_AND_OPSEC.md §1).
+func TestRecoverMiddlewareBranded500(t *testing.T) {
+	prev := genericErrorRenderer
+	genericErrorRenderer = func(w http.ResponseWriter) {
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		w.WriteHeader(http.StatusInternalServerError)
+		_, _ = w.Write([]byte("<!DOCTYPE html><title>Error 500</title>branded"))
+	}
+	defer func() { genericErrorRenderer = prev }()
+	app := &App{}
+	mw := app.recoverMiddleware()(http.HandlerFunc(func(_ http.ResponseWriter, _ *http.Request) {
+		panic("secret internal detail: password=hunter2")
+	}))
+	rec := httptest.NewRecorder()
+	mw.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/boom", nil))
+	if rec.Code != http.StatusInternalServerError {
+		t.Fatalf("panic handler code = %d, want 500", rec.Code)
+	}
+	body := rec.Body.String()
+	if strings.Contains(body, "hunter2") || strings.Contains(body, "goroutine") {
+		t.Errorf("panic detail leaked to client: %q", body)
+	}
+	if !strings.Contains(body, "branded") {
+		t.Errorf("body = %q, want branded page", body)
 	}
 }
 
