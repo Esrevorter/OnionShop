@@ -619,6 +619,13 @@ func (a *App) handlePhraseSubmit(w http.ResponseWriter, r *http.Request) {
 	if err := a.auth.AuthSetPersonalPhrase(ctx, *uid, phrase); err != nil { fail("could not save the phrase, please try again"); return }
 	a.sm.Put(ctx, phraseKey, phrase)
 	data.PersonalPhrase = phrase
+	if pool, ok := a.deps.Pool.(*pgxpool.Pool); ok {
+		if uid := CurrentUserID(r.Context(), a.sm); uid != "" {
+			if u, ok := parseUUID(uid); ok {
+				_, _ = pool.Exec(r.Context(), `UPDATE users SET anti_phishing_phrase=$1 WHERE id=$2`, phrase, u)
+			}
+		}
+	}
 	data.Flash = "Personal phrase updated."
 	if data.Captcha = a.newChallenge(w, r, "account"); data.Captcha == nil { return }
 	a.render(w, "account", http.StatusOK, data)
