@@ -1,0 +1,27 @@
+{{template "layout" .}}
+{{define "title"}}Admin · Disputes · OnionShop{{end}}
+{{define "body"}}
+<section class="admin-layout">
+  <div class="admin-header"><h1>Disputes</h1><a href="/admin" class="btn-secondary">← Dashboard</a></div>
+  <div class="table-container">
+    <table class="data-table">
+      <thead><tr><th>Dispute</th><th>Order</th><th>Opened by</th><th>Status</th><th>Opened</th></tr></thead>
+      <tbody>
+      {{if .Disputes}}
+        {{range .Disputes}}
+        <tr>
+          <td><a href="/admin/disputes/{{.IDStr}}">{{.IDStr}}</a></td>
+          <td><code>{{.OrderID}}</code></td>
+          <td>{{.OpenedBy}}</td>
+          <td><span class="badge badge-success">{{.Status}}</span></td>
+          <td>{{.CreatedAt}}</td>
+        </tr>
+        {{end}}
+      {{else}}
+        <tr><td colspan="5" class="text-muted" style="text-align:center;">No disputes.</td></tr>
+      {{end}}
+      </tbody>
+    </table>
+  </div>
+</section>
+{{end}}
