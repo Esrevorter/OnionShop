@@ -1,0 +1,131 @@
+{{template "layout" .}}
+
+{{define "title"}}Statistics · OnionShop{{end}}
+
+{{define "body"}}
+<section class="admin-layout">
+  <div class="admin-header">
+    <h1>Shop Statistics</h1>
+    <a href="/vendor/products" class="btn-secondary">← Back to Listings</a>
+  </div>
+
+  <div class="admin-grid" style="grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 1rem;">
+    <div class="stat-card">
+      <div class="stat-label">Total Orders</div>
+      <div class="stat-value">{{.Stats.TotalOrders}}</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">Gross Sales</div>
+      <div class="stat-value">{{fmtFiat .Stats.GrossSalesUSDCents $.PreferredCurrency}}</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">Units Sold</div>
+      <div class="stat-value">{{.Stats.UnitsSold}}</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">Distinct Customers</div>
+      <div class="stat-value">{{.Stats.DistinctCustomers}}</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">Repeat Customers</div>
+      <div class="stat-value">{{.Stats.RepeatCustomers}}</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">Avg Order Value</div>
+      <div class="stat-value">{{fmtFiat .Stats.AverageOrderUSDCents $.PreferredCurrency}}</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">Released (Earnings)</div>
+      <div class="stat-value">{{fmtFiat .Stats.ReleasedUSDCents $.PreferredCurrency}}</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">In Escrow</div>
+      <div class="stat-value">{{fmtFiat .Stats.InEscrowUSDCents $.PreferredCurrency}}</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">Avg Rating</div>
+      <div class="stat-value">{{printf "%.1f" .Stats.AvgRating}} ★</div>
+      <span class="stat-muted">({{.Stats.ReviewCount}} reviews)</span>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">Active Listings</div>
+      <div class="stat-value">{{.Stats.ActiveListings}}</div>
+      {{if .Stats.LowStockListings}}<span class="stat-muted">{{.Stats.LowStockListings}} low stock</span>{{end}}
+    </div>
+  </div>
+
+  <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 2rem; margin-top: 2rem;">
+    <div class="auth-card">
+      <h2>Orders by Status</h2>
+      <table class="data-table">
+        <tbody>
+          {{range $status, $count := .Stats.OrdersByStatus}}
+          <tr><td>{{$status}}</td><td style="text-align: right;">{{$count}}</td></tr>
+          {{end}}
+        </tbody>
+      </table>
+    </div>
+
+    <div class="auth-card">
+      <h2>Top Products</h2>
+      {{if .Stats.TopProducts}}
+      <table class="data-table">
+        <thead><tr><th>Product</th><th>Units</th><th>Revenue</th></tr></thead>
+        <tbody>
+          {{range .Stats.TopProducts}}
+          <tr>
+            <td>{{.Title}}</td>
+            <td>{{.UnitsSold}}</td>
+            <td>{{fmtFiat .Revenue $.PreferredCurrency}}</td>
+          </tr>
+          {{end}}
+        </tbody>
+      </table>
+      {{else}}
+      <p class="muted">No sales yet.</p>
+      {{end}}
+    </div>
+  </div>
+
+  <div class="auth-card" style="margin-top: 2rem;">
+    <h2>Recent Orders</h2>
+    {{if .Stats.RecentOrders}}
+    <table class="data-table">
+      <thead><tr><th>Order ID</th><th>Customer</th><th>Status</th><th>Total</th><th>Date</th></tr></thead>
+      <tbody>
+        {{range .Stats.RecentOrders}}
+        <tr>
+          <td><code>{{.IDStr}}</code></td>
+          <td>{{.CustomerName}}</td>
+          <td><span class="badge {{if eq .Status "released"}}badge-success{{else}}badge-muted{{end}}">{{.Status}}</span></td>
+          <td>{{fmtFiat .TotalCents $.PreferredCurrency}}</td>
+          <td>{{.CreatedAt}}</td>
+        </tr>
+        {{end}}
+      </tbody>
+    </table>
+    {{else}}
+    <p class="muted">No orders yet.</p>
+    {{end}}
+  </div>
+
+  {{if .Stats.DailyViews}}
+  <div class="auth-card" style="margin-top: 2rem;">
+    <h2>Daily Views (Last 30 Days)</h2>
+    <div style="display:flex; align-items:end; gap:2px; height:120px; margin-top:1rem;">
+      {{range .Stats.DailyViews}}
+      <div style="flex:1; display:flex; flex-direction:column; align-items:center; gap:2px;">
+        <div style="background:var(--accent); width:100%; height:{{if .ShopViews}}{{.ShopViews}}{{else}}0{{end}}px; min-height:2px;"></div>
+        <div style="background:var(--accent-strong); width:100%; height:{{if .ProductView}}{{.ProductView}}{{else}}0{{end}}px; min-height:2px;"></div>
+        <span style="font-size:.6rem; color:var(--muted);">{{.Day}}</span>
+      </div>
+      {{end}}
+    </div>
+    <p class="muted" style="margin-top:.5rem;">
+      <span style="display:inline-block; width:12px; height:12px; background:var(--accent);"></span> Shop views
+      <span style="display:inline-block; width:12px; height:12px; background:var(--accent-strong); margin-left:1rem;"></span> Product views
+    </p>
+  </div>
+  {{end}}
+</section>
+{{end}}
