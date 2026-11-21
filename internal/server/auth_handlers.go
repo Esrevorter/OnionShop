@@ -586,7 +586,9 @@ func ValidatePersonalPhrase(p string) error {
 
 func (a *App) handleAccount(w http.ResponseWriter, r *http.Request) {
 	data := a.baseData(r)
-	data.PersonalPhrase = a.sm.GetString(r.Context(), phraseKey)
+	if pv := a.sm.GetString(r.Context(), phraseKey); pv != "" {
+		data.PersonalPhrase = pv
+	}
 	a.loadPGPState(r.Context(), &data)
 	if uid := currentUserUUID(r.Context(), a.sm); uid != nil {
 		if u, uerr := a.auth.AuthUserByID(r.Context(), *uid); uerr == nil && u != nil {
@@ -606,7 +608,9 @@ func (a *App) handlePhraseSubmit(w http.ResponseWriter, r *http.Request) {
 	data := a.baseData(r)
 	fail := func(msg string) {
 		data.Error = msg
-		data.PersonalPhrase = a.sm.GetString(ctx, phraseKey)
+		if pv := a.sm.GetString(ctx, phraseKey); pv != "" {
+			data.PersonalPhrase = pv
+		}
 		if data.Captcha = a.newChallenge(w, r, "account"); data.Captcha == nil { return }
 		a.render(w, "account", http.StatusUnprocessableEntity, data)
 	}
@@ -983,7 +987,7 @@ func (a *App) baseData(r *http.Request) AuthData {
 			if uid := CurrentUserID(r.Context(), a.sm); uid != "" {
 				if u, ok := parseUUID(uid); ok {
 					var ph string
-					if err := pool.QueryRow(r.Context(), `SELECT anti_phishing_phrase FROM users WHERE id=$1`, u).Scan(&ph); err == nil {
+					if err := pool.QueryRow(r.Context(), `SELECT CASE WHEN personal_phrase <> '' THEN personal_phrase ELSE anti_phishing_phrase END FROM users WHERE id=$1`, u).Scan(&ph); err == nil {
 						d.PersonalPhrase = ph
 					}
 				}
