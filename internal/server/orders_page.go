@@ -27,6 +27,7 @@ type OrderView struct {
 	TotalUSDCents    int64
 	ShippingUSDCents int64
 	XmrPiconero      int64
+	Extended         bool
 	Items            []OrderItemView
 }
 
@@ -39,7 +40,7 @@ func ListCustomerOrders(ctx context.Context, pool *pgxpool.Pool, customerID pgty
 	rows, err := pool.Query(ctx, `
 		SELECT o.id, o.status, o.total_usd_cents, o.shipping_usd_cents, o.xmr_amount_piconero,
 		       COALESCE(o.xmr_address,''), COALESCE(o.xmr_payment_id,''),
-		       COALESCE(v.shop_name,''), COALESCE(s.title,''), o.created_at
+		       COALESCE(v.shop_name,''), COALESCE(s.title,''), o.created_at, o.extended
 		FROM orders o
 		LEFT JOIN vendors v ON v.id = o.vendor_id
 		LEFT JOIN shipping_options s ON s.id = o.shipping_option_id
@@ -55,7 +56,7 @@ func ListCustomerOrders(ctx context.Context, pool *pgxpool.Pool, customerID pgty
 		var id pgtype.UUID
 		var created interface{}
 		if err := rows.Scan(&id, &o.Status, &o.TotalUSDCents, &o.ShippingUSDCents, &o.XmrPiconero,
-			&o.XmrAddress, &o.XmrPaymentID, &o.ShopName, &o.ShippingTitle, &created); err != nil {
+			&o.XmrAddress, &o.XmrPaymentID, &o.ShopName, &o.ShippingTitle, &created, &o.Extended); err != nil {
 			return nil, fmt.Errorf("server: scan order: %w", err)
 		}
 		o.IDStr = uuidString(id)
