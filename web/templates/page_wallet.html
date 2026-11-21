@@ -1,57 +1,57 @@
 {{template "layout" .}}
-
 {{define "title"}}Wallet · OnionShop{{end}}
-
 {{define "body"}}
 <section class="admin-layout">
   <div class="admin-header">
     <h1>Your Wallet</h1>
-    {{if .VendorState}}
-      <span class="badge badge-success">Approved Vendor</span>
-    {{else}}
-      <span class="badge badge-muted">Customer Account</span>
-    {{end}}
+    {{if .IsVendor}}<span class="badge badge-success">Approved Vendor</span>{{else}}<span class="badge badge-muted">Customer Account</span>{{end}}
   </div>
-
+  {{if .IsVendor}}
   <div class="admin-grid">
     <div class="stat-card">
-      <div class="stat-label">Available Balance</div>
-      <div class="stat-value">0.00000000 XMR</div>
-      <span class="stat-muted">Ledger integration pending (Phase 10)</span>
+      <div class="stat-label">Available balance</div>
+      <div class="stat-value">{{fmtXMR .BalancePiconero}} XMR</div>
     </div>
     <div class="stat-card">
-      <div class="stat-label">Pending Withdrawals</div>
-      <div class="stat-value">0</div>
-      <span class="stat-muted">No requests in queue</span>
+      <div class="stat-label">Pending in escrow</div>
+      <div class="stat-value">{{fmtXMR .PendingPiconero}} XMR</div>
     </div>
   </div>
-
-  {{if .VendorState}}
-  <div class="auth-card" style="max-width: 600px; margin-top: 2rem;">
-    <h2>Request Withdrawal</h2>
-    <p class="lede" style="font-size: 0.9rem; margin-bottom: 1rem;">
-      Withdrawals are subject to a 24–48 hour mandatory delay and admin review. 
-      Ensure your destination address is correct; transactions cannot be reversed.
-    </p>
-    <form method="post" action="/wallet/withdraw" autocomplete="off">
-      {{template "friction" .}}
-      
-      <label for="amount_xmr">Amount (XMR)</label>
-      <input id="amount_xmr" type="text" name="amount_xmr" placeholder="0.00000000" required>
-      
-      <label for="xmr_address">Destination Monero Address</label>
-      <input id="xmr_address" type="text" name="xmr_address" placeholder="4..." required>
-      
-      <div class="form-actions">
-        <button type="submit" class="button">Submit Withdrawal Request</button>
-      </div>
-    </form>
+  <div class="auth-card" style="margin-bottom:2rem;">
+    <h2>Ledger history</h2>
+    {{if .History}}
+    <table class="data-table">
+      <thead><tr><th>When</th><th>Memo</th><th>Direction</th><th>Amount</th></tr></thead>
+      <tbody>
+      {{range .History}}
+      <tr><td>{{.CreatedAt}}</td><td>{{.Memo}}</td><td>{{.Direction}}</td><td>{{fmtXMR .Amount}} XMR</td></tr>
+      {{end}}
+      </tbody>
+    </table>
+    {{else}}
+    <p class="muted">No ledger entries yet. Balances update when orders release from escrow.</p>
+    {{end}}
   </div>
   {{else}}
-  <div class="notice" style="margin-top: 2rem;">
-    <strong>Note:</strong> Only approved vendors can request withdrawals. 
+  <div class="notice" style="margin-bottom:2rem;">
+    <strong>Note:</strong> Vendor earnings appear here once your shop is approved and orders release from escrow.
     {{if not .IsVendor}}<a href="/vendor/apply">Apply to become a vendor</a>{{end}} to access this feature.
   </div>
   {{end}}
+  <div class="auth-card" style="max-width:600px;">
+    <h2>Request Withdrawal</h2>
+    <p class="lede" style="font-size:.9rem; margin-bottom:1rem;">
+      Withdrawals are subject to a 24–48 hour mandatory delay and admin review.
+    </p>
+    <form method="post" action="/wallet/withdraw" autocomplete="off">
+      {{template "friction" .}}
+      <input type="hidden" name="csrf_token" value="{{.CsrfToken}}">
+      <label for="amount_xmr">Amount (XMR)</label>
+      <input id="amount_xmr" name="amount_xmr" type="text" inputmode="decimal" required>
+      <label for="xmr_address">Destination Monero Address</label>
+      <input id="xmr_address" name="xmr_address" type="text" placeholder="4..." required>
+      <div class="form-actions"><button type="submit">Submit Withdrawal Request</button></div>
+    </form>
+  </div>
 </section>
 {{end}}

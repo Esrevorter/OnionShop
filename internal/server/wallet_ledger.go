@@ -26,7 +26,6 @@ func ensureVendorAccount(ctx context.Context, pool *pgxpool.Pool, vendorID pgtyp
 	return id, nil
 }
 
-// PostEscrowRelease credits the vendor account; paired debit on escrow. Idempotent via idempotency_key.
 func PostEscrowRelease(ctx context.Context, pool *pgxpool.Pool, vendorID, orderID pgtype.UUID, piconero int64) error {
 	if piconero <= 0 { return nil }
 	accID, err := ensureVendorAccount(ctx, pool, vendorID)
@@ -41,8 +40,8 @@ func PostEscrowRelease(ctx context.Context, pool *pgxpool.Pool, vendorID, orderI
 	}
 	_, err = pool.Exec(ctx, `
 		INSERT INTO ledger_entries (tx_ref, idempotency_key, account_id, amount_piconero, direction, order_id, memo)
-		VALUES ($1,'release:'+cast($2 as text), $3, $4, 'debit', $2, 'escrow released to vendor'),
-		       ($1,'vendor-credit:'+cast($2 as text), $5, $4, 'credit', $2, 'vendor balance credited')
+		VALUES ($1,'release:'||cast($2 as text), $3, $4, 'debit', $2, 'escrow released to vendor'),
+		       ($1,'vendor-credit:'||cast($2 as text), $5, $4, 'credit', $2, 'vendor balance credited')
 		ON CONFLICT (idempotency_key) DO NOTHING`,
 		txref, orderID, escrowID, piconero, accID)
 	if err != nil {
@@ -51,7 +50,6 @@ func PostEscrowRelease(ctx context.Context, pool *pgxpool.Pool, vendorID, orderI
 	return nil
 }
 
-// PostEscrowRefund routes money to the refund pool; vendor never credited.
 func PostEscrowRefund(ctx context.Context, pool *pgxpool.Pool, orderID pgtype.UUID, piconero int64) error {
 	if piconero <= 0 { return nil }
 	var escrowID, refundID int
@@ -67,8 +65,8 @@ func PostEscrowRefund(ctx context.Context, pool *pgxpool.Pool, orderID pgtype.UU
 	}
 	_, err := pool.Exec(ctx, `
 		INSERT INTO ledger_entries (tx_ref, idempotency_key, account_id, amount_piconero, direction, order_id, memo)
-		VALUES ($1,'refund:'+cast($2 as text), $3, $4, 'debit', $2, 'escrow released for refund'),
-		       ($1,'refund-pool:'+cast($2 as text), $5, $4, 'credit', $2, 'refund returned to pool')
+		VALUES ($1,'refund:'||cast($2 as text), $3, $4, 'debit', $2, 'escrow released for refund'),
+		       ($1,'refund-pool:'||cast($2 as text), $5, $4, 'credit', $2, 'refund returned to pool')
 		ON CONFLICT (idempotency_key) DO NOTHING`,
 		txref, orderID, escrowID, piconero, refundID)
 	if err != nil {
