@@ -1,6 +1,7 @@
 package server
 
 import (
+	"github.com/jackc/pgx/v5/pgtype"
 	"log"
 	"net/http"
 	"strings"
@@ -188,6 +189,17 @@ func (a *App) adminDisputeResolve(w http.ResponseWriter, r *http.Request, event 
 	_, _ = tx.Exec(r.Context(), `
 		INSERT INTO audit_log (actor_id, actor_kind, action, target, details)
 		VALUES ($1,'user',$2,$3,$4)`, uid, "dispute.resolve."+resolution, "disputes:"+id.String(), reason)
+	if err == nil {
+		var vid pgtype.UUID
+		var pico int64
+		if err := tx.QueryRow(r.Context(), `SELECT vendor_id, xmr_amount_piconero FROM orders WHERE id=$1`, orderID).Scan(&vid, &pico); err == nil {
+			if resolution == "released" {
+				_ = PostEscrowRelease(r.Context(), pool, vid, pgtypeUUIDFromIface(orderID), pico)
+			} else {
+				_ = PostEscrowRefund(r.Context(), pool, pgtypeUUIDFromIface(orderID), pico)
+			}
+		}
+	}
 	if err := tx.Commit(r.Context()); err != nil {
 		writeGenericError(w)
 		return
