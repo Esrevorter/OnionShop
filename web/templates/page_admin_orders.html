@@ -1,0 +1,38 @@
+{{template "layout" .}}
+{{define "title"}}Admin · Orders · OnionShop{{end}}
+{{define "body"}}
+<section class="admin-layout">
+  <div class="admin-header"><h1>All Orders</h1><a href="/admin" class="btn-secondary">← Dashboard</a></div>
+  <div class="table-container">
+    <table class="data-table">
+      <thead><tr><th>Order</th><th>Customer</th><th>Vendor</th><th>Total</th><th>Status</th><th>Date</th><th>Actions</th></tr></thead>
+      <tbody>
+      {{if .Orders}}
+        {{range .Orders}}
+        <tr>
+          <td><code>{{.IDStr}}</code></td>
+          <td>{{.Customer}}</td>
+          <td>{{.Vendor}}</td>
+          <td>{{fmtFiat .TotalUSD $.PreferredCurrency}}</td>
+          <td><span class="badge badge-success">{{.Status}}</span></td>
+          <td>{{.CreatedAt}}</td>
+          <td>
+            {{if or (eq .Status "awaiting_payment") (eq .Status "in_escrow")}}
+            <form method="post" action="/admin/orders/{{.IDStr}}/cancel" style="display:inline;">
+              <input type="hidden" name="csrf_token" value="{{$.CsrfToken}}">
+              <button type="submit" class="btn-danger btn-sm">Force Cancel</button>
+            </form>
+            {{else}}
+            <span class="muted">terminal</span>
+            {{end}}
+          </td>
+        </tr>
+        {{end}}
+      {{else}}
+        <tr><td colspan="7" class="text-muted" style="text-align:center;">No orders.</td></tr>
+      {{end}}
+      </tbody>
+    </table>
+  </div>
+</section>
+{{end}}
