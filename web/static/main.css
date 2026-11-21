@@ -364,3 +364,6 @@ input::placeholder, textarea::placeholder { color: #829287; }
   padding:.35rem 0 .55rem !important; border-top:1px solid var(--line) !important; }
 .session-bar-inner { display:flex !important; justify-content:flex-end !important;
   align-items:center !important; gap:.9rem !important; }
+
+/* anti-phishing phrase in session bar */
+.anti-phish { font-size:.72rem; color:var(--muted); font-style:italic; letter-spacing:.02em; }

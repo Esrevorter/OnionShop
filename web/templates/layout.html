@@ -6,7 +6,7 @@
 <meta name="color-scheme" content="dark">
 <title>{{block "title" .}}OnionShop{{end}}</title>
 <link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
-<link rel="stylesheet" href="/static/main.css?v=20261121b">
+<link rel="stylesheet" href="/static/main.css?v=20261121c">
 </head>
 <body>
 <header class="site-header">
@@ -68,18 +68,23 @@
 
       <div class="session-bar">
       <div class="header-inner session-bar-inner">
-        {{if .IsAdmin}}<a href="/messages" class="currency-btn" style="text-decoration:none;">Messages{{if .MessagesUnread}} ({{.MessagesUnread}}){{end}}</a>
-      <form method="post" action="/currency/set" class="currency-set-form">
+        
+        <form method="post" action="/currency/set" class="currency-set-form">
         <input type="hidden" name="csrf_token" value="{{.CsrfToken}}">
         <span class="currency-label">Prices in</span>
         <button type="submit" name="currency" value="USD" class="currency-btn {{if eq .PreferredCurrency "USD"}}currency-active{{end}}">USD</button>
         <button type="submit" name="currency" value="EUR" class="currency-btn {{if eq .PreferredCurrency "EUR"}}currency-active{{end}}">EUR</button>
         <button type="submit" name="currency" value="AUD" class="currency-btn {{if eq .PreferredCurrency "AUD"}}currency-active{{end}}">AUD</button>
       </form>
+        {{if .MessagesUnread}}
+        <span class="anti-phish">"{{.PersonalPhrase}}"</span>
+        <a href="/messages" class="currency-btn" style="text-decoration:none;">Messages{{if .MessagesUnread}} ({{.MessagesUnread}}){{end}}</a>
+      
         <form method="post" action="/logout" class="nav-form" style="margin:0; display:inline;">
           <input type="hidden" name="csrf_token" value="{{.CsrfToken}}">
           <button class="secondary" type="submit" style="border:none; background:none; cursor:pointer; font-size:inherit; color:var(--accent); padding:.45rem .7rem;">Log out</button>
-        </form>{{end}}
+        </form>
+        {{end}}
       
       </div></div>
     </header>
