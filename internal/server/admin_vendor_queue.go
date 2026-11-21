@@ -48,15 +48,12 @@ func (a *App) handleAdminVendors(w http.ResponseWriter, r *http.Request) {
 	defer rows.Close()
 	for rows.Next() {
 		var p PendingVendor
-		// (vid/uid types inferred from scan)
-		var created interface{}
-		// use generic scan since we're joining two tables
 		var vidRaw, uidRaw interface{}
+		var created interface{}
 		if err := rows.Scan(&vidRaw, &uidRaw, &p.ShopName, &p.Username, &created); err != nil {
 			continue
 		}
-		// convert to strings via format
-		p.VendorID = formatUUID(vidRaw) // vidRaw, uidRaw from scan
+		p.VendorID = formatUUID(vidRaw)
 		p.UserID = formatUUID(uidRaw)
 		p.CreatedAt = formatTime(created)
 		data.Pending = append(data.Pending, p)

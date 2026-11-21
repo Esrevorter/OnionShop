@@ -1,46 +1,39 @@
 {{template "layout" .}}
-
-{{define "title"}}Vendor Queue · OnionShop{{end}}
-
+{{define "title"}}Admin · Vendor Queue · OnionShop{{end}}
 {{define "body"}}
 <section class="admin-layout">
   <div class="admin-header">
-    <h1>Vendor Applications</h1>
-    <a href="/admin" class="btn-secondary">← Back to Dashboard</a>
+    <h1>Vendor Application Queue</h1>
+    <a href="/admin" class="btn-secondary">← Dashboard</a>
   </div>
-
-  {{if .Flash}}<div class="flash" role="status">{{.Flash}}</div>{{end}}
-
-  {{if not .Pending}}
-    <div class="empty-state"><p>There are no pending vendor applications at this time.</p></div>
-  {{else}}
-    <div class="table-container">
-      <table class="data-table">
-        <thead>
-          <tr><th>Shop Name</th><th>Requested</th><th>Decision</th></tr>
-        </thead>
-        <tbody>
-          {{range .Pending}}
-          <tr>
-            <td><strong>{{.ShopName}}</strong></td>
-            <td class="text-muted">{{.CreatedAt.Format "2006-01-02"}}</td>
-            <td>
-              <form method="post" action="/admin/vendors/{{.ID}}/decision" style="display:inline;">
-                {{template "friction" $}}
-                <input type="hidden" name="decision" value="approve">
-                <button type="submit" class="btn-success btn-sm">Approve</button>
-              </form>
-              <form method="post" action="/admin/vendors/{{.ID}}/decision" style="display:inline;">
-                {{template "friction" $}}
-                <input type="hidden" name="decision" value="reject">
-                <button type="submit" class="btn-danger btn-sm">Reject</button>
-              </form>
-            </td>
-          </tr>
-          {{end}}
-        </tbody>
-      </table>
-    </div>
-  {{end}}
+  {{if .Error}}<div class="flash" role="alert" style="border-color:var(--danger,#f87171);">{{.Error}}</div>{{end}}
+  <div class="table-container">
+    <table class="data-table">
+      <thead><tr><th>Shop</th><th>Applicant</th><th>Applied</th><th>Actions</th></tr></thead>
+      <tbody>
+      {{if .Pending}}
+        {{range .Pending}}
+        <tr>
+          <td><strong>{{.ShopName}}</strong></td>
+          <td>{{.Username}}</td>
+          <td>{{.CreatedAt}}</td>
+          <td style="display:flex; gap:.4rem;">
+            <form method="post" action="/admin/vendors/{{.VendorID}}/approve" style="display:inline;">
+              <input type="hidden" name="csrf_token" value="{{$.CsrfToken}}">
+              <button type="submit" class="button btn-sm">Approve</button>
+            </form>
+            <form method="post" action="/admin/vendors/{{.VendorID}}/reject" style="display:inline;">
+              <input type="hidden" name="csrf_token" value="{{$.CsrfToken}}">
+              <button type="submit" class="btn-danger btn-sm">Reject</button>
+            </form>
+          </td>
+        </tr>
+        {{end}}
+      {{else}}
+        <tr><td colspan="4" class="text-muted" style="text-align:center; padding:2rem;">No pending applications.</td></tr>
+      {{end}}
+      </tbody>
+    </table>
+  </div>
 </section>
 {{end}}
