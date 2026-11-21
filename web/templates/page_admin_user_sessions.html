@@ -1,0 +1,33 @@
+{{template "layout" .}}
+{{define "title"}}Admin · Sessions · OnionShop{{end}}
+{{define "body"}}
+<section class="admin-layout">
+  <div class="admin-header">
+    <h1>Sessions for {{.Username}}</h1>
+    <a href="/admin/users" class="btn-secondary">← Users</a>
+  </div>
+  <form method="post" action="/admin/users/{{.UserID}}/sessions/kill" style="margin-bottom:1rem;">
+    <input type="hidden" name="csrf_token" value="{{.CsrfToken}}">
+    <button type="submit" class="btn-danger">Kill All Sessions</button>
+  </form>
+  <div class="table-container">
+    <table class="data-table">
+      <thead><tr><th>Session ID</th><th>Expires</th><th>Created</th><th>Last Active</th></tr></thead>
+      <tbody>
+      {{if .Sessions}}
+        {{range .Sessions}}
+        <tr>
+          <td><code>{{.ID}}</code></td>
+          <td>{{.ExpiresAt}}</td>
+          <td>{{.CreatedAt}}</td>
+          <td>{{.UpdatedAt}}</td>
+        </tr>
+        {{end}}
+      {{else}}
+        <tr><td colspan="4" class="text-muted" style="text-align:center;">No active sessions.</td></tr>
+      {{end}}
+      </tbody>
+    </table>
+  </div>
+</section>
+{{end}}

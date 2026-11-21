@@ -53,6 +53,7 @@
               <input type="hidden" name="csrf_token" value="{{$.CsrfToken}}">
               <button type="submit" class="button secondary btn-sm">Reset PW</button>
             </form>
+            <a href="/admin/users/{{.ID}}/sessions" class="btn-secondary btn-sm">Sessions</a>
             <form method="post" action="/admin/users/{{.ID}}/role" style="display:inline-flex; gap:.3rem; align-items:center;">
               <input type="hidden" name="csrf_token" value="{{$.CsrfToken}}">
               <select name="role" aria-label="New role for {{.Username}}">
