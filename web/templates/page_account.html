@@ -14,7 +14,7 @@
     <h2>Quick Links</h2>
     <div class="form-actions" style="justify-content: flex-start; gap: 1rem;">
       <a href="/account/reviews" class="button">Manage Reviews</a>
-      <a href="/vendor/apply" class="button">Apply as Vendor</a>
+      {{if not .IsVendor}}<a href="/vendor/apply" class="button">Apply as Vendor</a>{{end}}
     </div>
   </div>
 

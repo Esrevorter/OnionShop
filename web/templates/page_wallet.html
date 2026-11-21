@@ -50,7 +50,7 @@
   {{else}}
   <div class="notice" style="margin-top: 2rem;">
     <strong>Note:</strong> Only approved vendors can request withdrawals. 
-    <a href="/vendor/apply">Apply to become a vendor</a> to access this feature.
+    {{if not .IsVendor}}<a href="/vendor/apply">Apply to become a vendor</a>{{end}} to access this feature.
   </div>
   {{end}}
 </section>

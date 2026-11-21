@@ -47,5 +47,5 @@
   <div class="section-heading"><h2 id="listing-title">Recently listed</h2><span class="muted">{{len .Products}} {{if eq (len .Products) 1}}item{{else}}items{{end}}</span></div>
   {{template "productgrid" .}}
 </section>
-<p class="vendor-callout"><span>Have something to offer?</span> <a class="button secondary" href="/vendor/apply">Apply to become a vendor</a></p>
+<p class="vendor-callout"><span>Have something to offer?</span> {{if not .IsVendor}}<a class="button secondary" href="/vendor/apply">Apply to become a vendor</a>{{end}}</p>
 {{end}}
