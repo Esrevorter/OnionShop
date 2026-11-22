@@ -143,6 +143,7 @@ services:
   # 2. Monero Node (monerod)
   # Own node is mandatory for OpSec. Syncs via host's Tor daemon to protect IP.
   monerod:
+    entrypoint: ["monerod"]
     # TODO: REPLACE PLACEHOLDER DIGEST with actual digest from registry.
     # Run: docker pull ghcr.io/sethforprivacy/simple-monerod:v0.18.3.3
     # Run: docker inspect --format='{{index .RepoDigests 0}}' ghcr.io/sethforprivacy/simple-monerod:v0.18.3.3
@@ -196,6 +197,7 @@ services:
   # host port is published, so the RPC is reachable by the app container but
   # never by the host or the internet. The wallet file lives in a named volume.
   monero-wallet-rpc:
+    entrypoint: ["monero-wallet-rpc"]
     image: ${WALLET_RPC_IMAGE:-ghcr.io/sethforprivacy/simple-monero-wallet-rpc:v0.18.3.3}  # verify tag exists / pin digest
     <<: *default-hardening
     mem_limit: 1000m
