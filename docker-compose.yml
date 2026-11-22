@@ -173,6 +173,8 @@ services:
       --enforce-dns-checkpointing
       --check-updates=disabled
       --rpc-bind-ip 0.0.0.0
+      --confirm-external-bind
+      --rpc-bind-port 18081
       --rpc-login monero:moneropassword
     volumes:
       - /mnt/secure_monero/daemon:/home/monero/.bitmonero
@@ -192,26 +194,32 @@ services:
   # host port is published, so the RPC is reachable by the app container but
   # never by the host or the internet. The wallet file lives in a named volume.
   monero-wallet-rpc:
+    image: ${WALLET_RPC_IMAGE:-ghcr.io/sethforprivacy/simple-monero-wallet-rpc:v0.18.3.3}
     entrypoint: ["monero-wallet-rpc"]
-    image: ${WALLET_RPC_IMAGE:-ghcr.io/sethforprivacy/simple-monero-wallet-rpc:v0.18.3.3}  # verify tag exists / pin digest
+    command:
+      - --testnet
+      - --wallet-dir=/home/monero/wallet_data
+      - --wallet-file=/home/monero/wallet_data/onionshop
+      - --password=testpass123
+      - --daemon-address=http://monerod:18081
+      - --rpc-bind-ip=0.0.0.0
+      - --rpc-bind-port=18083
+      - --confirm-external-bind
+      - --trusted-daemon
+      - --non-interactive
     <<: *default-hardening
+    read_only: false
+    security_opt:
+      - no-new-privileges:false
     mem_limit: 1000m
     pids_limit: 256
-    environment:
-      - MONERO_DAEMON_ADDRESS=http://monerod:18081
-      - MONERO_WALLET_NAME=onionshop
-      - MONERO_WALLET_PASSWORD=${XMR_WALLET_PASSWORD}
-      - RPC_BIND_IP=0.0.0.0
-      - RPC_BIND_PORT=18083
-      - RPC_LOGIN=monero:${XMR_WALLET_RPC_PASSWORD}
-      - TESTNET=1
     depends_on:
       - monerod
     networks: [internal_net]
     tmpfs: [/tmp]
     volumes:
       - /mnt/secure_monero/wallet:/home/monero/wallet_data
-
+    restart: unless-stopped
   backup:
     build:
       context: .
