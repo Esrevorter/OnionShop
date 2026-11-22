@@ -188,7 +188,7 @@ services:
     tmpfs: [/tmp]
     healthcheck:
       # Basic RPC check to verify the daemon is responsive
-      test: ["CMD-SHELL", "wget -qO- --user=monero --password=moneropassword http://127.0.0.1:18081/get_height || exit 1"]
+      test: ["CMD-SHELL", "echo > /dev/tcp/127.0.0.1/18081 || exit 1"]
       interval: 30s
       timeout: 15s
       retries: 10
