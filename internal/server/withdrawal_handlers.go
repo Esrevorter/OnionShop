@@ -1,6 +1,7 @@
 package server
 
 import (
+	"github.com/jackc/pgx/v5/pgxpool"
 	"context"
 	"net/http"
 	"strconv"
@@ -122,10 +123,51 @@ func (a *App) handleWithdrawSubmit(w http.ResponseWriter, r *http.Request) {
 	a.render(w, "wallet", http.StatusOK, data)
 }
 
+type AdminWithdrawalView struct {
+	IDStr      string
+	VendorName string
+	AmountPico int64
+	XmrAddress string
+	Status     string
+	CreatedAt  string
+}
+
+type AdminWithdrawalsData struct {
+	AuthData
+	Withdrawals []AdminWithdrawalView
+	Error       string
+}
+
 func (a *App) handleAdminWithdrawals(w http.ResponseWriter, r *http.Request) {
-	// Admin view for pending withdrawals
-	data := a.baseData(r)
-	a.render(w, "admin_withdrawals", http.StatusOK, data)
+	pool, ok := a.deps.Pool.(*pgxpool.Pool)
+	if !ok {
+		writeGenericError(w)
+		return
+	}
+	data := AdminWithdrawalsData{AuthData: a.baseData(r)}
+	
+	rows, err := pool.Query(r.Context(), `
+		SELECT w.id, u.username, w.amount_piconero, w.xmr_address, w.status, w.created_at
+		FROM withdrawals w 
+		JOIN vendors v ON v.id = w.vendor_id 
+		JOIN users u ON u.id = v.user_id
+		ORDER BY w.created_at DESC`)
+	if err != nil {
+		data.Error = "Could not load withdrawals"
+	} else {
+		defer rows.Close()
+		for rows.Next() {
+			var wd AdminWithdrawalView
+			var id pgtype.UUID
+			var created time.Time
+			if err := rows.Scan(&id, &wd.VendorName, &wd.AmountPico, &wd.XmrAddress, &wd.Status, &created); err == nil {
+				wd.IDStr = uuidString(id)
+				wd.CreatedAt = created.Format("2006-01-02 15:04")
+				data.Withdrawals = append(data.Withdrawals, wd)
+			}
+		}
+	}
+	a.renderAs(w, "admin_withdrawals", http.StatusOK, data)
 }
 
 func (a *App) handleAdminReviewWithdrawal(w http.ResponseWriter, r *http.Request) {

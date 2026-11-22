@@ -1,5 +1,5 @@
 {{template "layout" .}}
-{{define "title"}}Order Detail · OnionShop{{end}}
+{{define "title"}}Order {{.Order.IDStr}} · OnionShop{{end}}
 {{define "body"}}
 <section class="auth-layout">
   <div class="auth-intro">
@@ -7,29 +7,40 @@
     <h1>Order Details</h1>
   </div>
   
-  {{if .Order}}
   <div class="auth-card">
-    <h2>Order #{{.Order.IDStr}}</h2>
-    <p><strong>Status:</strong> <span class="badge">{{.Order.Status}}</span></p>
-    <p><strong>Vendor:</strong> {{.Order.ShopName}}</p>
-    <p><strong>Total:</strong> {{fmtUSD .Order.TotalUSDCents}} + {{fmtUSD .Order.ShippingUSDCents}} shipping</p>
-    <p><strong>XMR Amount:</strong> {{.Order.XmrPiconero}} piconero</p>
-    {{if .Order.XmrAddress}}
-      <p><strong>Payment Address:</strong> <code>{{.Order.XmrAddress}}</code></p>
-      {{if .Order.XmrPaymentID}}<p><strong>Payment ID:</strong> <code>{{.Order.XmrPaymentID}}</code></p>{{end}}
-    {{end}}
+    <div style="display:flex; justify-content:space-between; flex-wrap:wrap; gap:.5rem; margin-bottom:1rem;">
+      <h2 style="margin:0;">Order #{{.Order.IDStr}}</h2>
+      <span class="badge {{if eq .Order.Status "awaiting_payment"}}badge-muted{{else}}badge-success{{end}}">{{.Order.Status}}</span>
+    </div>
     
-    <h3 style="margin-top:2rem;">Items</h3>
-    <ul>
-      {{range .Order.Items}}
-      <li>{{.Qty}}x {{.Title}} ({{fmtUSD .PriceUSDCents}} each)</li>
-      {{end}}
-    </ul>
+    <p class="muted">{{if .IsVendor}}Customer: {{.Order.CustomerName}}{{else}}Vendor: {{.Order.ShopName}}{{end}}{{if .Order.ShippingTitle}} · Shipping: {{.Order.ShippingTitle}}{{end}}</p>
+    <p class="muted">Placed: {{.Order.CreatedAt}}</p>
 
-    <div style="margin-top:2rem; border-top: 1px solid var(--border); padding-top: 1.5rem;">
+    <table class="data-table" style="margin: 1rem 0;">
+      <tbody>
+        {{range .Order.Items}}
+        <tr><td>{{.Title}} <span class="text-muted">(x{{.Qty}})</span></td><td style="text-align: right;">{{fmtFiat (mul .PriceUSDCents .Qty) $.PreferredCurrency}}</td></tr>
+        {{end}}
+        <tr><td>Shipping</td><td style="text-align: right;">{{fmtFiat .Order.ShippingUSDCents $.PreferredCurrency}}</td></tr>
+        <tr style="font-weight: bold;"><td>Total</td><td style="text-align: right;">{{fmtFiat .Order.TotalUSDCents $.PreferredCurrency}}</td></tr>
+      </tbody>
+    </table>
+
+    {{if eq .Order.Status "awaiting_payment"}}
+      <div class="notice" style="margin-top: 1rem;">
+        <strong>Payment required</strong><br>
+        Send exactly <strong>{{fmtXMR .Order.XmrPiconero}} XMR</strong> to:<br>
+        <code style="word-break: break-all; display:block; margin:.5rem 0; padding:.5rem; background:var(--surface);">{{.Order.XmrAddress}}</code>
+        {{if .Order.XmrPaymentID}}<span class="muted">Payment reference: {{.Order.XmrPaymentID}}</span><br>{{end}}
+        <a href="/messages/start?order={{.Order.IDStr}}" class="button secondary" style="margin-top:.5rem; display:inline-block;">Message vendor about this order</a>
+      </div>
+    {{end}}
+
+    {{if or .CanShip .CanExtend .CanRelease}}
+    <div style="margin-top:2rem; border-top: 1px solid var(--line); padding-top: 1.5rem;">
       <h3>Actions</h3>
-      {{if and (eq .Order.Status "in_escrow") .IsVendor}}
-        <form method="post" action="/orders/{{.Order.IDStr}}/ship" autocomplete="off">
+      {{if .CanShip}}
+        <form method="post" action="/orders/{{.Order.IDStr}}/ship" autocomplete="off" style="margin-bottom:1rem;">
           {{template "friction" .}}
           <input type="hidden" name="csrf_token" value="{{.CsrfToken}}">
           <label for="shipping_note">Shipping note (optional)</label>
@@ -38,8 +49,8 @@
         </form>
       {{end}}
       
-      {{if and (eq .Order.Status "shipped") (not .Order.Extended) .IsAuthenticated (not .IsVendor)}}
-        <form method="post" action="/orders/{{.Order.IDStr}}/extend" style="margin-top:1rem;" autocomplete="off">
+      {{if .CanExtend}}
+        <form method="post" action="/orders/{{.Order.IDStr}}/extend" style="margin-bottom:1rem;" autocomplete="off">
           {{template "friction" .}}
           <input type="hidden" name="csrf_token" value="{{.CsrfToken}}">
           <p class="muted">Extend escrow by 7 days (one-time only).</p>
@@ -47,8 +58,8 @@
         </form>
       {{end}}
       
-      {{if and (eq .Order.Status "shipped") .IsAuthenticated (not .IsVendor)}}
-        <form method="post" action="/orders/{{.Order.IDStr}}/release" style="margin-top:1rem;" autocomplete="off">
+      {{if .CanRelease}}
+        <form method="post" action="/orders/{{.Order.IDStr}}/release" autocomplete="off">
           {{template "friction" .}}
           <input type="hidden" name="csrf_token" value="{{.CsrfToken}}">
           <p class="muted">Release payment to vendor early.</p>
@@ -56,12 +67,8 @@
         </form>
       {{end}}
     </div>
+    {{end}}
   </div>
-  {{else}}
-  <div class="auth-card">
-    <p>Order not found or you do not have permission to view it.</p>
-  </div>
-  {{end}}
   
   <div class="form-actions" style="justify-content: flex-start; margin-top: 1rem;">
     <a href="/orders" class="button secondary">Back to Orders</a>

@@ -1,7 +1,5 @@
 {{template "layout" .}}
-
 {{define "title"}}Withdrawal Queue · OnionShop{{end}}
-
 {{define "body"}}
 <section class="admin-layout">
   <div class="admin-header">
@@ -9,17 +7,16 @@
     <a href="/admin" class="btn-secondary">← Back to Dashboard</a>
   </div>
 
-  <div class="notice">
-    <strong>Admin Notice:</strong> Review all withdrawal requests carefully. 
-    Approving queues the transaction; marking as "Paid" completes it.
-  </div>
+  {{if .Error}}
+  <div class="flash" role="alert" style="border-color:var(--danger,#f87171); color:#fca5a5; margin-bottom:1rem;">{{.Error}}</div>
+  {{end}}
 
   <div class="table-container" style="margin-top: 1.5rem;">
     <table class="data-table">
       <thead>
         <tr>
           <th>Vendor</th>
-          <th>Amount (Sat)</th>
+          <th>Amount (XMR)</th>
           <th>Destination Address</th>
           <th>Requested</th>
           <th>Status</th>
@@ -27,12 +24,35 @@
         </tr>
       </thead>
       <tbody>
-        <!-- Placeholder row: Backend will populate this once ledger is active -->
+      {{if .Withdrawals}}
+        {{range .Withdrawals}}
         <tr>
-          <td colspan="6" class="text-muted" style="text-align: center; padding: 2rem;">
-            No pending withdrawal requests at this time.
+          <td><strong>{{.VendorName}}</strong></td>
+          <td>{{fmtXMR .AmountPico}} XMR</td>
+          <td><code style="word-break:break-all;">{{.XmrAddress}}</code></td>
+          <td>{{.CreatedAt}}</td>
+          <td><span class="badge {{if eq .Status "pending"}}badge-muted{{else if eq .Status "approved"}}badge-success{{else}}badge-danger{{end}}">{{.Status}}</span></td>
+          <td>
+            {{if eq .Status "pending"}}
+            <form method="post" action="/admin/withdrawals/{{.IDStr}}/review" style="display:inline;">
+              <input type="hidden" name="csrf_token" value="{{$.CsrfToken}}">
+              <input type="hidden" name="status" value="approved">
+              <button type="submit" class="button btn-sm">Approve</button>
+            </form>
+            <form method="post" action="/admin/withdrawals/{{.IDStr}}/review" style="display:inline;">
+              <input type="hidden" name="csrf_token" value="{{$.CsrfToken}}">
+              <input type="hidden" name="status" value="rejected">
+              <button type="submit" class="btn-danger btn-sm">Reject</button>
+            </form>
+            {{else}}
+            <span class="muted">Processed</span>
+            {{end}}
           </td>
         </tr>
+        {{end}}
+      {{else}}
+        <tr><td colspan="6" class="text-muted" style="text-align: center; padding: 2rem;">No withdrawal requests at this time.</td></tr>
+      {{end}}
       </tbody>
     </table>
   </div>
