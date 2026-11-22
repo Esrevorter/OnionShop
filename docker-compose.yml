@@ -204,6 +204,7 @@ services:
       - --daemon-address=http://monerod:18081
       - --rpc-bind-ip=0.0.0.0
       - --rpc-bind-port=18083
+      - --disable-rpc-login
       - --confirm-external-bind
       - --trusted-daemon
       - --non-interactive
