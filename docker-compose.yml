@@ -164,9 +164,7 @@ services:
       --testnet
       --prune-blockchain
       --sync-pruned-blocks
-      --proxy host.docker.internal:9050
       --p2p-bind-ip 127.0.0.1
-      --tx-proxy tor,host.docker.internal:9050,10
       --pad-transactions
       --no-igd
       --hide-my-port
@@ -176,8 +174,6 @@ services:
       --check-updates=disabled
       --rpc-bind-ip 0.0.0.0
       --rpc-login monero:moneropassword
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
     volumes:
       - /mnt/secure_monero/daemon:/home/monero/.bitmonero
     networks: [internal_net]
