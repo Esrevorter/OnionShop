@@ -184,7 +184,7 @@ services:
     volumes:
       - /mnt/secure_monero/daemon:/home/monero/.bitmonero
     stdin_open: true
-    networks: [internal_net]
+    networks: [internal_net, edge_net]
     tmpfs: [/tmp]
     healthcheck:
       # Basic RPC check to verify the daemon is responsive
