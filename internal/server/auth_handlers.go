@@ -358,6 +358,8 @@ func (a *App) RegisterAuthRoutesFull(auth AuthStore, captcha *CaptchaService, se
 	if err := a.buildTemplates(templateDir); err != nil { return err }
 	if pool, ok := a.deps.Pool.(*pgxpool.Pool); ok {
 		go StartOrderCron(context.Background(), pool)
+		go StartPaymentPoller(context.Background(), pool, NewMoneroProvider())
+		go StartVendorFeePoller(context.Background(), pool, NewMoneroProvider())
 	}
 	go StartLiveRates(context.Background())
 	installGenericErrorRenderer(func(w http.ResponseWriter) { a.renderStaticError(w, http.StatusInternalServerError, "Something went wrong on our side. Please try again.") })

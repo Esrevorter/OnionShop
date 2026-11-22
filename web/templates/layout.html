@@ -46,10 +46,11 @@
         {{end}}
         {{if or .IsAdmin .IsVendor}}
           <a href="/vendor/products" class="nav-admin-link">My Listings</a>
-        {{if .IsVendor}}<a href="/vendor/shipping">Shipping</a>{{end}}
+        {{if .IsVendor}}<a href="/vendor/shipping">Shipping</a><a href="/vendor/fee">Vendor Fee</a>{{end}}
         {{end}}
         {{if .IsAdmin}}
           <a href="/admin" class="nav-admin-link">Admin</a>
+          <a href="/admin/settings" class="nav-admin-link">Settings</a>
         {{end}}
         <a href="/account">Account</a>
         <a href="/wallet">Wallet</a>

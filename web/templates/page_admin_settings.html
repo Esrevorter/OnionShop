@@ -1,0 +1,41 @@
+{{template "layout" .}}
+{{define "title"}}Site Settings · OnionShop{{end}}
+{{define "body"}}
+<section class="admin-layout">
+  <div class="admin-header">
+    <h1>Site Settings</h1>
+    <a href="/admin" class="btn-secondary">← Back to Dashboard</a>
+  </div>
+
+  <div class="auth-card" style="max-width:600px;">
+    <h2>Vendor Registration Fee</h2>
+    <p class="lede" style="font-size:.9rem;">One-time XMR fee (entered in USD) a vendor must pay before their shop can operate. Approval in the vendor queue is still required. Set 0 to disable.</p>
+    <form method="post" action="/admin/settings" autocomplete="off">
+      <input type="hidden" name="csrf_token" value="{{.CsrfToken}}">
+      <label for="fee_usd">Fee (USD, 0 = disabled)</label>
+      <input id="fee_usd" type="number" step="0.01" min="0" name="fee_usd" value="{{.FeeUSD}}" required>
+      <div class="form-actions"><button type="submit">Save</button></div>
+    </form>
+  </div>
+
+  <div class="table-container" style="margin-top:2rem;">
+    <table class="data-table">
+      <thead><tr><th>Applicant</th><th>Shop</th><th>Approved</th><th>Fee status</th></tr></thead>
+      <tbody>
+      {{if .Applicants}}
+        {{range .Applicants}}
+        <tr>
+          <td><strong>{{.Username}}</strong></td>
+          <td>{{.ShopName}}</td>
+          <td>{{if .Approved}}<span class="badge badge-success">yes</span>{{else}}<span class="badge badge-muted">no</span>{{end}}</td>
+          <td>{{.FeeState}}</td>
+        </tr>
+        {{end}}
+      {{else}}
+        <tr><td colspan="4" class="text-muted" style="text-align:center; padding:2rem;">No vendor applications yet.</td></tr>
+      {{end}}
+      </tbody>
+    </table>
+  </div>
+</section>
+{{end}}

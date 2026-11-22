@@ -1,0 +1,32 @@
+{{template "layout" .}}
+{{define "title"}}Vendor Fee · OnionShop{{end}}
+{{define "body"}}
+<section class="admin-layout">
+  <div class="admin-header">
+    <h1>Vendor Registration Fee</h1>
+    <a href="/vendor/products" class="btn-secondary">← My Listings</a>
+  </div>
+
+  {{if .FeeZero}}
+    <div class="notice"><strong>No fee required.</strong> The admin has set the vendor fee to zero; your application proceeds directly to admin approval.</div>
+  {{else if .Paid}}
+    <div class="notice"><strong>Fee paid.</strong> Transaction: <code>{{.TxHash}}</code>. Your shop is awaiting admin approval.</div>
+  {{else if .Active}}
+    <div class="auth-card" style="max-width:600px;">
+      <h2>Send exactly {{fmtXMR .Active.AmountPico}} XMR</h2>
+      <p class="lede" style="font-size:.9rem;">Detection is automatic once the transaction confirms. The registration fee is non-refundable.</p>
+      <code style="word-break:break-all; display:block; margin:.75rem 0; padding:.6rem; background:var(--surface);">{{.Active.Address}}</code>
+      <p class="muted">Status: {{.Active.Status}} · Requested: {{.Active.CreatedAt}}</p>
+    </div>
+  {{else}}
+    <div class="auth-card" style="max-width:600px;">
+      <h2>Fee required: {{fmtFiat .FeeCents $.PreferredCurrency}}</h2>
+      <p class="lede" style="font-size:.9rem;">Payable in XMR at the current rate. A unique payment address will be generated. The fee is non-refundable and admin approval is still required afterwards.</p>
+      <form method="post" action="/vendor/fee" autocomplete="off">
+        <input type="hidden" name="csrf_token" value="{{.CsrfToken}}">
+        <div class="form-actions"><button type="submit">Create Payment Request</button></div>
+      </form>
+    </div>
+  {{end}}
+</section>
+{{end}}

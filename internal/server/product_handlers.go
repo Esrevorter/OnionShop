@@ -55,6 +55,11 @@ func (a *App) vendorRow(ctx context.Context, userID pgtype.UUID) (*VendorRecord,
 	if v == nil || !v.Approved {
 		return nil, ErrNotFound
 	}
+	if pool, ok := a.deps.Pool.(*pgxpool.Pool); ok {
+		if !vendorFeeSettled(ctx, pool, v.ID) {
+			return nil, ErrNotFound
+		}
+	}
 	return v, nil
 }
 
