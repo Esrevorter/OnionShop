@@ -176,7 +176,6 @@ services:
       --check-updates=disabled
       --rpc-bind-ip 0.0.0.0
       --rpc-login monero:moneropassword
-      --disable-md5
     extra_hosts:
       - "host.docker.internal:host-gateway"
     volumes:
