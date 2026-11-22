@@ -178,6 +178,7 @@ services:
       --rpc-login monero:moneropassword
     volumes:
       - /mnt/secure_monero/daemon:/home/monero/.bitmonero
+    stdin_open: true
     networks: [internal_net]
     tmpfs: [/tmp]
     healthcheck:
@@ -198,7 +199,6 @@ services:
     entrypoint: ["monero-wallet-rpc"]
     command:
       - --testnet
-      - --wallet-dir=/home/monero/wallet_data
       - --wallet-file=/home/monero/wallet_data/onionshop
       - --password=testpass123
       - --daemon-address=http://monerod:18081
