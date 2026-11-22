@@ -71,6 +71,11 @@ services:
       - SESSION_HASH_KEY=${SESSION_HASH_KEY}
       - ONIONSHOP_SECURE_COOKIES=true
       - APP_ENV=production
+      - XMR_MODE=${XMR_MODE:-mock}
+      - XMR_WALLET_RPC_URL=${XMR_WALLET_RPC_URL:-http://monero-wallet-rpc:18083/json_rpc}
+      - XMR_WALLET_RPC_USER=${XMR_WALLET_RPC_USER:-}
+      - XMR_WALLET_RPC_PASSWORD=${XMR_WALLET_RPC_PASSWORD:-}
+      - XMR_CONFIRMATIONS_REQUIRED=${XMR_CONFIRMATIONS_REQUIRED:-3}
     depends_on:
       postgres:
         condition: service_healthy
