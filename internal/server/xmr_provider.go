@@ -5,134 +5,234 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log"
 	"net/http"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
-// MoneroProvider defines the interface for interacting with a Monero wallet.
+// MoneroProvider defines the interface for XMR operations.
 type MoneroProvider interface {
-	CreatePaymentAddress(ctx context.Context, orderID pgtype.UUID) (address string, paymentID string, err error)
-	CheckPayments(ctx context.Context, pendingOrders map[pgtype.UUID]string) (map[pgtype.UUID]int64, error)
+	CreatePaymentAddress(ctx context.Context, orderID pgtype.UUID) (addr, paymentID string, err error)
+	CheckPayment(ctx context.Context, orderID pgtype.UUID, expectedPiconero int64) (paid bool, txHash string, err error)
+	GetBalance(ctx context.Context) (int64, error)
+	SendTransaction(ctx context.Context, destAddr string, piconero int64) (txHash string, err error)
 }
 
-// RealMoneroProvider implements MoneroProvider using monero-wallet-rpc.
-type RealMoneroProvider struct {
-	rpcURL   string
-	username string
-	password string
-	client   *http.Client
+// RPCProvider implements MoneroProvider using monero-wallet-rpc JSON-RPC.
+// It self-heals: if wallet-rpc has no wallet open (e.g. after a container
+// restart in --wallet-dir mode), the failing call re-opens the configured
+// wallet once and retries.
+type RPCProvider struct {
+	rpcURL        string
+	rpcUser       string
+	rpcPass       string
+	walletName    string
+	walletPass    string
+	confirmations int
+	client        *http.Client
 }
 
-func NewRealMoneroProvider(rpcURL, username, password string) *RealMoneroProvider {
-	return &RealMoneroProvider{
-		rpcURL:   rpcURL,
-		username: username,
-		password: password,
-		client:   &http.Client{Timeout: 10 * time.Second},
+func NewRPCProvider() *RPCProvider {
+	get := func(key, def string) string {
+		if v := os.Getenv(key); v != "" {
+			return v
+		}
+		return def
+	}
+	confirmations := 3
+	if c := os.Getenv("XMR_CONFIRMATIONS_REQUIRED"); c != "" {
+		if n, err := strconv.Atoi(c); err == nil && n > 0 {
+			confirmations = n
+		}
+	}
+	return &RPCProvider{
+		rpcURL:        get("XMR_WALLET_RPC_URL", "http://monero-wallet-rpc:18083/json_rpc"),
+		rpcUser:       get("XMR_WALLET_RPC_USER", ""),
+		rpcPass:       get("XMR_WALLET_RPC_PASSWORD", ""),
+		walletName:    get("XMR_WALLET_NAME", "onionshop"),
+		walletPass:    get("XMR_WALLET_PASSWORD", "testpass123"),
+		confirmations: confirmations,
+		client:        &http.Client{Timeout: 10 * time.Second},
 	}
 }
 
-type rpcRequest struct {
+type jsonRPCRequest struct {
 	JSONRPC string      `json:"jsonrpc"`
 	ID      string      `json:"id"`
 	Method  string      `json:"method"`
 	Params  interface{} `json:"params"`
 }
 
-func (p *RealMoneroProvider) doRPC(ctx context.Context, method string, params interface{}, result interface{}) error {
-	reqBody := rpcRequest{JSONRPC: "2.0", ID: "1", Method: method, Params: params}
-	body, err := json.Marshal(reqBody)
+type jsonRPCResponse struct {
+	JSONRPC string          `json:"jsonrpc"`
+	ID      string          `json:"id"`
+	Result  json.RawMessage `json:"result"`
+	Error   *jsonRPCError   `json:"error"`
+}
+
+type jsonRPCError struct {
+	Code    int    `json:"code"`
+	Message string `json:"message"`
+}
+
+func (p *RPCProvider) doRPC(ctx context.Context, method string, params interface{}) (json.RawMessage, error) {
+	body, err := json.Marshal(jsonRPCRequest{JSONRPC: "2.0", ID: "0", Method: method, Params: params})
 	if err != nil {
-		return err
+		return nil, fmt.Errorf("marshal request: %w", err)
 	}
-	req, err := http.NewRequestWithContext(ctx, "POST", p.rpcURL, bytes.NewBuffer(body))
+	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, p.rpcURL, bytes.NewReader(body))
 	if err != nil {
-		return err
+		return nil, fmt.Errorf("create request: %w", err)
 	}
-	req.SetBasicAuth(p.username, p.password)
-	req.Header.Set("Content-Type", "application/json")
-	resp, err := p.client.Do(req)
+	if p.rpcUser != "" || p.rpcPass != "" {
+		httpReq.SetBasicAuth(p.rpcUser, p.rpcPass)
+	}
+	httpReq.Header.Set("Content-Type", "application/json")
+	resp, err := p.client.Do(httpReq)
 	if err != nil {
-		return err
+		return nil, fmt.Errorf("rpc call failed: %w", err)
 	}
 	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("rpc request failed with status: %d", resp.StatusCode)
-	}
-	var rpcResp struct {
-		Result interface{} `json:"result"`
-		Error  interface{} `json:"error"`
-	}
+	var rpcResp jsonRPCResponse
 	if err := json.NewDecoder(resp.Body).Decode(&rpcResp); err != nil {
-		return err
+		return nil, fmt.Errorf("decode response: %w", err)
 	}
 	if rpcResp.Error != nil {
-		return fmt.Errorf("rpc error: %v", rpcResp.Error)
+		return nil, fmt.Errorf("rpc error %d: %s", rpcResp.Error.Code, rpcResp.Error.Message)
 	}
-	resBytes, err := json.Marshal(rpcResp.Result)
+	return rpcResp.Result, nil
+}
+
+func isNoWalletErr(err error) bool {
+	if err == nil {
+		return false
+	}
+	m := strings.ToLower(err.Error())
+	return strings.Contains(m, "no wallet") || strings.Contains(m, "not open") || strings.Contains(m, "must be open")
+}
+
+func (p *RPCProvider) openDefaultWallet(ctx context.Context) error {
+	_, err := p.doRPC(ctx, "open_wallet", map[string]interface{}{
+		"filename": p.walletName, "password": p.walletPass,
+	})
 	if err != nil {
-		return err
+		log.Printf("xmr: auto open_wallet %q failed: %v", p.walletName, err)
 	}
-	return json.Unmarshal(resBytes, result)
+	return err
 }
 
-func (p *RealMoneroProvider) CreatePaymentAddress(ctx context.Context, orderID pgtype.UUID) (string, string, error) {
-	label := "order-" + uuidString(orderID)
-	params := map[string]interface{}{"account_index": 0, "label": label}
-	var result struct {
-		Address      string `json:"address"`
-		AddressIndex uint64 `json:"address_index"`
-	}
-	if err := p.doRPC(ctx, "create_address", params, &result); err != nil {
-		return "", "", fmt.Errorf("create_address failed: %w", err)
-	}
-	return result.Address, fmt.Sprintf("%d", result.AddressIndex), nil
-}
-
-func (p *RealMoneroProvider) CheckPayments(ctx context.Context, pendingOrders map[pgtype.UUID]string) (map[pgtype.UUID]int64, error) {
-	params := map[string]interface{}{"in": true, "pool": false}
-	var result struct {
-		In []struct {
-			Address string `json:"address"`
-			Amount  uint64 `json:"amount"`
-		} `json:"in"`
-	}
-	if err := p.doRPC(ctx, "get_transfers", params, &result); err != nil {
-		return nil, fmt.Errorf("get_transfers failed: %w", err)
-	}
-	payments := make(map[pgtype.UUID]int64)
-	for _, transfer := range result.In {
-		for orderID, addr := range pendingOrders {
-			if strings.TrimSpace(transfer.Address) == strings.TrimSpace(addr) {
-				satoshis := int64(transfer.Amount / 10000)
-				payments[orderID] += satoshis
-			}
+// callRPC wraps doRPC with a single self-heal retry when no wallet is open.
+func (p *RPCProvider) callRPC(ctx context.Context, method string, params interface{}) (json.RawMessage, error) {
+	res, err := p.doRPC(ctx, method, params)
+	if err != nil && method != "open_wallet" && isNoWalletErr(err) {
+		log.Printf("xmr: no wallet open; auto-opening %q and retrying %s", p.walletName, method)
+		if oerr := p.openDefaultWallet(ctx); oerr == nil {
+			return p.doRPC(ctx, method, params)
 		}
 	}
-	return payments, nil
+	return res, err
 }
 
-// MockMoneroProvider for testing
-type MockMoneroProvider struct{}
-
-func (m *MockMoneroProvider) CreatePaymentAddress(ctx context.Context, orderID pgtype.UUID) (string, string, error) {
-	addr := fmt.Sprintf("4MockXmrAddressForOrder%s", uuidString(orderID)[:8])
-	return addr, "mock-" + uuidString(orderID), nil
-}
-
-func (m *MockMoneroProvider) CheckPayments(ctx context.Context, pendingOrders map[pgtype.UUID]string) (map[pgtype.UUID]int64, error) {
-	return make(map[pgtype.UUID]int64), nil
-}
-
-// NewMoneroProvider factory
-func NewMoneroProvider() MoneroProvider {
-	rpcURL := os.Getenv("MONERO_WALLET_RPC_URL")
-	if rpcURL == "" {
-		return &MockMoneroProvider{}
+func (p *RPCProvider) CreatePaymentAddress(ctx context.Context, orderID pgtype.UUID) (string, string, error) {
+	result, err := p.callRPC(ctx, "create_address", map[string]interface{}{
+		"account_index": 0,
+		"label":         "order-" + uuidString(orderID)[:8],
+	})
+	if err != nil {
+		return "", "", fmt.Errorf("create_address: %w", err)
 	}
-	return NewRealMoneroProvider(rpcURL, "monero", os.Getenv("XMR_WALLET_RPC_PASSWORD"))
+	var resp struct {
+		Address      string `json:"address"`
+		AddressIndex int    `json:"address_index"`
+	}
+	if err := json.Unmarshal(result, &resp); err != nil {
+		return "", "", fmt.Errorf("unmarshal response: %w", err)
+	}
+	return resp.Address, strconv.Itoa(resp.AddressIndex), nil
+}
+
+func (p *RPCProvider) CheckPayment(ctx context.Context, orderID pgtype.UUID, expectedPiconero int64) (bool, string, error) {
+	result, err := p.callRPC(ctx, "get_transfers", map[string]interface{}{
+		"in":               true,
+		"account_index":    0,
+		"filter_by_height": false,
+	})
+	if err != nil {
+		return false, "", fmt.Errorf("get_transfers: %w", err)
+	}
+	var resp struct {
+		In []struct {
+			TxID          string `json:"txid"`
+			Amount        int64  `json:"amount"`
+			Confirmations int    `json:"confirmations"`
+		} `json:"in"`
+	}
+	if err := json.Unmarshal(result, &resp); err != nil {
+		return false, "", fmt.Errorf("unmarshal transfers: %w", err)
+	}
+	for _, t := range resp.In {
+		if t.Amount >= expectedPiconero && t.Confirmations >= p.confirmations {
+			return true, t.TxID, nil
+		}
+	}
+	return false, "", nil
+}
+
+func (p *RPCProvider) GetBalance(ctx context.Context) (int64, error) {
+	result, err := p.callRPC(ctx, "get_balance", map[string]interface{}{"account_index": 0})
+	if err != nil {
+		return 0, fmt.Errorf("get_balance: %w", err)
+	}
+	var resp struct {
+		UnlockedBalance int64 `json:"unlocked_balance"`
+	}
+	if err := json.Unmarshal(result, &resp); err != nil {
+		return 0, fmt.Errorf("unmarshal balance: %w", err)
+	}
+	return resp.UnlockedBalance, nil
+}
+
+func (p *RPCProvider) SendTransaction(ctx context.Context, destAddr string, piconero int64) (string, error) {
+	result, err := p.callRPC(ctx, "transfer", map[string]interface{}{
+		"destinations": []map[string]interface{}{{"address": destAddr, "amount": piconero}},
+		"priority":     0,
+		"get_tx_key":   true,
+	})
+	if err != nil {
+		return "", fmt.Errorf("transfer: %w", err)
+	}
+	var resp struct {
+		TxHash string `json:"tx_hash"`
+	}
+	if err := json.Unmarshal(result, &resp); err != nil {
+		return "", fmt.Errorf("unmarshal transfer response: %w", err)
+	}
+	return resp.TxHash, nil
+}
+
+// MockProvider for testing/fallback.
+type MockProvider struct{}
+
+func (m *MockProvider) CreatePaymentAddress(ctx context.Context, orderID pgtype.UUID) (string, string, error) {
+	return "4" + strings.Repeat("0", 94), "mock_pid", nil
+}
+func (m *MockProvider) CheckPayment(ctx context.Context, orderID pgtype.UUID, expectedPiconero int64) (bool, string, error) {
+	return false, "", nil
+}
+func (m *MockProvider) GetBalance(ctx context.Context) (int64, error) { return 0, nil }
+func (m *MockProvider) SendTransaction(ctx context.Context, destAddr string, piconero int64) (string, error) {
+	return "mock_tx_hash", nil
+}
+
+// NewMoneroProvider factory: returns RPC or Mock based on XMR_MODE env var.
+func NewMoneroProvider() MoneroProvider {
+	if os.Getenv("XMR_MODE") == "rpc" {
+		return NewRPCProvider()
+	}
+	return &MockProvider{}
 }
