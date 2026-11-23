@@ -8,3 +8,7 @@ onionshop
 __pycache__/
 *.py
 
+
+CRED
+*.py
+__pycache__/
