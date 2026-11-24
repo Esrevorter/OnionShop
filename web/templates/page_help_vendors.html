@@ -1,0 +1,64 @@
+{{template "layout" .}}
+{{define "title"}}Vendor Guide · OnionShop{{end}}
+{{define "body"}}
+<section class="admin-layout">
+  <div class="admin-header">
+    <h1>Vendor Guide</h1>
+    <a href="/help" class="btn-secondary">← Help Center</a>
+  </div>
+
+  <div class="auth-card">
+    <h2>1 · Becoming a vendor</h2>
+    <ol class="help-steps">
+      <li>Apply from <a href="/vendor/apply">Apply to become a vendor</a> with your shop name.</li>
+      <li>Pay the <strong>registration fee</strong> at <a href="/vendor/fee">Vendor Fee</a> (amount set by the operator, entered in USD, paid in XMR). A unique address is generated; payment is detected automatically.</li>
+      <li>An administrator then <strong>approves</strong> your shop. Both steps are required: paying alone does not activate the shop, and approval alone does not unlock selling until the fee is settled.</li>
+    </ol>
+  </div>
+
+  <div class="auth-card" style="margin-top:1rem;">
+    <h2>2 · Required setup before you can sell</h2>
+    <ul class="help-list">
+      <li><strong>PGP public key</strong> — upload it in <a href="/account">Account</a>. Buyer delivery details are encrypted to this key. <em>Without a key, buyers cannot check out with your items.</em> Keep the private key offline; the server never sees it. See the <a href="/pgp">PGP tool</a>.</li>
+      <li><strong>Shipping options</strong> — define at least one active option in <a href="/vendor/shipping">Shipping</a> (title, price, delivery estimate in days). Listings cannot be created without it, and the estimate drives the buyer's auto-release deadline.</li>
+      <li><strong>Ships-from</strong> — set your dispatch region in Account so buyers see it.</li>
+    </ul>
+  </div>
+
+  <div class="auth-card" style="margin-top:1rem;">
+    <h2>3 · Listings</h2>
+    <ol class="help-steps">
+      <li>Create listings in <a href="/vendor/products">My Listings</a>: title, description, <strong>price in USD</strong>, stock, category, images.</li>
+      <li>Images are re-encoded and stripped of metadata (EXIF/GPS) automatically.</li>
+      <li>Listings start as <strong>draft</strong>; press <strong>Publish</strong> to make them visible. Remove them any time.</li>
+      <li>Stock is decremented atomically at checkout — you cannot oversell.</li>
+    </ol>
+  </div>
+
+  <div class="auth-card" style="margin-top:1rem;">
+    <h2>4 · Handling orders</h2>
+    <ol class="help-steps">
+      <li>You are notified in <a href="/messages">Messages</a> <strong>only when an order is paid</strong> and in escrow.</li>
+      <li>Open the order, copy the <strong>PGP-encrypted delivery block</strong>, and decrypt it offline with your private key.</li>
+      <li>Ship, then press <strong>Mark as Shipped</strong> (add an optional note for the buyer). This starts the inspection window: shipping estimate + 3-day grace.</li>
+      <li>The buyer confirms receipt, or funds auto-release when the window ends. Open disputes block auto-release until a moderator resolves them.</li>
+      <li>If you do not ship within 3 days of payment, the order is auto-refunded to the buyer.</li>
+    </ol>
+  </div>
+
+  <div class="auth-card" style="margin-top:1rem;">
+    <h2>5 · Getting paid</h2>
+    <ul class="help-list">
+      <li><a href="/wallet">Wallet</a> shows your <strong>available balance</strong> (released orders) and <strong>pending</strong> (in escrow / shipped / disputed), plus ledger history.</li>
+      <li>Request a withdrawal to your XMR address. Requests are reviewed by an administrator; when marked <strong>paid</strong>, the payout is broadcast on-chain and recorded against your balance.</li>
+      <li>Balances come from the double-entry ledger, not from the chain — the ledger is the source of truth.</li>
+    </ul>
+  </div>
+
+  <div class="auth-card" style="margin-top:1rem;">
+    <h2>6 · Reputation</h2>
+    <p><a href="/vendor/stats">Statistics</a> shows sales, customers, ratings and listing health. Buyers can review shipped/released orders; your real dispatch speed is computed from order history and shown publicly.</p>
+    <div class="notice" style="margin-top:.75rem;"><strong>OpSec:</strong> never put personal details in listings or messages, never reuse a payout address across identities, and keep your private keys off this server.</div>
+  </div>
+</section>
+{{end}}

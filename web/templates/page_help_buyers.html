@@ -1,0 +1,78 @@
+{{template "layout" .}}
+{{define "title"}}Buyer Guide · OnionShop{{end}}
+{{define "body"}}
+<section class="admin-layout">
+  <div class="admin-header">
+    <h1>Buyer Guide</h1>
+    <a href="/help" class="btn-secondary">← Help Center</a>
+  </div>
+
+  <div class="auth-card">
+    <h2>1 · Account &amp; safety</h2>
+    <ol class="help-steps">
+      <li>Register with a username and a <strong>long password</strong> (10+ characters). A CAPTCHA keeps bots out.</li>
+      <li>Set your <strong>anti-phishing phrase</strong> in <a href="/account">Account</a>. It appears in the header on every page — if it is missing or wrong, you are not on the real site.</li>
+      <li>Optional but recommended: enable <strong>two-factor authentication (TOTP)</strong> and save your backup codes.</li>
+      <li>Always verify the <code>.onion</code> address before signing in.</li>
+    </ol>
+  </div>
+
+  <div class="auth-card" style="margin-top:1rem;">
+    <h2>2 · Finding things</h2>
+    <p>Browse the <a href="/">Marketplace</a>, use <a href="/search">Search</a>, or open a vendor's shop. Prices display in your chosen currency — switch with the <strong>USD / EUR / AUD</strong> pills. Settlement is always in XMR.</p>
+    <p class="muted">Listings show real dispatch history when available ("2d dispatch"), not just the vendor's claim.</p>
+  </div>
+
+  <div class="auth-card" style="margin-top:1rem;">
+    <h2>3 · Checkout</h2>
+    <ol class="help-steps">
+      <li>Add items to your <a href="/cart">Cart</a>. Items are grouped per vendor.</li>
+      <li>At checkout, <strong>choose a shipping method for each vendor</strong>.</li>
+      <li>Enter your <strong>delivery address / instructions</strong>. These are encrypted to the vendor's PGP public key — the server stores only ciphertext and never decrypts it.</li>
+      <li>Enter a <strong>refund XMR address</strong>. If anything goes wrong before shipment, your money returns here automatically.</li>
+      <li>Solve the CAPTCHA and place the order. One checkout with several vendors becomes <strong>one order per vendor</strong>, each with its own payment address.</li>
+    </ol>
+  </div>
+
+  <div class="auth-card" style="margin-top:1rem;">
+    <h2>4 · Paying</h2>
+    <ol class="help-steps">
+      <li>Open the order and press <strong>Pay</strong>. Click the address block to select it, then copy.</li>
+      <li>Send <strong>exactly</strong> the shown XMR amount to that address. Amounts are rounded to 6 decimals so what you see is what you send.</li>
+      <li>Payment is detected automatically after the required confirmations — usually within a minute or two of the network confirming.</li>
+      <li><strong>Underpaid?</strong> Send the remainder to the same address. <strong>Overpaid?</strong> The order is held for manual review — do not send more.</li>
+      <li>Unpaid orders expire after <strong>12 hours</strong>. Nothing is charged.</li>
+    </ol>
+    <div class="notice" style="margin-top:.75rem;"><strong>Never reuse an address.</strong> Each order has a unique subaddress; sending to an old one cannot be matched to a new order.</div>
+  </div>
+
+  <div class="auth-card" style="margin-top:1rem;">
+    <h2>5 · After payment</h2>
+    <ul class="help-list">
+      <li><strong>in_escrow</strong> — funds are held. The vendor is asked to ship. You can still <strong>Cancel &amp; refund</strong> at this stage.</li>
+      <li><strong>shipped</strong> — inspect the goods. Press <strong>Release Payment</strong> when satisfied, or <strong>Extend escrow once (+7 days)</strong> if you need more time.</li>
+      <li><strong>Auto-release</strong> — if you do nothing, funds release after the shipping estimate plus a 3-day grace period.</li>
+      <li><strong>Problem?</strong> Open a <a href="/disputes">dispute</a> from the order. A moderator resolves it: release to vendor, or refund to your refund address.</li>
+      <li>If a vendor never ships, an automatic refund is issued after 3 days in escrow.</li>
+    </ul>
+  </div>
+
+  <div class="auth-card" style="margin-top:1rem;">
+    <h2>6 · Messages, reviews, support</h2>
+    <ul class="help-list">
+      <li>Every order event lands in <a href="/messages">Messages</a>. The header link turns <strong style="color:#ff5c5c;">red</strong> while you have unread messages.</li>
+      <li>You can hide a conversation from your inbox, restore it, or delete your own messages.</li>
+      <li>Leave a <strong>review</strong> once an order is shipped or released (within the review window).</li>
+      <li>Account or platform problems: open a <a href="/tickets">support ticket</a>.</li>
+    </ul>
+  </div>
+
+  <div class="auth-card" style="margin-top:1rem;">
+    <h2>FAQ</h2>
+    <details><summary>Why Monero and not Bitcoin?</summary><p class="muted">Bitcoin payments are permanently linkable on a public ledger. Monero keeps your purchases private. This shop never asks for your real identity.</p></details>
+    <details><summary>Can the site read my delivery address?</summary><p class="muted">No. It is encrypted to the vendor's public key before storage. Only the vendor's private key can decrypt it, offline.</p></details>
+    <details><summary>Where do refunds go?</summary><p class="muted">On-chain, to the refund address you supplied at checkout.</p></details>
+    <details><summary>Why no JavaScript?</summary><p class="muted">Scripts are disabled by policy for safety. Everything works with plain forms and links, including copy-to-select address blocks.</p></details>
+  </div>
+</section>
+{{end}}

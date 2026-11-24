@@ -1,0 +1,58 @@
+{{template "layout" .}}
+{{define "title"}}Operator Guide · OnionShop{{end}}
+{{define "body"}}
+<section class="admin-layout">
+  <div class="admin-header">
+    <h1>Operator Guide</h1>
+    <a href="/help" class="btn-secondary">← Help Center</a>
+  </div>
+
+  <div class="auth-card">
+    <h2>Daily operations</h2>
+    <table class="data-table">
+      <thead><tr><th>Task</th><th>Where</th><th>Notes</th></tr></thead>
+      <tbody>
+        <tr><td>Approve / reject vendors</td><td><a href="/admin/vendors">Vendors</a></td><td>Approval and fee settlement are both required before a shop can operate</td></tr>
+        <tr><td>Set the registration fee</td><td><a href="/admin/settings">Settings</a></td><td>Entered in USD, converted to XMR at request time; 0 disables the fee</td></tr>
+        <tr><td>Resolve disputes</td><td><a href="/admin/disputes">Disputes</a></td><td>Release credits the vendor; refund pays the buyer on-chain</td></tr>
+        <tr><td>Review withdrawals</td><td><a href="/admin/withdrawals">Withdrawals</a></td><td><strong>paid</strong> broadcasts the transaction and debits the vendor ledger</td></tr>
+        <tr><td>Support tickets</td><td><a href="/admin/tickets">Tickets</a></td><td>Escalate to a dispute when it concerns an order</td></tr>
+        <tr><td>Users &amp; sessions</td><td><a href="/admin/users">Users</a></td><td>Ban/suspend, inspect sessions</td></tr>
+        <tr><td>Audit trail</td><td><a href="/admin/audit">Audit</a></td><td>Administrative actions are append-only</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="auth-card" style="margin-top:1rem;">
+    <h2>Automated timers (hourly cron)</h2>
+    <ul class="help-list">
+      <li><strong>12 h</strong> — unpaid orders are cancelled; the buyer is notified.</li>
+      <li><strong>3 days in escrow without shipment</strong> — automatic refund to the buyer's refund address.</li>
+      <li><strong>Shipped + estimate + 3-day grace</strong> — auto-release to the vendor, unless a dispute is open.</li>
+    </ul>
+    <p class="muted">Payment detection is polling only — never inbound webhooks. The hidden service is unreachable inbound by design.</p>
+  </div>
+
+  <div class="auth-card" style="margin-top:1rem;">
+    <h2>Money invariants</h2>
+    <ul class="help-list">
+      <li>Escrow transitions go through the pure state machine; the database CHECK enforces the same graph.</li>
+      <li>Ledger entries are double-entry, append-only, and idempotent (<code>release:&lt;order&gt;</code>, <code>refund:&lt;order&gt;</code>, <code>withdraw:&lt;id&gt;</code>). Replays are no-ops.</li>
+      <li>Payments confirm on an <strong>exact amount</strong> to the order's own subaddress. Overpayment is flagged for manual review and never auto-releases; underpayment asks for the delta.</li>
+      <li>Refunds and payouts are broadcast on-chain and recorded with their transaction hash.</li>
+    </ul>
+  </div>
+
+  <div class="auth-card" style="margin-top:1rem;">
+    <h2>OpSec rules that must not drift</h2>
+    <ul class="help-list">
+      <li>Hidden service terminates on the <strong>Whonix-Gateway</strong>; the app runs on the Workstation. Never Tor-over-Tor.</li>
+      <li>With <code>NGINX_BIND_IP=0.0.0.0</code>, the host firewall <strong>must</strong> restrict 8080/8443 to the Gateway IP.</li>
+      <li>No client IP logging, no email, no third-party assets, no JavaScript (<code>script-src 'none'</code>).</li>
+      <li>Self-signed ECDSA P-384 certificate with the exact onion SAN. No CA-issued certs, no SPKI pins, never advise bypassing warnings.</li>
+      <li>Only <strong>public</strong> PGP keys are stored; the server never decrypts anything.</li>
+      <li>Backups are age-encrypted to an offline recipient; restore drills are part of readiness, not optional.</li>
+    </ul>
+  </div>
+</section>
+{{end}}

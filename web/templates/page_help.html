@@ -1,0 +1,58 @@
+{{template "layout" .}}
+{{define "title"}}Help Center · OnionShop{{end}}
+{{define "body"}}
+<section class="admin-layout">
+  <div class="admin-header">
+    <h1>Help Center</h1>
+    <a href="/" class="btn-secondary">← Marketplace</a>
+  </div>
+  <p class="lede">How this marketplace works, end to end. Pick the guide that matches what you are doing.</p>
+
+  <div class="help-grid">
+    <a class="auth-card help-card" href="/help/buyers">
+      <h2>Buying</h2>
+      <p class="muted">Browse → cart → checkout → pay in XMR → escrow → confirm receipt or dispute → review.</p>
+      <span class="badge badge-success">Buyer guide</span>
+    </a>
+    <a class="auth-card help-card" href="/help/vendors">
+      <h2>Selling</h2>
+      <p class="muted">Apply → pay the registration fee → approval → PGP key → shipping → listings → ship → get paid.</p>
+      <span class="badge badge-success">Vendor guide</span>
+    </a>
+    {{if .IsAdmin}}
+    <a class="auth-card help-card" href="/help/admins">
+      <h2>Operating</h2>
+      <p class="muted">Approvals, fees, disputes, withdrawals, automated timers, and OpSec rules.</p>
+      <span class="badge badge-muted">Admin guide</span>
+    </a>
+    {{end}}
+  </div>
+
+  <div class="auth-card" style="margin-top:1.5rem;">
+    <h2>The short version</h2>
+    <ol class="help-steps">
+      <li><strong>Prices are shown in your currency</strong> (USD / EUR / AUD), but <strong>payment is always in Monero (XMR)</strong>.</li>
+      <li><strong>Funds are held in escrow</strong> until you confirm receipt, or the inspection window ends.</li>
+      <li><strong>Every order has its own payment address</strong> and an exact amount. Never reuse an old address.</li>
+      <li><strong>Delivery details are encrypted</strong> to the vendor's PGP key. The site cannot read them.</li>
+      <li><strong>Everything is in-app</strong>: order updates arrive in <a href="/messages">Messages</a>. No email, no tracking scripts.</li>
+    </ol>
+  </div>
+
+  <div class="auth-card" style="margin-top:1rem;">
+    <h2>Order statuses at a glance</h2>
+    <table class="data-table">
+      <thead><tr><th>Status</th><th>Meaning</th><th>What happens next</th></tr></thead>
+      <tbody>
+        <tr><td><span class="badge badge-muted">awaiting_payment</span></td><td>Order created, not yet paid</td><td>Pay the exact amount within 12 hours, or it is cancelled</td></tr>
+        <tr><td><span class="badge badge-success">in_escrow</span></td><td>Payment confirmed, funds held</td><td>Vendor ships; buyer may cancel for a refund before shipment</td></tr>
+        <tr><td><span class="badge badge-success">shipped</span></td><td>Vendor marked it sent</td><td>Buyer confirms receipt (release) or opens a dispute</td></tr>
+        <tr><td><span class="badge badge-muted">disputed</span></td><td>A moderator is reviewing</td><td>Resolution releases to vendor or refunds the buyer</td></tr>
+        <tr><td><span class="badge badge-success">released</span></td><td>Completed</td><td>Funds credited to the vendor; buyer can leave a review</td></tr>
+        <tr><td><span class="badge badge-muted">refunded</span></td><td>Money returned</td><td>Sent on-chain to the buyer's refund address</td></tr>
+        <tr><td><span class="badge badge-muted">cancelled</span></td><td>Unpaid / expired</td><td>Nothing was charged</td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+{{end}}

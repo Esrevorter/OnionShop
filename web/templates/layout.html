@@ -7,6 +7,22 @@
 <title>{{block "title" .}}OnionShop{{end}}</title>
 <link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
 <link rel="stylesheet" href="/static/main.css?v=20261121c">
+<style>
+.site-nav details.nav-group{position:relative;display:inline-block;}
+.site-nav details.nav-group>summary{list-style:none;cursor:pointer;padding:.35rem .65rem;border-radius:.55rem;white-space:nowrap;}
+.site-nav details.nav-group>summary::-webkit-details-marker{display:none;}
+.site-nav details.nav-group>summary::after{content:" \25BE";opacity:.65;font-size:.8em;}
+.site-nav details.nav-group[open]>summary{background:rgba(255,255,255,.08);}
+.site-nav .nav-menu{position:absolute;right:0;top:calc(100% + .4rem);min-width:230px;background:var(--surface-raised,#121a18);border:1px solid var(--line,rgba(255,255,255,.14));border-radius:.75rem;padding:.4rem;display:flex;flex-direction:column;gap:.1rem;z-index:60;box-shadow:0 14px 34px rgba(0,0,0,.5);}
+.site-nav .nav-menu a{padding:.5rem .65rem;border-radius:.5rem;text-decoration:none;color:inherit;font-size:.95rem;}
+.site-nav .nav-menu a:hover{background:rgba(255,255,255,.08);}
+.help-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:1rem;margin-top:1rem;}
+.help-card{text-decoration:none;color:inherit;display:block;}
+.help-card:hover{border-color:var(--accent,#8a5fc4);}
+.help-steps{margin:.5rem 0 0;padding-left:1.2rem;line-height:1.75;}
+.help-list{margin:.5rem 0 0;padding-left:1.1rem;line-height:1.8;}
+details>summary{cursor:pointer;}
+</style>
 </head>
 <body>
 <header class="site-header">
@@ -41,26 +57,46 @@
       <a href="/">Marketplace</a>
       <a href="/search">Search</a>
       {{if .IsAuthenticated}}
-        {{if .PersonalPhrase}}
-          <span class="phrase-badge" title="Your anti-phishing phrase">✓ {{.PersonalPhrase}}</span>
-        {{end}}
+        <a href="/cart">Cart</a>
+        <a href="/orders">Orders</a>
         {{if or .IsAdmin .IsVendor}}
-          <a href="/vendor/products" class="nav-admin-link">My Listings</a>
-        {{if .IsVendor}}<a href="/vendor/shipping">Shipping</a><a href="/vendor/fee">Vendor Fee</a>{{end}}
+        <details class="nav-group">
+          <summary>Selling</summary>
+          <div class="nav-menu">
+            <a href="/vendor/products">My Listings</a>
+            <a href="/vendor/shipping">Shipping Options</a>
+            <a href="/vendor/fee">Registration Fee</a>
+            <a href="/vendor/stats">Statistics</a>
+            <a href="/wallet">Wallet &amp; Payouts</a>
+            <a href="/help/vendors">Vendor Guide</a>
+          </div>
+        </details>
         {{end}}
         {{if .IsAdmin}}
-          <a href="/admin" class="nav-admin-link">Admin</a>
-          <a href="/admin/settings" class="nav-admin-link">Settings</a>
+        <details class="nav-group">
+          <summary>Admin</summary>
+          <div class="nav-menu">
+          <a href="/admin/settings">Settings</a>
+          <a href="/admin/vendors">Vendors</a>
+          <a href="/admin/withdrawals">Withdrawals</a>
+            <a href="/help/admins">Operator Guide</a>
+          </div>
+        </details>
         {{end}}
-        <a href="/account">Account</a>
-        <a href="/wallet">Wallet</a>
-        <a href="/orders">Orders</a>
-        <a href="/disputes">Disputes</a>
-        <a href="/cart">Cart</a>
-        <a href="/tickets">Tickets</a>
-              
-        
+        <details class="nav-group">
+          <summary>Account</summary>
+          <div class="nav-menu">
+            {{if .PersonalPhrase}}<span class="phrase-badge" title="Your anti-phishing phrase">✓ {{.PersonalPhrase}}</span>{{end}}
+            <a href="/account">Settings &amp; Security</a>
+            {{if not (or .IsAdmin .IsVendor)}}<a href="/wallet">Wallet</a>{{end}}
+            <a href="/disputes">Disputes</a>
+            <a href="/tickets">Support Tickets</a>
+            <a href="/pgp">PGP Tool</a>
+            <a href="/help">Help Center</a>
+          </div>
+        </details>
       {{else}}
+        <a href="/help">Help</a>
         <a href="/login">Log in</a>
         <a class="button" href="/register">Create account</a>
       {{end}}
@@ -94,7 +130,7 @@
   {{block "body" .}}{{end}}
 </main>
 <footer class="site-footer">
-  <div class="footer-inner">OnionShop <span aria-hidden="true">·</span> Tor Browser experience <span aria-hidden="true">·</span> Verify the onion address before signing in.</div>
+  <div class="footer-inner"><a href="/help" style="color:inherit;">Help</a> · OnionShop <span aria-hidden="true">·</span> Tor Browser experience <span aria-hidden="true">·</span> Verify the onion address before signing in.</div>
 </footer>
 </body>
 </html>

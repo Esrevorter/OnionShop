@@ -51,6 +51,12 @@
       <div class="form-actions"><button type="submit" class="btn-secondary">Cancel order &amp; refund</button></div>
     </form>
     {{end}}
+    {{if and .IsVendor .Order.ShippingCiphertext}}
+    <div class="notice" style="margin-top:1rem;">
+      <strong>Delivery address (PGP-encrypted to your key).</strong> Decrypt offline with your private key; the server never decrypts.
+      <code style="display:block; white-space:pre-wrap; word-break:break-all; margin:.5rem 0; padding:.6rem; background:var(--surface); border:1px solid var(--line); border-radius:.5rem; font-family:ui-monospace,Menlo,Consolas,monospace; user-select:all;">{{.Order.ShippingCiphertext}}</code>
+    </div>
+    {{end}}
     {{if or .CanShip .CanExtend .CanRelease}}
     <div style="margin-top:2rem; border-top: 1px solid var(--line); padding-top: 1.5rem;">
       <h3>Actions</h3>
