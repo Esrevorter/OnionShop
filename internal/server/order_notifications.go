@@ -35,22 +35,22 @@ func notifyOrder(ctx context.Context, pool *pgxpool.Pool, orderID pgtype.UUID, k
 	if len(short) > 8 {
 		short = short[:8]
 	}
-	insert := func(sender pgtype.UUID, body string) error {
-		_, err := pool.Exec(ctx, `INSERT INTO messages (thread_id, sender_id, body) VALUES ($1,$2,$3)`,
-			threadID, sender, body)
+	insert := func(sender pgtype.UUID, body string, aud pgtype.UUID) error {
+		_, err := pool.Exec(ctx, `INSERT INTO messages (thread_id, sender_id, body, audience) VALUES ($1,$2,$3,$4)`,
+			threadID, sender, body, aud)
 		return err
 	}
 	switch kind {
 	case "created":
 		return insert(vendor, fmt.Sprintf(
-			"Order #%s received. Awaiting payment of %.12f XMR. Open the order and use the Pay button for the address. Unpaid orders expire after 12 hours.", short, xmr))
+			"Order #%s received. Awaiting payment of %.12f XMR. Open the order and use the Pay button for the address. Unpaid orders expire after 12 hours.", short, xmr), customer)
 	case "paid":
 		if err := insert(vendor, fmt.Sprintf(
-			"Payment for order #%s confirmed (%.12f XMR). Funds are now in escrow.", short, xmr)); err != nil {
+			"Payment for order #%s confirmed (%.12f XMR). Funds are now in escrow.", short, xmr), customer); err != nil {
 			return err
 		}
 		return insert(customer, fmt.Sprintf(
-			"Payment for order #%s confirmed. Funds are in escrow - please prepare and mark the order as shipped.", short))
+			"Payment for order #%s confirmed. Funds are in escrow - please prepare and mark the order as shipped.", short), vendor)
 	}
 	return nil
 }
