@@ -334,6 +334,9 @@ func (a *App) handleCheckoutSubmit(w http.ResponseWriter, r *http.Request) {
 			fail("Failed to save payment details.")
 			return
 		}
+		if err := notifyOrder(ctx, pool, orderID, "created"); err != nil {
+			log.Printf("server: order notify(created) failed: %v", sanitizedErr(err))
+		}
 	}
 
 	emptyCart := make(Cart)

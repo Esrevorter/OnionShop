@@ -100,6 +100,9 @@ func pollPayments(ctx context.Context, pool *pgxpool.Pool, provider MoneroProvid
 		}
 		
 		log.Printf("xmr: order %s payment confirmed (tx: %s)", uuidString(order.id), txHash)
+		if err := notifyOrder(ctx, pool, order.id, "paid"); err != nil {
+			log.Printf("xmr: order notify(paid) failed: %v", err)
+		}
 	}
 	
 	return nil

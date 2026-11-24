@@ -78,7 +78,7 @@
         <button type="submit" name="currency" value="AUD" class="currency-btn {{if eq .PreferredCurrency "AUD"}}currency-active{{end}}">AUD</button>
       </form>
         {{if .IsSignedIn}}
-        <a href="/messages" class="currency-btn" style="text-decoration:none;">Messages{{if .MessagesUnread}} ({{.MessagesUnread}}){{end}}</a>
+        <a href="/messages" class="currency-btn" style="text-decoration:none;{{if .MessagesUnread}} color:#ff5c5c; border-color:#ff5c5c; font-weight:700;{{end}}">Messages{{if .MessagesUnread}} ({{.MessagesUnread}}){{end}}</a>
       
         <form method="post" action="/logout" class="nav-form" style="margin:0; display:inline;">
           <input type="hidden" name="csrf_token" value="{{.CsrfToken}}">
