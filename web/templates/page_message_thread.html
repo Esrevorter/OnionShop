@@ -14,10 +14,20 @@
                 border:1px solid var(--line);">
       <p class="eyebrow">{{.Sender}} · {{.CreatedAt.Format "2006-01-02 15:04"}}</p>
       <p style="margin:0; white-space:pre-wrap;">{{.Body}}</p>
+      {{if .Mine}}
+      <form method="post" action="/messages/msg/{{.IDStr}}/delete" style="margin-top:.4rem;">
+        <input type="hidden" name="csrf_token" value="{{$.CsrfToken}}">
+        <button type="submit" class="btn-secondary" style="font-size:.75rem;">Delete</button>
+      </form>
+      {{end}}
     </div>
     {{else}}
     <p class="muted">No messages yet — say hello below.</p>
     {{end}}
+  </div>
+  <div style="display:flex; gap:.5rem; margin-bottom:1rem;">
+    <form method="post" action="/messages/{{.ThreadID}}/hide"><input type="hidden" name="csrf_token" value="{{.CsrfToken}}"><button type="submit" class="btn-secondary">Remove from inbox</button></form>
+    <form method="post" action="/messages/{{.ThreadID}}/unhide"><input type="hidden" name="csrf_token" value="{{.CsrfToken}}"><button type="submit" class="btn-secondary">Restore to inbox</button></form>
   </div>
   <form method="post" action="/messages/{{.ThreadID}}/reply" class="auth-card" autocomplete="off">
     <input type="hidden" name="csrf_token" value="{{.CsrfToken}}">

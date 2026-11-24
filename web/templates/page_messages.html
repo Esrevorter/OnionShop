@@ -7,15 +7,21 @@
     <div class="empty-state"><p>No conversations yet. Order-related messages appear here.</p></div>
   {{else}}
     {{range .Threads}}
-    <a href="/messages/{{.ID}}" class="auth-card" style="display:block; margin-bottom:.75rem; text-decoration:none;">
-      <div style="display:flex; justify-content:space-between; gap:.5rem; flex-wrap:wrap;">
-        <strong>{{.OtherName}}</strong>
-        <span class="muted">{{.LastAt.Format "2006-01-02 15:04"}}</span>
-      </div>
-      <p class="muted" style="margin:.35rem 0 0;">{{.LastBody}}</p>
-      {{if .Unread}}<span class="badge badge-success">{{.Unread}} new</span>{{end}}
-      {{if .HasOrder}}<span class="badge badge-muted">order</span>{{end}}
-    </a>
+    <div class="auth-card" style="margin-bottom:.75rem;">
+      <a href="/messages/{{.IDStr}}" style="display:block; text-decoration:none;">
+        <div style="display:flex; justify-content:space-between; gap:.5rem; flex-wrap:wrap;">
+          <strong>{{.OtherName}}</strong>
+          <span class="muted">{{.LastAt.Format "2006-01-02 15:04"}}</span>
+        </div>
+        <p class="muted" style="margin:.35rem 0 0;">{{.LastBody}}</p>
+        {{if .Unread}}<span class="badge badge-success">{{.Unread}} new</span>{{end}}
+        {{if .HasOrder}}<span class="badge badge-muted">order</span>{{end}}
+      </a>
+      <form method="post" action="/messages/{{.IDStr}}/hide" style="margin-top:.5rem;">
+        <input type="hidden" name="csrf_token" value="{{$.CsrfToken}}">
+        <button type="submit" class="btn-secondary" style="font-size:.8rem;">Remove from inbox</button>
+      </form>
+    </div>
     {{end}}
   {{end}}
 </section>

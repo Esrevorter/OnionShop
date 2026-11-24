@@ -28,6 +28,9 @@ func (a *App) registerMessagingRoutes(r chi.Router) {
 	r.Method(http.MethodGet, "/messages/start", anyUser(http.HandlerFunc(a.handleMessageStart)))
 	r.Method(http.MethodGet, "/messages/{id}", anyUser(http.HandlerFunc(a.handleMessageThread)))
 	r.Method(http.MethodPost, "/messages/{id}/reply", anyUser(http.HandlerFunc(a.handleMessageReply)))
+	r.Method(http.MethodPost, "/messages/{id}/hide", anyUser(http.HandlerFunc(a.handleThreadHide)))
+	r.Method(http.MethodPost, "/messages/{id}/unhide", anyUser(http.HandlerFunc(a.handleThreadUnhide)))
+	r.Method(http.MethodPost, "/messages/msg/{mid}/delete", anyUser(http.HandlerFunc(a.handleMessageDelete)))
 }
 
 func (a *App) msgPool() (*pgxpool.Pool, bool) {
@@ -166,5 +169,31 @@ func (a *App) handleMessageReply(w http.ResponseWriter, r *http.Request) {
 		writeGenericError(w)
 		return
 	}
+	http.Redirect(w, r, "/messages/"+uuidString(tid), http.StatusSeeOther)
+}
+
+func (a *App) handleThreadHide(w http.ResponseWriter, r *http.Request) {
+	pool, ok := a.msgPool(); if !ok { writeGenericError(w); return }
+	uid, ok := a.currentUUID(r); if !ok { http.Redirect(w, r, "/login", http.StatusSeeOther); return }
+	tid, err := parseUUIDParam(r, "id"); if err != nil { http.NotFound(w, r); return }
+	if mine, err := ThreadParticipant(r.Context(), pool, tid, uid); err != nil || !mine { http.NotFound(w, r); return }
+	_ = HideThread(r.Context(), pool, tid, uid)
+	http.Redirect(w, r, "/messages", http.StatusSeeOther)
+}
+func (a *App) handleThreadUnhide(w http.ResponseWriter, r *http.Request) {
+	pool, ok := a.msgPool(); if !ok { writeGenericError(w); return }
+	uid, ok := a.currentUUID(r); if !ok { http.Redirect(w, r, "/login", http.StatusSeeOther); return }
+	tid, err := parseUUIDParam(r, "id"); if err != nil { http.NotFound(w, r); return }
+	if mine, err := ThreadParticipant(r.Context(), pool, tid, uid); err != nil || !mine { http.NotFound(w, r); return }
+	_ = UnhideThread(r.Context(), pool, tid, uid)
+	http.Redirect(w, r, "/messages/"+uuidString(tid), http.StatusSeeOther)
+}
+func (a *App) handleMessageDelete(w http.ResponseWriter, r *http.Request) {
+	pool, ok := a.msgPool(); if !ok { writeGenericError(w); return }
+	uid, ok := a.currentUUID(r); if !ok { http.Redirect(w, r, "/login", http.StatusSeeOther); return }
+	mid, err := parseUUIDParam(r, "mid"); if err != nil { http.NotFound(w, r); return }
+	var tid pgtype.UUID
+	_ = pool.QueryRow(r.Context(), `SELECT thread_id FROM messages WHERE id=$1`, mid).Scan(&tid)
+	_ = DeleteOwnMessage(r.Context(), pool, mid, uid)
 	http.Redirect(w, r, "/messages/"+uuidString(tid), http.StatusSeeOther)
 }
