@@ -35,7 +35,7 @@ func (a *App) handleOrderShip(w http.ResponseWriter, r *http.Request) {
 
 	var vid pgtype.UUID
 	var status string
-	if err := pool.QueryRow(r.Context(), `SELECT vendor_id, status FROM orders WHERE id=$1`, id).Scan(&vid, &status); err != nil {
+	if err := pool.QueryRow(r.Context(), `SELECT v.user_id, o.status FROM orders o JOIN vendors v ON v.id=o.vendor_id WHERE o.id=$1`, id).Scan(&vid, &status); err != nil {
 		http.NotFound(w, r); return
 	}
 	if uuidString(vid) != uuidString(u) && CurrentRole(r.Context(), a.sm) != "admin" {

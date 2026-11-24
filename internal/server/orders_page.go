@@ -208,7 +208,8 @@ func (a *App) handleOrderDetail(w http.ResponseWriter, r *http.Request) {
 		data.CanExtend = !extended
 	}
 	
-	a.renderAs(w, "order_detail", http.StatusOK, data)
+		if data.Captcha = a.newChallenge(w, r, "order"); data.Captcha == nil { return }
+a.renderAs(w, "order_detail", http.StatusOK, data)
 }
 
 func (a *App) registerOrderRoutes(r chi.Router) {
