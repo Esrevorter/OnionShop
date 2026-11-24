@@ -153,7 +153,7 @@ func (p *RPCProvider) CreatePaymentAddress(ctx context.Context, orderID pgtype.U
 	if err := json.Unmarshal(result, &resp); err != nil {
 		return "", "", fmt.Errorf("unmarshal response: %w", err)
 	}
-	return resp.Address, strconv.Itoa(resp.AddressIndex), nil
+	return resp.Address, uuidString(orderID), nil
 }
 
 func (p *RPCProvider) CheckPayment(ctx context.Context, orderID pgtype.UUID, expectedPiconero int64) (bool, string, error) {
@@ -219,7 +219,7 @@ func (p *RPCProvider) SendTransaction(ctx context.Context, destAddr string, pico
 type MockProvider struct{}
 
 func (m *MockProvider) CreatePaymentAddress(ctx context.Context, orderID pgtype.UUID) (string, string, error) {
-	return "4" + strings.Repeat("0", 94), "mock_pid", nil
+	return "4" + strings.Repeat("0", 94), uuidString(orderID), nil
 }
 func (m *MockProvider) CheckPayment(ctx context.Context, orderID pgtype.UUID, expectedPiconero int64) (bool, string, error) {
 	return false, "", nil
