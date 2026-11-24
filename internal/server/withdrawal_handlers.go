@@ -38,7 +38,6 @@ func (a *App) RegisterWithdrawalRoutes(r chi.Router, store WithdrawalStore) {
 	anyUser := a.RequireRole("customer", "vendor", "mod", "admin")
 	adminOnly := a.RequireRole("admin")
 
-	r.Method(http.MethodGet, "/wallet", anyUser(http.HandlerFunc(a.handleWallet)))
 	r.Method(http.MethodPost, "/wallet/withdraw", anyUser(http.HandlerFunc(a.handleWithdrawSubmit)))
 	r.Method(http.MethodGet, "/admin/withdrawals", adminOnly(http.HandlerFunc(a.handleAdminWithdrawals)))
 	r.Method(http.MethodPost, "/admin/withdrawals/{id}/review", adminOnly(http.HandlerFunc(a.handleAdminReviewWithdrawal)))
@@ -188,6 +187,21 @@ func (a *App) handleAdminReviewWithdrawal(w http.ResponseWriter, r *http.Request
 	}
 
 	if ws, ok := a.vendor.(WithdrawalStore); ok {
+		if status == "paid" {
+			if wr, err := ws.GetWithdrawal(ctx, wid); err == nil && wr != nil {
+				if pool, ok := a.deps.Pool.(*pgxpool.Pool); ok {
+					tx, serr := NewMoneroProvider().SendTransaction(ctx, wr.XmrAddress, wr.AmountPiconero)
+					if serr != nil { w.WriteHeader(http.StatusBadGateway); return }
+					_, _ = pool.Exec(ctx, `UPDATE withdrawals SET tx_hash=$2 WHERE id=$1`, wid, tx)
+					var txref pgtype.UUID
+					_ = pool.QueryRow(ctx, `SELECT gen_random_uuid()`).Scan(&txref)
+					_ = NewLedgerService(pool).RecordLedgerTx(ctx, txref, "withdraw:"+uuidString(wid), &wr.VendorID, "vendor withdrawal paid", []LedgerLeg{
+						{AccountName: vendorAccountName(wr.VendorID), AmountPiconero: wr.AmountPiconero, Direction: "debit"},
+						{AccountName: "escrow", AmountPiconero: wr.AmountPiconero, Direction: "credit"},
+					})
+				}
+			}
+		}
 		if err := ws.ReviewWithdrawal(ctx, wid, *uid, status); err != nil {
 			w.WriteHeader(http.StatusInternalServerError)
 			return

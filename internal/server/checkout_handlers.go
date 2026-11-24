@@ -234,6 +234,10 @@ func (a *App) handleCheckoutSubmit(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	delivery := strings.TrimSpace(r.FormValue("delivery_instructions"))
+	if delivery == "" {
+		fail("Please provide a delivery address / instructions.")
+		return
+	}
 	if len(delivery) > 2000 {
 		fail("Delivery instructions are too long (max 2000 characters).")
 		return
@@ -254,6 +258,25 @@ func (a *App) handleCheckoutSubmit(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Re-validate authoritative price/stock/status from DB (cart may be stale).
+	for pid, item := range cart {
+		puid, ok := parseUUID(pid)
+		if !ok { delete(cart, pid); continue }
+		var price, stock int64
+		var status string
+		var vid pgtype.UUID
+		if err := pool.QueryRow(ctx, `SELECT p.price_usd_cents, p.stock, p.status, p.vendor_id FROM products p JOIN vendors v ON v.id=p.vendor_id WHERE p.id=$1 AND v.approved`, puid).Scan(&price, &stock, &status, &vid); err != nil || status != "active" {
+			fail("An item in your cart is no longer available. Please refresh your cart.")
+			return
+		}
+		if item.Qty > stock {
+			fail("Insufficient stock for " + item.Title + ". Please reduce quantity.")
+			return
+		}
+		item.PriceUSDCents = price
+		item.VendorID = uuidString(vid)
+		cart[pid] = item
+	}
 	// Validate one shipping selection per vendor that offers options.
 	vendorSet := map[string]bool{}
 	for _, item := range cart {
@@ -320,6 +343,23 @@ func (a *App) handleCheckoutSubmit(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// Oversell guard: atomic stock decrement, roll back checkout if short.
+	for _, oid := range orderIDs {
+		irows, qerr := pool.Query(ctx, `SELECT product_id, qty FROM order_items WHERE order_id=$1`, oid)
+		if qerr != nil { continue }
+		type line struct{ pid pgtype.UUID; qty int64 }
+		var lines []line
+		for irows.Next() { var l line; if irows.Scan(&l.pid,&l.qty)==nil { lines=append(lines,l) } }
+		irows.Close()
+		for _, l := range lines {
+			tag, uerr := pool.Exec(ctx, `UPDATE products SET stock = stock - $1 WHERE id=$2 AND stock >= $1`, l.qty, l.pid)
+			if uerr != nil || tag.RowsAffected() == 0 {
+				_, _ = pool.Exec(ctx, `DELETE FROM orders WHERE checkout_ref=$1`, checkoutRef)
+				fail("An item in your cart went out of stock. Please refresh your cart.")
+				return
+			}
+		}
+	}
 	oracle := ratesOracle
 	if oracle == nil {
 		oracle = NewExchangeRates()
@@ -337,6 +377,14 @@ func (a *App) handleCheckoutSubmit(w http.ResponseWriter, r *http.Request) {
 		}
 		choice := selected[uuidString(vendorUUID)]
 		newTotal := orderItemsTotal + choice.Cents
+		var vendorUser pgtype.UUID
+		_ = pool.QueryRow(ctx, `SELECT user_id FROM vendors WHERE id=$1`, vendorUUID).Scan(&vendorUser)
+		cipher, cerr := encryptToVendor(ctx, pool, vendorUser, delivery)
+		if cerr != nil {
+			_, _ = pool.Exec(ctx, `DELETE FROM orders WHERE checkout_ref=$1`, checkoutRef)
+			fail("A vendor in your cart must publish a PGP key before accepting orders (your address is encrypted to them).")
+			return
+		}
 		xmrAmount := oracle.USDCentsToPiconero(newTotal)
 		xmrAmount = ((xmrAmount + 500000) / 1000000) * 1000000
 
@@ -349,9 +397,9 @@ func (a *App) handleCheckoutSubmit(w http.ResponseWriter, r *http.Request) {
 		if _, err := pool.Exec(ctx, `
 			UPDATE orders
 			SET total_usd_cents=$1, shipping_option_id=$2, shipping_usd_cents=$3,
-			    xmr_address=$4, xmr_payment_id=$5, xmr_amount_piconero=$6, refund_address=$8, status='awaiting_payment'
+			    xmr_address=$4, xmr_payment_id=$5, xmr_amount_piconero=$6, refund_address=$8, shipping_ciphertext=$9, status='awaiting_payment'
 			WHERE id=$7
-		`, newTotal, choice.OptionID, choice.Cents, addr, pid, xmrAmount, orderID, refundAddr); err != nil {
+		`, newTotal, choice.OptionID, choice.Cents, addr, pid, xmrAmount, orderID, refundAddr, cipher); err != nil {
 			log.Printf("server: failed to update order %s: %v", uuidString(orderID), err)
 			fail("Failed to save payment details.")
 			return

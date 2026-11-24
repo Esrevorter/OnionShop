@@ -29,6 +29,7 @@ type OrderView struct {
 	TotalUSDCents    int64
 	ShippingUSDCents int64
 	XmrPiconero      int64
+	ShippingCiphertext string
 	Items            []OrderItemView
 }
 
@@ -98,7 +99,7 @@ func ListCustomerOrders(ctx context.Context, pool *pgxpool.Pool, customerID pgty
 func ListVendorOrders(ctx context.Context, pool *pgxpool.Pool, userID pgtype.UUID) ([]OrderView, error) {
 	rows, err := pool.Query(ctx, `
 		SELECT o.id, o.status, o.total_usd_cents, o.shipping_usd_cents, o.xmr_amount_piconero,
-		       COALESCE(o.xmr_address,''), COALESCE(o.xmr_payment_id,''),
+		       COALESCE(o.xmr_address,''), COALESCE(o.xmr_payment_id,''), COALESCE(o.shipping_ciphertext,''),
 		       COALESCE(cu.username,''), COALESCE(s.title,''), o.created_at
 		FROM orders o
 		JOIN vendors v ON v.id = o.vendor_id
@@ -111,7 +112,7 @@ func ListVendorOrders(ctx context.Context, pool *pgxpool.Pool, userID pgtype.UUI
 	for rows.Next() {
 		var o OrderView; var id pgtype.UUID; var created interface{}
 		if err := rows.Scan(&id, &o.Status, &o.TotalUSDCents, &o.ShippingUSDCents, &o.XmrPiconero,
-			&o.XmrAddress, &o.XmrPaymentID, &o.CustomerName, &o.ShippingTitle, &created); err != nil {
+			&o.XmrAddress, &o.XmrPaymentID, &o.ShippingCiphertext, &o.CustomerName, &o.ShippingTitle, &created); err != nil {
 			return nil, fmt.Errorf("server: scan vendor order: %w", err)
 		}
 		o.IDStr, o.CreatedAt = uuidString(id), fmtCreated(created)
@@ -126,7 +127,7 @@ func GetOrderDetail(ctx context.Context, pool *pgxpool.Pool, orderID, viewerID p
 	var q string
 	if isVendor {
 		q = `SELECT o.id, o.status, o.total_usd_cents, o.shipping_usd_cents, o.xmr_amount_piconero,
-		       COALESCE(o.xmr_address,''), COALESCE(o.xmr_payment_id,''),
+		       COALESCE(o.xmr_address,''), COALESCE(o.xmr_payment_id,''), COALESCE(o.shipping_ciphertext,''),
 		       COALESCE(cu.username,''), COALESCE(s.title,''), o.created_at
 		    FROM orders o JOIN vendors v ON v.id = o.vendor_id
 		    LEFT JOIN users cu ON cu.id = o.customer_id
@@ -142,7 +143,7 @@ func GetOrderDetail(ctx context.Context, pool *pgxpool.Pool, orderID, viewerID p
 	}
 	var o OrderView; var id pgtype.UUID; var created interface{}
 	err := pool.QueryRow(ctx, q, orderID, viewerID).Scan(&id, &o.Status, &o.TotalUSDCents, &o.ShippingUSDCents, &o.XmrPiconero,
-		&o.XmrAddress, &o.XmrPaymentID, &o.CustomerName, &o.ShippingTitle, &created)
+		&o.XmrAddress, &o.XmrPaymentID, &o.ShippingCiphertext, &o.CustomerName, &o.ShippingTitle, &created)
 	if err != nil { return nil, err }
 	o.IDStr, o.CreatedAt = uuidString(id), fmtCreated(created)
 	

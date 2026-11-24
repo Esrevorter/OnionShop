@@ -611,3 +611,44 @@ func (s *PGCatalogStore) populateRealETA(ctx context.Context, products []Storefr
 	}
 }
 
+
+// ---- WithdrawalStore implementation (ledger-backed) ----
+func (s *PGCatalogStore) GetVendorBalanceSat(ctx context.Context, vendorID pgtype.UUID) (int64, error) {
+	return VendorBalancePiconero(ctx, s.pool, vendorID), nil
+}
+func (s *PGCatalogStore) CreateWithdrawalRequest(ctx context.Context, vendorID pgtype.UUID, amount int64, address string) error {
+	bal := VendorBalancePiconero(ctx, s.pool, vendorID)
+	var pending int64
+	_ = s.pool.QueryRow(ctx, `SELECT COALESCE(SUM(amount_piconero),0) FROM withdrawals WHERE vendor_id=$1 AND status IN ('pending','approved')`, vendorID).Scan(&pending)
+	if amount <= 0 || amount > bal-pending {
+		return fmt.Errorf("insufficient available balance")
+	}
+	_, err := s.pool.Exec(ctx, `INSERT INTO withdrawals (vendor_id, amount_piconero, xmr_address, status) VALUES ($1,$2,$3,'pending')`, vendorID, amount, address)
+	return err
+}
+func (s *PGCatalogStore) ListWithdrawalsByVendor(ctx context.Context, vendorID pgtype.UUID) ([]WithdrawalRecord, error) {
+	rows, err := s.pool.Query(ctx, `SELECT id, vendor_id, amount_piconero, xmr_address, status, created_at FROM withdrawals WHERE vendor_id=$1 ORDER BY created_at DESC`, vendorID)
+	if err != nil { return nil, err }
+	defer rows.Close()
+	var out []WithdrawalRecord
+	for rows.Next() { var w WithdrawalRecord; if rows.Scan(&w.ID,&w.VendorID,&w.AmountPiconero,&w.XmrAddress,&w.Status,&w.CreatedAt)==nil { out=append(out,w) } }
+	return out, rows.Err()
+}
+func (s *PGCatalogStore) ListPendingWithdrawals(ctx context.Context) ([]WithdrawalRecord, error) {
+	rows, err := s.pool.Query(ctx, `SELECT id, vendor_id, amount_piconero, xmr_address, status, created_at FROM withdrawals WHERE status IN ('pending','approved') ORDER BY created_at`)
+	if err != nil { return nil, err }
+	defer rows.Close()
+	var out []WithdrawalRecord
+	for rows.Next() { var w WithdrawalRecord; if rows.Scan(&w.ID,&w.VendorID,&w.AmountPiconero,&w.XmrAddress,&w.Status,&w.CreatedAt)==nil { out=append(out,w) } }
+	return out, rows.Err()
+}
+func (s *PGCatalogStore) GetWithdrawal(ctx context.Context, id pgtype.UUID) (*WithdrawalRecord, error) {
+	var w WithdrawalRecord
+	err := s.pool.QueryRow(ctx, `SELECT id, vendor_id, amount_piconero, xmr_address, status, created_at FROM withdrawals WHERE id=$1`, id).Scan(&w.ID,&w.VendorID,&w.AmountPiconero,&w.XmrAddress,&w.Status,&w.CreatedAt)
+	if err != nil { return nil, err }
+	return &w, nil
+}
+func (s *PGCatalogStore) ReviewWithdrawal(ctx context.Context, id, reviewer pgtype.UUID, status string) error {
+	_, err := s.pool.Exec(ctx, `UPDATE withdrawals SET status=$2, reviewed_by=$3, reviewed_at=now() WHERE id=$1`, id, status, reviewer)
+	return err
+}

@@ -399,6 +399,10 @@ func (a *App) RegisterAuthRoutesFull(auth AuthStore, captcha *CaptchaService, se
 	r.Get("/pgp", a.handlePGPToolPage)
 	a.registerVendorRoutes(r)
 	a.registerCatalogRoutes(r)
+	a.registerWalletRoutes(r)
+	if ws, ok := catalog.(WithdrawalStore); ok {
+		a.RegisterWithdrawalRoutes(r, ws)
+	}
 	return nil
 }
 
