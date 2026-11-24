@@ -17,7 +17,7 @@
       {{if .Mine}}
       <form method="post" action="/messages/msg/{{.IDStr}}/delete" style="margin-top:.4rem;">
         <input type="hidden" name="csrf_token" value="{{$.CsrfToken}}">
-        <button type="submit" class="btn-secondary" style="font-size:.75rem;">Delete</button>
+        <button type="submit" style="background:#c62828; color:#ffffff; border:1px solid #ff8a80; border-radius:.4rem; cursor:pointer; font-size:.75rem; padding:.35rem .7rem;">Delete</button>
       </form>
       {{end}}
     </div>
@@ -26,8 +26,8 @@
     {{end}}
   </div>
   <div style="display:flex; gap:.5rem; margin-bottom:1rem;">
-    <form method="post" action="/messages/{{.ThreadID}}/hide"><input type="hidden" name="csrf_token" value="{{.CsrfToken}}"><button type="submit" class="btn-secondary">Remove from inbox</button></form>
-    <form method="post" action="/messages/{{.ThreadID}}/unhide"><input type="hidden" name="csrf_token" value="{{.CsrfToken}}"><button type="submit" class="btn-secondary">Restore to inbox</button></form>
+    <form method="post" action="/messages/{{.ThreadID}}/hide"><input type="hidden" name="csrf_token" value="{{.CsrfToken}}"><button type="submit" style="background:#c62828; color:#ffffff; border:1px solid #ff8a80; border-radius:.4rem; cursor:pointer; font-size:.8rem; padding:.4rem .8rem;">Remove from inbox</button></form>
+    <form method="post" action="/messages/{{.ThreadID}}/unhide"><input type="hidden" name="csrf_token" value="{{.CsrfToken}}"><button type="submit" style="background:#c62828; color:#ffffff; border:1px solid #ff8a80; border-radius:.4rem; cursor:pointer; font-size:.8rem; padding:.4rem .8rem;">Restore to inbox</button></form>
   </div>
   <form method="post" action="/messages/{{.ThreadID}}/reply" class="auth-card" autocomplete="off">
     <input type="hidden" name="csrf_token" value="{{.CsrfToken}}">

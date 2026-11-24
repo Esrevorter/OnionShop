@@ -19,7 +19,7 @@
       </a>
       <form method="post" action="/messages/{{.IDStr}}/hide" style="margin-top:.5rem;">
         <input type="hidden" name="csrf_token" value="{{$.CsrfToken}}">
-        <button type="submit" class="btn-secondary" style="font-size:.8rem;">Remove from inbox</button>
+        <button type="submit" style="background:#c62828; color:#ffffff; border:1px solid #ff8a80; border-radius:.4rem; cursor:pointer; font-size:.8rem; padding:.4rem .8rem;">Remove from inbox</button>
       </form>
     </div>
     {{end}}
