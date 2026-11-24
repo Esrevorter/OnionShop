@@ -66,6 +66,12 @@ func (a *App) handleOpenDispute(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if pool, ok := a.deps.Pool.(*pgxpool.Pool); ok {
+		var st string
+		if pool.QueryRow(ctx, `SELECT status FROM orders WHERE id=$1`, oid).Scan(&st) == nil && st != "in_escrow" && st != "shipped" {
+			writeGenericError(w); return
+		}
+	}
 	if ds, ok := a.vendor.(DisputeStore); ok {
 		_, err := ds.CreateDispute(ctx, oid, *uid, reason)
 		if err != nil {
@@ -77,7 +83,10 @@ func (a *App) handleOpenDispute(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if pool, ok := a.deps.Pool.(*pgxpool.Pool); ok { _ = notifyOrderEvent(ctx, pool, oid, "disputed", reason) }
+	if pool, ok := a.deps.Pool.(*pgxpool.Pool); ok {
+		_, _ = pool.Exec(ctx, `UPDATE orders SET status='disputed', updated_at=now() WHERE id=$1 AND status IN ('in_escrow','shipped')`, oid)
+		_ = notifyOrderEvent(ctx, pool, oid, "disputed", reason)
+	}
 	http.Redirect(w, r, "/account", http.StatusSeeOther)
 }
 
@@ -142,7 +151,9 @@ func (a *App) handleResolveDispute(w http.ResponseWriter, r *http.Request) {
 
 	if pool, ok := a.deps.Pool.(*pgxpool.Pool); ok {
 		var oid pgtype.UUID
-		if pool.QueryRow(ctx, `SELECT order_id FROM disputes WHERE id=$1`, did).Scan(&oid) == nil { _ = notifyOrderEvent(ctx, pool, oid, resolution, "") }
+		if pool.QueryRow(ctx, `SELECT order_id FROM disputes WHERE id=$1`, did).Scan(&oid) == nil {
+			if resolution == "refunded" { _ = refundOrder(ctx, pool, NewMoneroProvider(), oid) } else { _ = notifyOrderEvent(ctx, pool, oid, "released", "Dispute resolved: released.") }
+		}
 	}
 	http.Redirect(w, r, "/disputes/"+disputeIDStr, http.StatusSeeOther)
 }

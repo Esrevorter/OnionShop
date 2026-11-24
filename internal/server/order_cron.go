@@ -32,7 +32,7 @@ func RunOrderCron(ctx context.Context, pool *pgxpool.Pool) error {
 			log.Printf("server: auto-cancel order %s failed: %v", uuidString(id), err)
 			continue
 		}
-		_, _ = pool.Exec(ctx, `INSERT INTO order_messages (order_id, sender_type, body, created_at) VALUES ($1, 'system', $2, now())`, id, "Your order was cancelled (payment not received within 12 hours).")
+		_ = notifyOrderEvent(ctx, pool, id, "cancelled", "")
 		log.Printf("server: auto-cancelled order %s (payment timeout)", uuidString(id))
 	}
 
@@ -55,12 +55,7 @@ func RunOrderCron(ctx context.Context, pool *pgxpool.Pool) error {
 			log.Printf("server: auto-refund order %s failed: %v", uuidString(id), err)
 			continue
 		}
-		var vid pgtype.UUID
-		var pico int64
-		if err := pool.QueryRow(ctx, `SELECT vendor_id, xmr_amount_piconero FROM orders WHERE id=$1`, id).Scan(&vid, &pico); err == nil {
-			_ = PostEscrowRefund(ctx, pool, id, pico)
-		}
-		_, _ = pool.Exec(ctx, `INSERT INTO order_messages (order_id, sender_type, body, created_at) VALUES ($1, 'system', $2, now())`, id, "Your order was cancelled (vendor did not ship within 3 days). Refund issued.")
+		_ = refundOrder(ctx, pool, NewMoneroProvider(), id)
 		log.Printf("server: auto-refunded order %s (no-ship)", uuidString(id))
 	}
 
@@ -86,15 +81,12 @@ func RunOrderCron(ctx context.Context, pool *pgxpool.Pool) error {
 			continue
 		}
 		_, err := pool.Exec(ctx, `UPDATE orders SET status='released', released_at=now(), updated_at=now() WHERE id=$1`, rel.id)
-	// notify auto-release
-	if arRows, e := pool.Query(ctx, `SELECT id FROM orders WHERE status='released' AND released_at > now() - interval '1 minute'`); e == nil { for arRows.Next() { var aid pgtype.UUID; if arRows.Scan(&aid)==nil { _ = notifyOrderEvent(ctx, pool, aid, "released", "Auto-released after inspection window.") } }; arRows.Close() }
 		if err != nil {
 			log.Printf("server: auto-release order %s failed: %v", uuidString(rel.id), err)
 			continue
 		}
 		_ = PostEscrowRelease(ctx, pool, rel.vid, rel.id, rel.pico)
-		msg := fmt.Sprintf("Order #%s finalized (auto-release). Funds released to vendor.", uuidString(rel.id)[:8])
-		_, _ = pool.Exec(ctx, `INSERT INTO order_messages (order_id, sender_type, body, created_at) VALUES ($1, 'system', $2, now())`, rel.id, msg)
+		_ = notifyOrderEvent(ctx, pool, rel.id, "released", "Auto-released after inspection window.")
 		log.Printf("server: auto-released order %s", uuidString(rel.id))
 	}
 	return nil

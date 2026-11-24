@@ -33,6 +33,9 @@ func notifyOrderEvent(ctx context.Context, pool *pgxpool.Pool, orderID pgtype.UU
 	short := uuidString(orderID)
 	if len(short) > 8 { short = short[:8] }
 	ins := func(sender pgtype.UUID, body string, aud pgtype.UUID) error {
+		var n int
+		_ = pool.QueryRow(ctx, `SELECT COUNT(*) FROM messages WHERE thread_id=$1 AND body LIKE $2`, threadID, body[:40]+"%").Scan(&n)
+		if n > 0 { return nil }
 		_, err := pool.Exec(ctx, `INSERT INTO messages (thread_id,sender_id,body,audience) VALUES ($1,$2,$3,$4)`,
 			threadID, sender, body, aud)
 		return err
@@ -56,6 +59,10 @@ func notifyOrderEvent(ctx context.Context, pool *pgxpool.Pool, orderID pgtype.UU
 		return ins(vendor, fmt.Sprintf("Order #%s refunded. The XMR has been returned to the buyer.", short), customer)
 	case "disputed":
 		return ins(customer, fmt.Sprintf("A dispute was opened on order #%s. A moderator will review. %s", short, extra), pgtype.UUID{})
+	case "overpaid":
+		return ins(vendor, fmt.Sprintf("Order #%s OVERPAID. Held for manual review; do not ship yet.", short), pgtype.UUID{})
+	case "underpaid":
+		return ins(vendor, fmt.Sprintf("Order #%s UNDERPAID. Send the remaining amount to the same address.", short), customer)
 	case "cancelled":
 		return ins(vendor, fmt.Sprintf("Order #%s was cancelled (unpaid/expired or pre-shipment).", short), customer)
 	}
@@ -65,4 +72,21 @@ func notifyOrderEvent(ctx context.Context, pool *pgxpool.Pool, orderID pgtype.UU
 // notifyOrder keeps older call-sites working.
 func notifyOrder(ctx context.Context, pool *pgxpool.Pool, orderID pgtype.UUID, kind string) error {
 	return notifyOrderEvent(ctx, pool, orderID, kind, "")
+}
+
+// refundOrder returns value to the buyer on-chain (refund address) and posts the
+// escrow refund ledger legs, then notifies. Idempotent via ledger keys.
+func refundOrder(ctx context.Context, pool *pgxpool.Pool, provider MoneroProvider, orderID pgtype.UUID) error {
+	var pico int64
+	var addr string
+	if err := pool.QueryRow(ctx, `SELECT xmr_amount_piconero, COALESCE(refund_address,'') FROM orders WHERE id=$1`, orderID).Scan(&pico, &addr); err != nil {
+		return err
+	}
+	if addr != "" {
+		if tx, err := provider.SendTransaction(ctx, addr, pico); err == nil {
+			_, _ = pool.Exec(ctx, `UPDATE orders SET refund_tx=$1 WHERE id=$2`, tx, orderID)
+		}
+	}
+	_ = PostEscrowRefund(ctx, pool, orderID, pico)
+	return notifyOrderEvent(ctx, pool, orderID, "refunded", "")
 }

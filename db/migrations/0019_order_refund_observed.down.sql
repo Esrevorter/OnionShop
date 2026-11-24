@@ -1,0 +1,1 @@
+ALTER TABLE orders DROP COLUMN IF EXISTS refund_address; ALTER TABLE orders DROP COLUMN IF EXISTS refund_tx; ALTER TABLE orders DROP COLUMN IF EXISTS observed_piconero; ALTER TABLE orders DROP COLUMN IF EXISTS payment_flag;

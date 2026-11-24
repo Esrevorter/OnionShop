@@ -1,6 +1,7 @@
 package server
 
 import (
+	"strconv"
 	"fmt"
 	"os"
 	"context"
@@ -78,15 +79,23 @@ func pollPayments(ctx context.Context, pool *pgxpool.Pool, provider MoneroProvid
 	
 	log.Printf("xmr: checking %d orders for payment", len(orders))
 	
+	confReq := 3
+	if v := os.Getenv("XMR_CONFIRMATIONS_REQUIRED"); v != "" { if n, e := strconv.Atoi(v); e == nil && n > 0 { confReq = n } }
 	for _, order := range orders {
-		paid, txHash, err := provider.CheckPayment(ctx, order.id, order.addr, order.pico)
-		if err != nil {
-			log.Printf("xmr: check payment failed for order %s: %v", uuidString(order.id), err)
+		amt, txHash, conf, found, err := provider.ObservedAmount(ctx, order.id, order.addr)
+		if err != nil { log.Printf("xmr: observe failed for order %s: %v", uuidString(order.id), err); continue }
+		if !found { continue }
+		if amt > order.pico {
+			_, _ = pool.Exec(ctx, `UPDATE orders SET payment_flag='over', observed_piconero=$1 WHERE id=$2`, amt, order.id)
+			_ = notifyOrderEvent(ctx, pool, order.id, "overpaid", "")
 			continue
 		}
-		if !paid {
+		if amt < order.pico {
+			_, _ = pool.Exec(ctx, `UPDATE orders SET payment_flag='under', observed_piconero=$1 WHERE id=$2`, amt, order.id)
+			_ = notifyOrderEvent(ctx, pool, order.id, "underpaid", "")
 			continue
 		}
+		if conf < confReq { continue }
 		
 		// Payment confirmed! Transition via escrow state machine.
 		next, err := Apply(StateAwaitingPayment, EventPaymentConfirmed)

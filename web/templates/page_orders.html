@@ -19,7 +19,7 @@
           <td class="muted">{{.CreatedAt}}</td>
           <td>{{if $.IsVendorView}}{{.CustomerName}}{{else}}{{.ShopName}}{{end}}</td>
           <td>{{fmtFiat .TotalUSDCents $.PreferredCurrency}}</td>
-          <td><span class="badge {{if eq .Status "awaiting_payment"}}badge-muted{{else}}badge-success{{end}}">{{.Status}}</span></td>
+          <td><span class="badge {{statusBadge .Status}}">{{.Status}}</span></td>
           <td><a href="/orders/{{.IDStr}}" class="button">{{if $.IsVendorView}}Manage{{else}}View / Pay{{end}}</a></td>
         </tr>
       {{end}}

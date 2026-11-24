@@ -238,6 +238,11 @@ func (a *App) handleCheckoutSubmit(w http.ResponseWriter, r *http.Request) {
 		fail("Delivery instructions are too long (max 2000 characters).")
 		return
 	}
+	refundAddr := strings.TrimSpace(r.FormValue("refund_address"))
+	if len(refundAddr) < 10 {
+		fail("Please provide a refund XMR address (used if the order is refunded).")
+		return
+	}
 	pool, ok := a.deps.Pool.(*pgxpool.Pool)
 	if !ok {
 		fail("Internal server error: database pool unavailable.")
@@ -327,9 +332,9 @@ func (a *App) handleCheckoutSubmit(w http.ResponseWriter, r *http.Request) {
 		if _, err := pool.Exec(ctx, `
 			UPDATE orders
 			SET total_usd_cents=$1, shipping_option_id=$2, shipping_usd_cents=$3,
-			    xmr_address=$4, xmr_payment_id=$5, xmr_amount_piconero=$6, status='awaiting_payment'
+			    xmr_address=$4, xmr_payment_id=$5, xmr_amount_piconero=$6, refund_address=$8, status='awaiting_payment'
 			WHERE id=$7
-		`, newTotal, choice.OptionID, choice.Cents, addr, pid, xmrAmount, orderID); err != nil {
+		`, newTotal, choice.OptionID, choice.Cents, addr, pid, xmrAmount, orderID, refundAddr); err != nil {
 			log.Printf("server: failed to update order %s: %v", uuidString(orderID), err)
 			fail("Failed to save payment details.")
 			return

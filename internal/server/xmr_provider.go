@@ -19,6 +19,7 @@ import (
 type MoneroProvider interface {
 	CreatePaymentAddress(ctx context.Context, orderID pgtype.UUID) (addr, paymentID string, err error)
 	CheckPayment(ctx context.Context, orderID pgtype.UUID, address string, expectedPiconero int64) (paid bool, txHash string, err error)
+	ObservedAmount(ctx context.Context, orderID pgtype.UUID, address string) (amount int64, txHash string, confirmations int, found bool, err error)
 	GetBalance(ctx context.Context) (int64, error)
 	SendTransaction(ctx context.Context, destAddr string, piconero int64) (txHash string, err error)
 }
@@ -138,6 +139,19 @@ func (p *RPCProvider) callRPC(ctx context.Context, method string, params interfa
 	return res, err
 }
 
+func (p *RPCProvider) ObservedAmount(ctx context.Context, orderID pgtype.UUID, address string) (int64, string, int, bool, error) {
+	result, err := p.callRPC(ctx, "get_transfers", map[string]interface{}{"in": true, "account_index": 0, "filter_by_height": false})
+	if err != nil { return 0, "", 0, false, err }
+	var resp struct { In []struct {
+		TxID string `json:"txid"`; Amount int64 `json:"amount"`; Confirmations int `json:"confirmations"`; Address string `json:"address"`
+	} `json:"in"` }
+	if err := json.Unmarshal(result, &resp); err != nil { return 0, "", 0, false, err }
+	for _, t := range resp.In {
+		if t.Address == address { return t.Amount, t.TxID, t.Confirmations, true, nil }
+	}
+	return 0, "", 0, false, nil
+}
+
 func (p *RPCProvider) CreatePaymentAddress(ctx context.Context, orderID pgtype.UUID) (string, string, error) {
 	result, err := p.callRPC(ctx, "create_address", map[string]interface{}{
 		"account_index": 0,
@@ -218,6 +232,10 @@ func (p *RPCProvider) SendTransaction(ctx context.Context, destAddr string, pico
 
 // MockProvider for testing/fallback.
 type MockProvider struct{}
+
+func (m *MockProvider) ObservedAmount(ctx context.Context, orderID pgtype.UUID, address string) (int64, string, int, bool, error) {
+	return 0, "", 0, false, nil
+}
 
 func (m *MockProvider) CreatePaymentAddress(ctx context.Context, orderID pgtype.UUID) (string, string, error) {
 	return "4" + strings.Repeat("0", 94), uuidString(orderID), nil

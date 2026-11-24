@@ -10,7 +10,7 @@
   <div class="auth-card">
     <div style="display:flex; justify-content:space-between; flex-wrap:wrap; gap:.5rem; margin-bottom:1rem;">
       <h2 style="margin:0;">Order #{{.Order.IDStr}}</h2>
-      <span class="badge {{if eq .Order.Status "awaiting_payment"}}badge-muted{{else}}badge-success{{end}}">{{.Order.Status}}</span>
+      <span class="badge {{statusBadge .Order.Status}}">{{.Order.Status}}</span>
     </div>
     
     <p class="muted">{{if .IsVendor}}Customer: {{.Order.CustomerName}}{{else}}Vendor: {{.Order.ShopName}}{{end}}{{if .Order.ShippingTitle}} · Shipping: {{.Order.ShippingTitle}}{{end}}</p>
@@ -44,6 +44,12 @@
     {{if eq .Order.Status "refunded"}}<div class="notice" style="margin-top:1rem;"><strong>Refunded.</strong> The XMR was returned to the buyer.</div>{{end}}
     {{if eq .Order.Status "disputed"}}<div class="notice" style="margin-top:1rem;"><strong>Disputed.</strong> A moderator is reviewing this order.</div>{{end}}
     {{if eq .Order.Status "cancelled"}}<div class="notice" style="margin-top:1rem;"><strong>Cancelled.</strong> This order was cancelled.</div>{{end}}
+    {{if and (not .IsVendor) (eq .Order.Status "in_escrow")}}
+    <form method="post" action="/orders/{{.Order.IDStr}}/cancel" style="margin-top:1rem;">
+      {{template "friction" .}}<input type="hidden" name="csrf_token" value="{{.CsrfToken}}">
+      <div class="form-actions"><button type="submit" class="btn-secondary">Cancel order &amp; refund</button></div>
+    </form>
+    {{end}}
     {{if or .CanShip .CanExtend .CanRelease}}
     <div style="margin-top:2rem; border-top: 1px solid var(--line); padding-top: 1.5rem;">
       <h3>Actions</h3>

@@ -948,6 +948,12 @@ var templateFuncs = template.FuncMap{
 	},
 	"split": strings.Split,
 	"mul": func(a, b int64) int64 { return a * b },
+	"statusBadge": func(s string) string {
+		switch s {
+		case "in_escrow", "shipped", "released": return "badge-success"
+		default: return "badge-muted"
+		}
+	},
 }
 
 func (a *App) buildTemplates(dir string) error {
