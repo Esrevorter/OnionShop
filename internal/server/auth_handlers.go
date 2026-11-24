@@ -915,7 +915,14 @@ var templateFuncs = template.FuncMap{
 		if piconero < 0 {
 			neg, piconero = "-", -piconero
 		}
-		return fmt.Sprintf("%s%d.%012d", neg, piconero/1000000000000, piconero%1000000000000)
+		micro := (piconero + 500000) / 1000000 // round to 6 decimals
+		s := fmt.Sprintf("%s%d.%06d", neg, micro/1000000, micro%1000000)
+		s = strings.TrimRight(s, "0")
+		s = strings.TrimSuffix(s, ".")
+		if s == "" || s == "-" {
+			s += "0"
+		}
+		return s
 	},
 	"fmtFiat": func(cents int64, currency string) string {
 		if mult, ok := liveRate(currency); ok {

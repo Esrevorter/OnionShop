@@ -322,6 +322,7 @@ func (a *App) handleCheckoutSubmit(w http.ResponseWriter, r *http.Request) {
 		choice := selected[uuidString(vendorUUID)]
 		newTotal := orderItemsTotal + choice.Cents
 		xmrAmount := oracle.USDCentsToPiconero(newTotal)
+		xmrAmount = ((xmrAmount + 500000) / 1000000) * 1000000
 
 		addr, pid, err := provider.CreatePaymentAddress(ctx, orderID)
 		if err != nil {

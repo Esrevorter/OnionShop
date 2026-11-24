@@ -30,8 +30,9 @@
       <details class="notice" style="margin-top: 1rem;">
         <summary class="button" style="cursor:pointer; display:inline-block;">Pay {{fmtXMR .Order.XmrPiconero}} XMR</summary>
         <div style="margin-top:.75rem;">
-          Send exactly <strong>{{fmtXMR .Order.XmrPiconero}} XMR</strong> to:<br>
-          <code style="word-break: break-all; display:block; margin:.5rem 0; padding:.5rem; background:var(--surface);">{{.Order.XmrAddress}}</code>
+          Send exactly <strong style="font-size:1.15rem;">{{fmtXMR .Order.XmrPiconero}} XMR</strong> <span class="muted">(≈ {{fmtFiat .Order.TotalUSDCents $.PreferredCurrency}})</span> to:<br>
+          <code style="word-break:break-all; display:block; margin:.5rem 0; padding:.6rem .8rem; background:var(--surface); border:1px solid var(--line); border-radius:.5rem; font-family:ui-monospace,Menlo,Consolas,monospace; user-select:all; cursor:copy;" title="Click to select, then copy">{.Order.XmrAddress}</code>
+          <span class="muted" style="font-size:.8rem;">Click the address to select it, then copy. Send exactly the amount above.</span>
           {{if .Order.XmrPaymentID}}<span class="muted">Payment reference: {{.Order.XmrPaymentID}}</span><br>{{end}}
           <span class="muted">Detected automatically after 3 confirmations. Unpaid orders expire 12h after placement.</span><br>
           <a href="/messages/start?order={{.Order.IDStr}}" class="button secondary" style="margin-top:.5rem; display:inline-block;">Message vendor about this order</a>

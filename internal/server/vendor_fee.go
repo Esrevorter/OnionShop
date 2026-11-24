@@ -158,6 +158,7 @@ func (a *App) handleVendorFeePost(w http.ResponseWriter, r *http.Request) {
 		oracle = NewExchangeRates()
 	}
 	pico := oracle.USDCentsToPiconero(cents)
+	pico = ((pico + 500000) / 1000000) * 1000000
 	var payID pgtype.UUID
 	if err := pool.QueryRow(ctx, `SELECT gen_random_uuid()`).Scan(&payID); err != nil {
 		writeGenericError(w)
