@@ -17,6 +17,7 @@
     <p class="muted">Placed: {{.Order.CreatedAt}}</p>
 
     <table class="data-table" style="margin: 1rem 0;">
+      <thead><tr><th>Item</th><th style="text-align:right;">Amount</th></tr></thead>
       <tbody>
         {{range .Order.Items}}
         <tr><td>{{.Title}} <span class="text-muted">(x{{.Qty}})</span></td><td style="text-align: right;">{{fmtFiat (mul .PriceUSDCents .Qty) $.PreferredCurrency}}</td></tr>
