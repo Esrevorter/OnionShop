@@ -137,6 +137,12 @@ func (a *App) registerWalletRoutes(r chi.Router) {
 }
 
 func (a *App) handleWalletPage(w http.ResponseWriter, r *http.Request) {
+	a.renderWalletPage(w, r, http.StatusOK, "", "")
+}
+
+// renderWalletPage is the single wallet renderer: ledger balance + history +
+// a freshly minted challenge, so every POST re-render stays complete.
+func (a *App) renderWalletPage(w http.ResponseWriter, r *http.Request, code int, errMsg, flash string) {
 	data := WalletData{AuthData: a.baseData(r)}
 	if pool, ok := a.deps.Pool.(*pgxpool.Pool); ok {
 		uid := CurrentUserID(r.Context(), a.sm)
@@ -152,10 +158,11 @@ func (a *App) handleWalletPage(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	}
+	data.Error, data.Flash = errMsg, flash
 	if data.Captcha = a.newChallenge(w, r, "withdraw"); data.Captcha == nil {
 		return
 	}
-	a.renderAs(w, "wallet", http.StatusOK, data)
+	a.renderAs(w, "wallet", code, data)
 }
 
 func pgtypeUUIDFromIface(v interface{}) pgtype.UUID {

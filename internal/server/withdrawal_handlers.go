@@ -4,7 +4,6 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"context"
 	"net/http"
-	"strconv"
 	"strings"
 	"time"
 
@@ -65,61 +64,27 @@ func (a *App) handleWallet(w http.ResponseWriter, r *http.Request) {
 func (a *App) handleWithdrawSubmit(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	_ = r.ParseForm()
-	data := a.baseData(r)
 	uid := currentUserUUID(ctx, a.sm)
-	if uid == nil {
-		writeGenericError(w)
+	if uid == nil { writeGenericError(w); return }
+	fail := func(msg string) { a.renderWalletPage(w, r, http.StatusUnprocessableEntity, msg, "") }
+	if honeypotTriggered(r) || !a.requireFriction(w, r, "withdraw") {
+		fail("Human verification failed, please try again.")
 		return
 	}
-
-	fail := func(msg string) {
-		data.Error = msg
-		a.render(w, "wallet", http.StatusUnprocessableEntity, data)
-	}
-
-	if honeypotTriggered(r) {
-		fail("submission rejected")
-		return
-	}
-
-	if a.auth == nil {
-		fail("service unavailable")
-		return
-	}
-
+	if a.auth == nil { fail("service unavailable"); return }
 	v, err := a.auth.VendorGetByUser(ctx, *uid)
-	if err != nil || v == nil || !v.Approved {
-		fail("only approved vendors can request withdrawals")
-		return
-	}
-
-	amountStr := strings.TrimSpace(r.FormValue("amount_piconero"))
+	if err != nil || v == nil || !v.Approved { fail("only approved vendors can request withdrawals"); return }
+	amountPiconero, err := parseDecimalUnits(r.FormValue("amount_piconero"), 12)
+	if err != nil { fail("invalid withdrawal amount: " + err.Error()); return }
 	xmrAddress := strings.TrimSpace(r.FormValue("xmr_address"))
-	amountXMR, err := strconv.ParseFloat(amountStr, 64)
-	if err != nil || amountXMR <= 0 {
-		fail("invalid withdrawal amount")
-		return
-	}
-
-	if xmrAddress == "" {
-		fail("monero address is required")
-		return
-	}
-
-	// Create withdrawal request (store implementation handles balance checks)
-	if ws, ok := a.vendor.(WithdrawalStore); ok {
-		amountPiconero := int64(amountXMR * 1e12)
+	if xmrAddress == "" { fail("monero address is required"); return }
+	ws, ok := a.vendor.(WithdrawalStore)
+	if !ok { fail("withdrawal service unavailable"); return }
 	if err := ws.CreateWithdrawalRequest(ctx, v.ID, amountPiconero, xmrAddress); err != nil {
-			fail("could not create withdrawal request: " + err.Error())
-			return
-		}
-	} else {
-		fail("withdrawal service unavailable")
+		fail("could not create withdrawal request: " + err.Error())
 		return
 	}
-
-	data.Flash = "Withdrawal request submitted successfully (subject to review delay)."
-	a.render(w, "wallet", http.StatusOK, data)
+	a.renderWalletPage(w, r, http.StatusOK, "", "Withdrawal request submitted (subject to review).")
 }
 
 type AdminWithdrawalView struct {

@@ -125,11 +125,10 @@ func (a *App) parseProductForm(r *http.Request, vendorID pgtype.UUID) (*ProductR
 	if len(desc) > productDescMax {
 		return nil, "description too long"
 	}
-	priceUSD, err := strconv.ParseFloat(strings.TrimSpace(r.FormValue("price_usd")), 64)
-	if err != nil || priceUSD <= 0 {
-		return nil, "price must be a positive USD amount"
+	priceCents, err := parseDecimalUnits(r.FormValue("price_usd"), 2)
+	if err != nil {
+		return nil, "price must be a positive USD amount (max 2 decimals)"
 	}
-	priceCents := int64(priceUSD * 100)
 	stock, err := strconv.ParseInt(strings.TrimSpace(r.FormValue("stock")), 10, 64)
 	if err != nil || stock < 0 {
 		return nil, "stock must be zero or more"

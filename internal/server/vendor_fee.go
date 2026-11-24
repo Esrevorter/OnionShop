@@ -6,7 +6,6 @@ import (
 	"log"
 	"net/http"
 	"strconv"
-	"strings"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -240,12 +239,11 @@ func (a *App) handleAdminSettingsPost(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/admin/settings", http.StatusSeeOther)
 		return
 	}
-	f, err := strconv.ParseFloat(strings.TrimSpace(r.FormValue("fee_usd")), 64)
-	if err != nil || f < 0 || f > 100000 {
+	cents, err := parseDecimalUnitsAllowZero(r.FormValue("fee_usd"), 2)
+	if err != nil || cents > 10000000 {
 		http.Redirect(w, r, "/admin/settings", http.StatusSeeOther)
 		return
 	}
-	cents := int64(f * 100)
 	if _, err := pool.Exec(ctx, `
 		INSERT INTO site_settings(key, value, updated_at) VALUES ('vendor_fee_usd_cents',$1,now())
 		ON CONFLICT (key) DO UPDATE SET value=EXCLUDED.value, updated_at=now()`,
