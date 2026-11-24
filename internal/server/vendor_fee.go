@@ -273,7 +273,7 @@ func StartVendorFeePoller(ctx context.Context, pool *pgxpool.Pool, provider Mone
 func pollVendorFees(ctx context.Context, pool *pgxpool.Pool, provider MoneroProvider) {
 	_, _ = pool.Exec(ctx, `UPDATE vendor_fee_payments SET status='expired'
 	                       WHERE status='awaiting_payment' AND created_at < now() - interval '12 hours'`)
-	rows, err := pool.Query(ctx, `SELECT id, amount_piconero FROM vendor_fee_payments
+	rows, err := pool.Query(ctx, `SELECT id, amount_piconero, xmr_address FROM vendor_fee_payments
 	                              WHERE status='awaiting_payment' AND created_at > now() - interval '12 hours'`)
 	if err != nil {
 		log.Printf("server: vendor fee query failed: %v", sanitizedErr(err))
@@ -283,18 +283,20 @@ func pollVendorFees(ctx context.Context, pool *pgxpool.Pool, provider MoneroProv
 	var pending []struct {
 		id   pgtype.UUID
 		pico int64
+		addr string
 	}
 	for rows.Next() {
 		var p struct {
 			id   pgtype.UUID
 			pico int64
+			addr string
 		}
-		if err := rows.Scan(&p.id, &p.pico); err == nil {
+		if err := rows.Scan(&p.id, &p.pico, &p.addr); err == nil {
 			pending = append(pending, p)
 		}
 	}
 	for _, p := range pending {
-		paid, tx, err := provider.CheckPayment(ctx, p.id, p.pico)
+		paid, tx, err := provider.CheckPayment(ctx, p.id, p.addr, p.pico)
 		if err != nil || !paid {
 			continue
 		}

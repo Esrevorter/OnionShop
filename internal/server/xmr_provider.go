@@ -18,7 +18,7 @@ import (
 // MoneroProvider defines the interface for XMR operations.
 type MoneroProvider interface {
 	CreatePaymentAddress(ctx context.Context, orderID pgtype.UUID) (addr, paymentID string, err error)
-	CheckPayment(ctx context.Context, orderID pgtype.UUID, expectedPiconero int64) (paid bool, txHash string, err error)
+	CheckPayment(ctx context.Context, orderID pgtype.UUID, address string, expectedPiconero int64) (paid bool, txHash string, err error)
 	GetBalance(ctx context.Context) (int64, error)
 	SendTransaction(ctx context.Context, destAddr string, piconero int64) (txHash string, err error)
 }
@@ -156,7 +156,7 @@ func (p *RPCProvider) CreatePaymentAddress(ctx context.Context, orderID pgtype.U
 	return resp.Address, uuidString(orderID), nil
 }
 
-func (p *RPCProvider) CheckPayment(ctx context.Context, orderID pgtype.UUID, expectedPiconero int64) (bool, string, error) {
+func (p *RPCProvider) CheckPayment(ctx context.Context, orderID pgtype.UUID, address string, expectedPiconero int64) (bool, string, error) {
 	result, err := p.callRPC(ctx, "get_transfers", map[string]interface{}{
 		"in":               true,
 		"account_index":    0,
@@ -170,13 +170,14 @@ func (p *RPCProvider) CheckPayment(ctx context.Context, orderID pgtype.UUID, exp
 			TxID          string `json:"txid"`
 			Amount        int64  `json:"amount"`
 			Confirmations int    `json:"confirmations"`
+			Address       string `json:"address"`
 		} `json:"in"`
 	}
 	if err := json.Unmarshal(result, &resp); err != nil {
 		return false, "", fmt.Errorf("unmarshal transfers: %w", err)
 	}
 	for _, t := range resp.In {
-		if t.Amount >= expectedPiconero && t.Confirmations >= p.confirmations {
+		if t.Address == address && t.Amount >= expectedPiconero && t.Confirmations >= p.confirmations {
 			return true, t.TxID, nil
 		}
 	}
@@ -221,7 +222,7 @@ type MockProvider struct{}
 func (m *MockProvider) CreatePaymentAddress(ctx context.Context, orderID pgtype.UUID) (string, string, error) {
 	return "4" + strings.Repeat("0", 94), uuidString(orderID), nil
 }
-func (m *MockProvider) CheckPayment(ctx context.Context, orderID pgtype.UUID, expectedPiconero int64) (bool, string, error) {
+func (m *MockProvider) CheckPayment(ctx context.Context, orderID pgtype.UUID, address string, expectedPiconero int64) (bool, string, error) {
 	return false, "", nil
 }
 func (m *MockProvider) GetBalance(ctx context.Context) (int64, error) { return 0, nil }

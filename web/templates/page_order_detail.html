@@ -27,13 +27,16 @@
     </table>
 
     {{if eq .Order.Status "awaiting_payment"}}
-      <div class="notice" style="margin-top: 1rem;">
-        <strong>Payment required</strong><br>
-        Send exactly <strong>{{fmtXMR .Order.XmrPiconero}} XMR</strong> to:<br>
-        <code style="word-break: break-all; display:block; margin:.5rem 0; padding:.5rem; background:var(--surface);">{{.Order.XmrAddress}}</code>
-        {{if .Order.XmrPaymentID}}<span class="muted">Payment reference: {{.Order.XmrPaymentID}}</span><br>{{end}}
-        <a href="/messages/start?order={{.Order.IDStr}}" class="button secondary" style="margin-top:.5rem; display:inline-block;">Message vendor about this order</a>
-      </div>
+      <details class="notice" style="margin-top: 1rem;">
+        <summary class="button" style="cursor:pointer; display:inline-block;">Pay {{fmtXMR .Order.XmrPiconero}} XMR</summary>
+        <div style="margin-top:.75rem;">
+          Send exactly <strong>{{fmtXMR .Order.XmrPiconero}} XMR</strong> to:<br>
+          <code style="word-break: break-all; display:block; margin:.5rem 0; padding:.5rem; background:var(--surface);">{{.Order.XmrAddress}}</code>
+          {{if .Order.XmrPaymentID}}<span class="muted">Payment reference: {{.Order.XmrPaymentID}}</span><br>{{end}}
+          <span class="muted">Detected automatically after 3 confirmations. Unpaid orders expire 12h after placement.</span><br>
+          <a href="/messages/start?order={{.Order.IDStr}}" class="button secondary" style="margin-top:.5rem; display:inline-block;">Message vendor about this order</a>
+        </div>
+      </details>
     {{end}}
 
     {{if or .CanShip .CanExtend .CanRelease}}

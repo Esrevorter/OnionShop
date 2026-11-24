@@ -6,49 +6,26 @@
     <h1>{{if .IsVendorView}}Incoming Orders{{else}}Order History{{end}}</h1>
     <a href="/" class="btn-secondary">← Browse Marketplace</a>
   </div>
-
   {{if not .Orders}}
-    <div class="empty-state">
-      {{if .IsVendorView}}<p>No incoming orders yet. New purchases will appear here.</p>{{else}}<p>You have no orders yet. <a href="/">Browse the marketplace</a> to get started.</p>{{end}}
-    </div>
+    <div class="empty-state">{{if .IsVendorView}}<p>No incoming orders yet.</p>{{else}}<p>You have no orders yet. <a href="/">Browse the marketplace</a>.</p>{{end}}</div>
   {{else}}
-    {{range .Orders}}
-    <div class="auth-card" style="margin-bottom: 1.25rem;">
-      <div style="display:flex; justify-content:space-between; flex-wrap:wrap; gap:.5rem;">
-        <p class="eyebrow">Order {{.IDStr}} · {{.CreatedAt}}</p>
-        <span class="badge {{if eq .Status "awaiting_payment"}}badge-muted{{else}}badge-success{{end}}">{{.Status}}</span>
-      </div>
-      <p class="muted">{{if $.IsVendorView}}Customer: {{.CustomerName}}{{else}}Vendor: {{.ShopName}}{{end}}{{if .ShippingTitle}} · Shipping: {{.ShippingTitle}}{{end}}</p>
-      <table class="data-table" style="font-size: 0.9rem;">
-        <tbody>
-          {{range .Items}}
-          <tr>
-            <td>{{.Title}} <span class="text-muted">(x{{.Qty}})</span></td>
-            <td style="text-align: right;">{{fmtFiat (mul .PriceUSDCents .Qty) $.PreferredCurrency}}</td>
-          </tr>
-          {{end}}
-          <tr><td>Shipping</td><td style="text-align: right;">{{fmtFiat .ShippingUSDCents $.PreferredCurrency}}</td></tr>
-          <tr style="font-weight: bold;"><td>Total</td><td style="text-align: right;">{{fmtFiat .TotalUSDCents $.PreferredCurrency}}</td></tr>
-        </tbody>
-      </table>
-      {{if not $.IsVendorView}}
-        {{if eq .Status "awaiting_payment"}}
-        <div class="notice" style="margin-top: .75rem;">
-          <strong>Payment required</strong><br>
-          Send exactly <strong>{{fmtXMR .XmrPiconero}} XMR</strong> to:<br>
-          <code style="word-break: break-all;">{{.XmrAddress}}</code>
-          {{if .XmrPaymentID}}<br><span class="muted">Payment reference: {{.XmrPaymentID}}</span>{{end}}
-          <br><a href="/messages/start?order={{.IDStr}}">Message vendor about this order</a>
-        </div>
-        {{end}}
-      {{else}}
-        <div class="form-actions" style="margin-top: .75rem;">
-          <a href="/orders/{{.IDStr}}" class="button">Manage Order</a>
-          <a href="/messages/start?order={{.IDStr}}" class="btn-secondary">Message buyer</a>
-        </div>
+  <div class="table-container">
+    <table class="data-table">
+      <thead><tr><th>Order</th><th>Placed</th><th>{{if .IsVendorView}}Customer{{else}}Vendor{{end}}</th><th>Total</th><th>Status</th><th></th></tr></thead>
+      <tbody>
+      {{range .Orders}}
+        <tr>
+          <td><a href="/orders/{{.IDStr}}"><code>{{.IDStr}}</code></a></td>
+          <td class="muted">{{.CreatedAt}}</td>
+          <td>{{if $.IsVendorView}}{{.CustomerName}}{{else}}{{.ShopName}}{{end}}</td>
+          <td>{{fmtFiat .TotalUSDCents $.PreferredCurrency}}</td>
+          <td><span class="badge {{if eq .Status "awaiting_payment"}}badge-muted{{else}}badge-success{{end}}">{{.Status}}</span></td>
+          <td><a href="/orders/{{.IDStr}}" class="button">{{if $.IsVendorView}}Manage{{else}}View / Pay{{end}}</a></td>
+        </tr>
       {{end}}
-    </div>
-    {{end}}
+      </tbody>
+    </table>
+  </div>
   {{end}}
 </section>
 {{end}}

@@ -38,9 +38,10 @@ func StartPaymentPoller(ctx context.Context, pool *pgxpool.Pool, provider Monero
 }
 
 func pollPayments(ctx context.Context, pool *pgxpool.Pool, provider MoneroProvider) error {
+	_, _ = pool.Exec(ctx, `UPDATE orders SET status='cancelled', updated_at=now() WHERE status='awaiting_payment' AND created_at <= now() - interval '12 hours'`)
 	// Find orders awaiting payment
 	rows, err := pool.Query(ctx, `
-		SELECT id, xmr_amount_piconero 
+		SELECT id, xmr_amount_piconero, xmr_address 
 		FROM orders 
 		WHERE status = 'awaiting_payment' 
 		AND created_at > now() - interval '12 hours'`)
@@ -52,13 +53,15 @@ func pollPayments(ctx context.Context, pool *pgxpool.Pool, provider MoneroProvid
 	var orders []struct{
 		id pgtype.UUID
 		pico int64
+		addr string
 	}
 	for rows.Next() {
 		var o struct{
 			id pgtype.UUID
 			pico int64
+			addr string
 		}
-		if err := rows.Scan(&o.id, &o.pico); err == nil {
+		if err := rows.Scan(&o.id, &o.pico, &o.addr); err == nil {
 			orders = append(orders, o)
 		}
 	}
@@ -70,7 +73,7 @@ func pollPayments(ctx context.Context, pool *pgxpool.Pool, provider MoneroProvid
 	log.Printf("xmr: checking %d orders for payment", len(orders))
 	
 	for _, order := range orders {
-		paid, txHash, err := provider.CheckPayment(ctx, order.id, order.pico)
+		paid, txHash, err := provider.CheckPayment(ctx, order.id, order.addr, order.pico)
 		if err != nil {
 			log.Printf("xmr: check payment failed for order %s: %v", uuidString(order.id), err)
 			continue
