@@ -57,8 +57,7 @@ func (a *App) handleOrderShip(w http.ResponseWriter, r *http.Request) {
 		WHERE id=$2`, autoRelease, id); err != nil { writeGenericError(w); return }
 
 	note := r.FormValue("shipping_note")
-	if note == "" { note = "Your order has been shipped." }
-	_, _ = pool.Exec(r.Context(), `INSERT INTO order_messages (order_id, sender_type, body) VALUES ($1,'vendor',$2)`, id, note)
+	_ = notifyOrderEvent(r.Context(), pool, id, "shipped", note)
 	http.Redirect(w, r, "/orders/"+uuidString(id), http.StatusSeeOther)
 }
 
@@ -86,8 +85,8 @@ func (a *App) handleOrderExtend(w http.ResponseWriter, r *http.Request) {
 	if _, err := pool.Exec(r.Context(), `UPDATE orders SET extended=true, auto_release_at=$1, updated_at=now() WHERE id=$2`, newRelease, id); err != nil {
 		writeGenericError(w); return
 	}
-	msg := fmt.Sprintf("Buyer extended escrow by 7 days. New deadline: %s", newRelease.Format("2006-01-02"))
-	_, _ = pool.Exec(r.Context(), `INSERT INTO order_messages (order_id, sender_type, body) VALUES ($1,'buyer',$2)`, id, msg)
+	msg := fmt.Sprintf("New deadline: %s", newRelease.Format("2006-01-02"))
+	_ = notifyOrderEvent(r.Context(), pool, id, "extended", msg)
 	http.Redirect(w, r, "/orders/"+uuidString(id), http.StatusSeeOther)
 }
 
@@ -119,7 +118,7 @@ func (a *App) handleOrderRelease(w http.ResponseWriter, r *http.Request) {
 		writeGenericError(w); return
 	}
 	_ = PostEscrowRelease(r.Context(), pool, vid, id, pico)
-	msg := fmt.Sprintf("Order #%s finalized early. Funds released to vendor.", uuidString(id)[:8])
-	_, _ = pool.Exec(r.Context(), `INSERT INTO order_messages (order_id, sender_type, body) VALUES ($1,'buyer',$2)`, id, msg)
+	msg := "Buyer confirmed receipt."
+	_ = notifyOrderEvent(r.Context(), pool, id, "released", msg)
 	http.Redirect(w, r, "/orders/"+uuidString(id), http.StatusSeeOther)
 }

@@ -38,7 +38,13 @@ func StartPaymentPoller(ctx context.Context, pool *pgxpool.Pool, provider Monero
 }
 
 func pollPayments(ctx context.Context, pool *pgxpool.Pool, provider MoneroProvider) error {
-	_, _ = pool.Exec(ctx, `UPDATE orders SET status='cancelled', updated_at=now() WHERE status='awaiting_payment' AND created_at <= now() - interval '12 hours'`)
+	expRows, _ := pool.Query(ctx, `SELECT id FROM orders WHERE status='awaiting_payment' AND created_at <= now() - interval '12 hours'`)
+	var expIDs []pgtype.UUID
+	if expRows != nil { for expRows.Next() { var e pgtype.UUID; if expRows.Scan(&e)==nil { expIDs=append(expIDs,e) } }; expRows.Close() }
+	if len(expIDs)>0 {
+		_, _ = pool.Exec(ctx, `UPDATE orders SET status='cancelled', updated_at=now() WHERE status='awaiting_payment' AND created_at <= now() - interval '12 hours'`)
+		for _, e := range expIDs { _ = notifyOrderEvent(ctx, pool, e, "cancelled", "") }
+	}
 	// Find orders awaiting payment
 	rows, err := pool.Query(ctx, `
 		SELECT id, xmr_amount_piconero, xmr_address 

@@ -8,6 +8,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 type DisputeRecord struct {
@@ -76,6 +77,7 @@ func (a *App) handleOpenDispute(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if pool, ok := a.deps.Pool.(*pgxpool.Pool); ok { _ = notifyOrderEvent(ctx, pool, oid, "disputed", reason) }
 	http.Redirect(w, r, "/account", http.StatusSeeOther)
 }
 
@@ -138,5 +140,9 @@ func (a *App) handleResolveDispute(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	if pool, ok := a.deps.Pool.(*pgxpool.Pool); ok {
+		var oid pgtype.UUID
+		if pool.QueryRow(ctx, `SELECT order_id FROM disputes WHERE id=$1`, did).Scan(&oid) == nil { _ = notifyOrderEvent(ctx, pool, oid, resolution, "") }
+	}
 	http.Redirect(w, r, "/disputes/"+disputeIDStr, http.StatusSeeOther)
 }

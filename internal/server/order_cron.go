@@ -86,6 +86,8 @@ func RunOrderCron(ctx context.Context, pool *pgxpool.Pool) error {
 			continue
 		}
 		_, err := pool.Exec(ctx, `UPDATE orders SET status='released', released_at=now(), updated_at=now() WHERE id=$1`, rel.id)
+	// notify auto-release
+	if arRows, e := pool.Query(ctx, `SELECT id FROM orders WHERE status='released' AND released_at > now() - interval '1 minute'`); e == nil { for arRows.Next() { var aid pgtype.UUID; if arRows.Scan(&aid)==nil { _ = notifyOrderEvent(ctx, pool, aid, "released", "Auto-released after inspection window.") } }; arRows.Close() }
 		if err != nil {
 			log.Printf("server: auto-release order %s failed: %v", uuidString(rel.id), err)
 			continue
