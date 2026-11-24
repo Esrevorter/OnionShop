@@ -16,7 +16,8 @@ func notifyOrder(ctx context.Context, pool *pgxpool.Pool, orderID pgtype.UUID, k
 	var customer, vendor pgtype.UUID
 	var pico, total int64
 	if err := pool.QueryRow(ctx,
-		`SELECT customer_id, vendor_id, xmr_amount_piconero, total_usd_cents FROM orders WHERE id=$1`,
+		`SELECT o.customer_id, v.user_id, o.xmr_amount_piconero, o.total_usd_cents
+		 FROM orders o JOIN vendors v ON v.id = o.vendor_id WHERE o.id=$1`,
 		orderID).Scan(&customer, &vendor, &pico, &total); err != nil {
 		return err
 	}
