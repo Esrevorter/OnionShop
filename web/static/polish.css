@@ -25,7 +25,6 @@ tbody tr:hover{background:rgba(127,214,164,.05)}
 code.crypto,.crypto,pre{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
   user-select:all;-webkit-user-select:all;word-break:break-all;white-space:pre-wrap;
   background:#0b120e;border:1px solid #24402f;border-radius:8px;padding:10px 12px;display:block;margin:8px 0}
-main{max-width:1100px;margin:0 auto;padding:24px 20px 64px}
 .grid,.products,.product-list{display:grid;gap:16px;grid-template-columns:repeat(auto-fill,minmax(240px,1fr))}
 .card,.product{background:#132019;border:1px solid #1c3325;border-radius:10px;padding:16px}
 .badge,.pill{border-radius:999px;padding:2px 10px;font-size:.8rem;font-weight:600}

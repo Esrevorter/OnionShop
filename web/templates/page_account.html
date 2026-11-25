@@ -77,7 +77,7 @@
       {{template "friction" .}}
       <input type="hidden" name="csrf_token" value="{{.CsrfToken}}">
       <label for="pgp_public_key">ASCII-armored PUBLIC key block</label>
-      <textarea id="pgp_public_key" name="pgp_public_key" rows="8" spellcheck="false"><code class="crypto">{{.PGPPublicKey}}</code></textarea>
+      <textarea id="pgp_public_key" name="pgp_public_key" rows="8" spellcheck="false">{{.PGPPublicKey}}</textarea>
       <div class="form-actions"><button type="submit"><code class="crypto">{{if .PGPPublicKey}}</code>Replace Key{{else}}Upload Key{{end}}</button></div>
     </form>
   </div>
