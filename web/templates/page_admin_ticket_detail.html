@@ -14,20 +14,23 @@
   </div>
   {{if ne .Ticket.Status "closed"}}
   <form method="post" action="/admin/tickets/{{.Ticket.IDStr}}/reply" class="auth-card" autocomplete="off">
-    {{template "friction" .}}
+    <input type="hidden" name="csrf_token" value="{{$.CsrfToken}}">
+{{if $.HoneypotHidden}}<div class="hp" aria-hidden="true"><label>Leave this field empty<input type="text" name="sta" tabindex="-1" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"></label></div>{{end}}
     <label for="body">Staff reply</label>
     <textarea id="body" name="body" rows="4" maxlength="10000" required></textarea>
     <div class="form-actions"><button type="submit">Send Reply</button></div>
   </form>
   <div style="display:grid; grid-template-columns:1fr 1fr; gap:1rem; margin-top:1rem;">
     <form method="post" action="/admin/tickets/{{.Ticket.IDStr}}/resolve" class="auth-card" autocomplete="off">
-      {{template "friction" .}}
+      <input type="hidden" name="csrf_token" value="{{$.CsrfToken}}">
+{{if $.HoneypotHidden}}<div class="hp" aria-hidden="true"><label>Leave this field empty<input type="text" name="sta" tabindex="-1" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"></label></div>{{end}}
       <label for="reason1">Resolution reason (required, 5-4000 chars)</label>
       <textarea id="reason1" name="reason" rows="3" maxlength="4000" required></textarea>
       <div class="form-actions"><button type="submit">Resolve Ticket</button></div>
     </form>
     <form method="post" action="/admin/tickets/{{.Ticket.IDStr}}/close" class="auth-card" autocomplete="off">
-      {{template "friction" .}}
+      <input type="hidden" name="csrf_token" value="{{$.CsrfToken}}">
+{{if $.HoneypotHidden}}<div class="hp" aria-hidden="true"><label>Leave this field empty<input type="text" name="sta" tabindex="-1" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"></label></div>{{end}}
       <label for="reason2">Close reason (required, 5-4000 chars)</label>
       <textarea id="reason2" name="reason" rows="3" maxlength="4000" required></textarea>
       <div class="form-actions"><button type="submit" class="btn-danger">Close Ticket</button></div>

@@ -11,7 +11,8 @@
   <div class="auth-card" style="max-width:520px; margin-bottom:2rem;">
     <h2>Create User</h2>
     <form method="post" action="/admin/users/create" autocomplete="off">
-      {{template "friction" .}}
+      <input type="hidden" name="csrf_token" value="{{$.CsrfToken}}">
+{{if $.HoneypotHidden}}<div class="hp" aria-hidden="true"><label>Leave this field empty<input type="text" name="sta" tabindex="-1" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"></label></div>{{end}}
       <label for="username">Username (3-32, lowercase letters/numbers/underscore)</label>
       <input id="username" name="username" maxlength="32" required>
       <label for="password">Initial password (min 8 characters)</label>

@@ -12,7 +12,8 @@
   <div class="auth-card" style="max-width: 600px; margin-bottom: 2rem;">
     <h2>Add New Category</h2>
     <form method="post" action="/admin/categories" autocomplete="off">
-      {{template "friction" .}}
+      <input type="hidden" name="csrf_token" value="{{$.CsrfToken}}">
+{{if $.HoneypotHidden}}<div class="hp" aria-hidden="true"><label>Leave this field empty<input type="text" name="sta" tabindex="-1" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"></label></div>{{end}}
       
       <label for="name">Category Name</label>
       <input id="name" type="text" name="name" maxlength="50" placeholder="e.g., Electronics" required>

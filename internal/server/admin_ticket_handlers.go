@@ -98,7 +98,7 @@ func (a *App) handleAdminTicketReply(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/admin/tickets", http.StatusSeeOther)
 		return
 	}
-	if honeypotTriggered(r) || !a.requireFriction(w, r, "admin") {
+	if honeypotTriggered(r) {
 		http.Redirect(w, r, "/admin/tickets", http.StatusSeeOther)
 		return
 	}
