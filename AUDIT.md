@@ -134,3 +134,22 @@ Rather than hand-rolling from zero, consider vendoring a small classless CSS bas
 3. **Resolve Auth/Authenticity:** Abandon the TLS/SPKI implementation, implement the two-step personal phrase login, and add TOTP 2FA.
 4. **Database Hardening:** Revoke `UPDATE/DELETE` on the ledger, rename Redis `CONFIG`, and enable Tor PoW.
 5. **Feature & Test Parity:** Write tests for the existing Phase 4 catalog code, document the image pipeline, and begin building Phase 5 (Cart/Checkout).
+
+
+## Closed findings — BTCPay removal and Monero settlement (verified 2026-11-24)
+
+| Finding | Evidence of closure |
+|---|---|
+| `btcpay` image digest `sha256:e63283733215...f04620f4c00000000` was a placeholder, not a real digest (pull would fail) | `btcpay` service absent from `docker-compose.yml` |
+| No `bitcoind` and no NBXplorer anywhere in the stack; `BTCPAY_CHAINS`/`BTCPAY_BTCEXPLORERURL` unset, so payment detection was impossible | no Bitcoin daemon or explorer service in compose; settlement is Monero-only |
+| `read_only: true` with only `/tmp` tmpfs left BTCPay nowhere to write keys/plugins/logs | service removed |
+| `btcpay_net` was `driver: bridge` without `internal: true`, dual-homing the service — an egress hole contradicting ARCHITECTURE §2 | network removed; remaining networks reviewed for `internal: true` |
+| `btcpaydb` reused `${DB_USER}`/`${DB_PASSWORD}` — one credential leak crossed both databases | service and `btcpay_pgdata` volume removed; no shared credentials |
+| `BTCPAY_API_URL` / `BTCPAY_API_KEY` in app environment and installer secret generation | removed from compose and `install/install.sh` |
+| Checkout hardcoded `InvoiceLink: "https://btcpay.example.com/invoice?id=test"` | replaced by real per-order subaddress creation via wallet-rpc |
+| Float conversions in the money path (`price_usd * 100`, `amountXMR * 1e12`) | `parseDecimalUnits` exact integer parsing with unit tests |
+| Withdrawal approval never moved value | marking `paid` broadcasts via `SendTransaction`, stores `tx_hash`, posts an idempotent ledger debit |
+| Buyer delivery instructions discarded at checkout | encrypted to the vendor's public key and stored in `shipping_ciphertext`; server never decrypts |
+
+Residual open items are tracked in `TASKS.md` (view-only ceremony, confirmation policy,
+stagenet rehearsal, host assertions) and `PRODUCTION_READINESS.md`.

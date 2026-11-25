@@ -37,3 +37,20 @@ make test vet lint
 ```
 CI enforces `go vet`, `staticcheck`, `golangci-lint`, `govulncheck`, and `go test`.
 Keep TASKS.md checkboxes honest: mark `[x]` only when code is committed and building.
+
+## Local gates (current)
+
+```sh
+export GOTMPDIR="$HOME/.gotmp"   # /tmp is noexec on Whonix
+sqlc generate                     # internal/store/gen is gitignored
+go build ./...
+go vet ./internal/server
+go test ./internal/server/... -count=1
+bash -n install/install.sh scripts/*.sh
+docker compose config --quiet
+docker compose build
+```
+
+Run the stack with `sudo ./install/install.sh --dev` (Debian 13). The installer
+applies migrations idempotently; `make migrate` needs DATABASE_URL from your
+environment because the installer generates a random DB password.

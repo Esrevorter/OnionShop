@@ -24,3 +24,22 @@
 - Store public PGP keys only; private key material must never touch the server.
 - Bind the app to a UNIX socket or loopback unless a reviewed contained namespace specifically requires otherwise. Never bind a public host interface.
 - TLS policy: self-signed ECDSA P-384 with the exact onion DNS SAN. **No SPKI/certificate pinning, no CA-issued certificates** (authoritative: SECURITY_AND_OPSEC.md section 1).
+
+
+## Current implementation contract (authoritative)
+- Settlement: in-house `monero-wallet-rpc` JSON-RPC client. **Do not add MoneroPay or
+  BTCPay.** Polling only; never introduce an inbound webhook or callback route.
+- Money: integer cents/piconero only. Parse decimal input with `parseDecimalUnits`
+  (or `parseDecimalUnitsAllowZero` where 0 is meaningful). **Never** `ParseFloat` in a
+  money path; aggregates over the whole ledger must use NUMERIC.
+- Payments confirm on the order's own subaddress at the exact amount after the
+  confirmation threshold. Overpayment flags for review; never auto-release.
+- Escrow: route every transition through `escrow.go` `Apply`, and keep a status guard
+  in the SQL `UPDATE`. Ledger legs stay double-entry and idempotent.
+- Privacy: only public PGP keys are stored; the server never decrypts. No client IPs,
+  no email, no third-party assets, no JavaScript.
+- TLS: self-signed ECDSA P-384 with the exact onion SAN. No CA certs, no SPKI pins,
+  no HSTS, no warning bypass.
+- Friction: mint a CAPTCHA on the GET that renders the form, or use CSRF + honeypot
+  only. An un-mintable challenge silently swallows submissions.
+- Templates: no JS; `<details>` for disclosure; `user-select:all` for copy blocks.
