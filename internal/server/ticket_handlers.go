@@ -169,7 +169,7 @@ func (a *App) handleTicketClose(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-	if honeypotTriggered(r) || !a.requireFriction(w, r, "ticket") {
+	if honeypotTriggered(r) {
 		http.Redirect(w, r, "/tickets/"+uuidString(id), http.StatusSeeOther)
 		return
 	}

@@ -59,6 +59,7 @@ func (a *App) handleWallet(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+		if data.Captcha = a.newChallenge(w, r, "account"); data.Captcha == nil { return }
 	a.render(w, "wallet", http.StatusOK, data)
 }
 

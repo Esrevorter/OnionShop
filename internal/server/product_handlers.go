@@ -94,7 +94,8 @@ func (a *App) handleProductList(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		if errors.Is(err, ErrNotFound) {
 			data.Error = "no approved vendor profile on this account"
-			a.renderAs(w, "vendor_products", http.StatusOK, data)
+				if data.Captcha = a.newChallenge(w, r, "account"); data.Captcha == nil { return }
+	a.renderAs(w, "vendor_products", http.StatusOK, data)
 			return
 		}
 		log.Printf("server: vendor row lookup failed: %v", sanitizedErr(err))
