@@ -401,8 +401,8 @@ func (a *App) RegisterAuthRoutesFull(auth AuthStore, captcha *CaptchaService, se
 	a.registerCatalogRoutes(r)
 	a.registerHelpRoutes(r)
 	a.registerWalletRoutes(r)
-	if ws, ok := catalog.(WithdrawalStore); ok {
-		a.RegisterWithdrawalRoutes(r, ws)
+	if pool, ok := a.deps.Pool.(*pgxpool.Pool); ok {
+		a.RegisterWithdrawalRoutes(r, NewPGCatalogStore(pool))
 	}
 	return nil
 }
