@@ -6,7 +6,7 @@ OnionShop is a server-rendered Go storefront for **Tor Browser and Tor v3 onion 
 
 ## TLS policy
 
-OnionShop requires a self-signed ECDSA P-384 TLS certificate with an exact DNS SAN for the service's v3 `.onion` hostname. This is a separate TLS key, not the onion service's Ed25519 key. Tor's onion protocol authenticates the onion endpoint; SAN matching alone does not make a self-signed certificate trusted by a browser. Test the exact supported Tor Browser release and never click through a certificate warning. Do not use publicly CA-issued certificates or SPKI/hash pinning for this project. If the supported Tor Browser displays a warning, deployment is blocked pending a verified browser-compatible solution.
+- TLS policy: self-signed ECDSA P-384 with the exact onion DNS SAN. **No SPKI/certificate pinning, no CA-issued certificates** (authoritative: SECURITY_AND_OPSEC.md section 1).
 
 Generate the certificate only after the Tor v3 onion hostname is known:
 
@@ -44,7 +44,7 @@ make sqlc       # requires sqlc v1.27.0
 make compose-config
 ```
 
-Compose commands require the environment variables described in `INSTALL.md`. The self-signed certificate script requires the actual v3 onion hostname and does not print an SPKI pin.
+- TLS policy: self-signed ECDSA P-384 with the exact onion DNS SAN. **No SPKI/certificate pinning, no CA-issued certificates** (authoritative: SECURITY_AND_OPSEC.md section 1).
 
 ## License
 

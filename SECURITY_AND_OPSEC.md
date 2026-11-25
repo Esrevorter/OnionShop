@@ -64,3 +64,13 @@ When deploying on Whonix, the Hidden Service **must** terminate on the **Whonix-
 ## 5. Production readiness
 
 Follow `PRODUCTION_READINESS.md`. Production requires actual Tor Browser TLS behavior testing, host/network verification, integration checks, and successful backup restoration; docs do not substitute for evidence.
+
+
+## 6. Monero settlement posture (implemented)
+- **Own node mandatory.** `monerod` runs in the AppVM; remote nodes would observe our IP, requested txids and timing.
+- **wallet-rpc is internal-only:** compose `internal: true`, **no `ports:`**. Published Docker ports install iptables ACCEPT rules ahead of host firewall rules, so publishing the wallet RPC would defeat default-deny.
+- **Dev chain:** private testnet (`--testnet --offline --fixed-difficulty 1`) with a matching `--testnet` wallet-rpc. `--regtest` is daemon-only (wallet-rpc 0.18.3.x rejects it) and `generateblocks` is regtest-only; testnet mining uses the legacy `/start_mining` endpoint. Never point a dev chain at mainnet keys.
+- **Mainnet posture before real value:** view-only wallet generated airgapped (address, private view key, restore height); the spend key never touches the server; payouts signed offline. A hot wallet changes the threat model and needs separate review.
+- **No address reuse:** one subaddress per order, never rebound. Amounts are integer piconero; the money path contains no floating point.
+- **Delivery privacy:** buyer address/instructions are encrypted to the vendor's public key at checkout; the server stores ciphertext only and performs no decryption. Vendors without a published key cannot receive orders.
+- **Refunds:** a buyer-supplied refund address is required at checkout so every refund path returns value on-chain instead of stranding it in an internal pool.

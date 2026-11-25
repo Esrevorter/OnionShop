@@ -28,6 +28,20 @@ openssl pkey -in nginx/ssl/onion.key -check -noout
 
 These checks verify certificate contents/key integrity; they do **not** prove Tor Browser acceptance or bind the TLS key to the onion identity. Complete the browser test on a clean, supported Tor Browser profile without exceptions or bypasses. If a browser warning appears, stop: the deployment is not ready under this policy.
 
+## Debian 13 quick start (minimal image)
+
+```sh
+git clone <your-repo> OnionShop && cd OnionShop
+sudo ./install/install.sh --dev
+sudo ./install/install.sh --onion <host>.onion
+sudo ./install/install.sh --whonix --onion <host>.onion
+./install/install.sh --check-only
+```
+
+Idempotent: keeps existing .env values, applies pending db/migrations/*.up.sql in order
+(tracked in schema_migrations), waits for the nginx-to-app health path. On Whonix /tmp is
+noexec: export GOTMPDIR=$HOME/.gotmp before running go test.
+
 ## Whonix Topology Setup
 
 OnionShop is designed to be deployed on a strict Whonix-Gateway / Whonix-Workstation (AppVM) split to guarantee network isolation.

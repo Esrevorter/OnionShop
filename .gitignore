@@ -12,3 +12,11 @@ __pycache__/
 CRED
 *.py
 __pycache__/
+*.swn
+*~
+bin/
+maintenance/archive/
+/*.py
+MAINTENANCE_REPORT.txt
+*_report.txt
+secrets/

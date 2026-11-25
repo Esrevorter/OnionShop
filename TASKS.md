@@ -445,3 +445,11 @@ Phases 1–8 application features are implemented. The initial FIXME checklist's
       that, already written — revisit only if the dependency becomes a liability.
 
 See `PRODUCTION_READINESS.md`; a running local stack is not production clearance.
+
+
+### 10.10 Implementation decision (settled)
+- **MoneroPay was NOT adopted.** Settlement uses the in-house `monero-wallet-rpc` client described as the alternative in 10.9: `create_address` per order, `get_transfers` observation, confirmation and exact-amount gating in our own state machine. Rationale: one fewer daemon, no unauthenticated HTTP spend surface, no extra database, polling invariant preserved verbatim.
+- **Money representation (10.4) is float-free:** `parseDecimalUnits` / `parseDecimalUnitsAllowZero` convert decimal strings to integer cents/piconero with precision, sign and int64-overflow rejection; unit tests cover the 12-decimal round-trip and overflow. Listing price, vendor fee and withdrawal amount all use it.
+- **Confirmation gating:** exact amount plus threshold confirmations on the order's own subaddress; overpayment flags for manual review without state change; underpayment records the observed delta.
+- **Refunds and payouts** broadcast on-chain and persist `tx_hash`; ledger legs remain idempotent.
+- **Still open before mainnet:** view-only key ceremony, value-scaled confirmation policy, `double_spend_seen` rejection, stagenet end-to-end rehearsal, and the host/CI assertions in 10.8.

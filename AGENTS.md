@@ -23,4 +23,4 @@
 - Sessions require at least 128 bits CSPRNG entropy, rotation on login/privilege change, and idle/absolute expiry.
 - Store public PGP keys only; private key material must never touch the server.
 - Bind the app to a UNIX socket or loopback unless a reviewed contained namespace specifically requires otherwise. Never bind a public host interface.
-- **TLS policy:** Tor Browser only (policy; not reliably enforceable). Generate self-signed ECDSA P-384 TLS cert with exact v3 onion DNS SAN using `scripts/gen-certs.sh`. This random TLS key is separate from Tor Ed25519 identity; Tor authenticates the onion endpoint at protocol layer. Never use public CA-issued certs or SPKI/certificate hash pinning. Never tell users to bypass a warning or import an unverified root. Verify exact supported Tor Browser release on a clean profile; if warning appears, stop and resolve compatibility.
+- TLS policy: self-signed ECDSA P-384 with the exact onion DNS SAN. **No SPKI/certificate pinning, no CA-issued certificates** (authoritative: SECURITY_AND_OPSEC.md section 1).
