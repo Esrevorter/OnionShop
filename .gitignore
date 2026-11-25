@@ -25,3 +25,5 @@ secrets/
 nginx/ssl/*.key
 nginx/ssl/*.crt
 nginx/ssl/
+vet/roles.json
+vet/*.md
