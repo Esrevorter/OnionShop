@@ -94,14 +94,14 @@ func (a *App) handleShippingCreate(w http.ResponseWriter, r *http.Request) {
 	if etaDays < 1 || etaDays > 60 {
 		etaDays = 14
 	}
-	priceUSD, err := strconv.ParseFloat(strings.TrimSpace(r.FormValue("price_usd")), 64)
-	if err != nil || priceUSD < 0 {
+	priceCents, err := parseDecimalUnits(r.FormValue("price_usd"), 2)
+	if err != nil  {
 		http.Redirect(w, r, "/vendor/shipping?error=not_found", http.StatusSeeOther)
 		return
 	}
 	if err := ShippingCreate(r.Context(), pool, ShippingOption{
 		VendorID: vrow.ID, Title: title, Description: "",
-		PriceUSDCents: int64(priceUSD * 100), Eta: eta, EtaDays: etaDays, Active: true,
+		PriceUSDCents: priceCents, Eta: eta, EtaDays: etaDays, Active: true,
 	}); err != nil {
 		writeGenericError(w)
 		return

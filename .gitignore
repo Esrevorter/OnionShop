@@ -22,3 +22,6 @@ secrets/
 *.bak*
 *.orig
 *.rej
+nginx/ssl/*.key
+nginx/ssl/*.crt
+nginx/ssl/

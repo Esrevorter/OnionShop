@@ -43,7 +43,9 @@ func pollPayments(ctx context.Context, pool *pgxpool.Pool, provider MoneroProvid
 	var expIDs []pgtype.UUID
 	if expRows != nil { for expRows.Next() { var e pgtype.UUID; if expRows.Scan(&e)==nil { expIDs=append(expIDs,e) } }; expRows.Close() }
 	if len(expIDs)>0 {
-		_, _ = pool.Exec(ctx, `UPDATE orders SET status='cancelled', updated_at=now() WHERE status='awaiting_payment' AND created_at <= now() - interval '12 hours'`)
+		if _, err := pool.Exec(ctx, `UPDATE orders SET status='cancelled', updated_at=now() WHERE status='awaiting_payment' AND created_at <= now() - interval '12 hours'`); err != nil {
+			log.Printf("server: order state write failed: %v", err)
+		}
 		for _, e := range expIDs { _ = notifyOrderEvent(ctx, pool, e, "cancelled", "") }
 	}
 	// Find orders awaiting payment
@@ -86,12 +88,16 @@ func pollPayments(ctx context.Context, pool *pgxpool.Pool, provider MoneroProvid
 		if err != nil { log.Printf("xmr: observe failed for order %s: %v", uuidString(order.id), err); continue }
 		if !found { continue }
 		if amt > order.pico {
-			_, _ = pool.Exec(ctx, `UPDATE orders SET payment_flag='over', observed_piconero=$1 WHERE id=$2`, amt, order.id)
+			if _, err := pool.Exec(ctx, `UPDATE orders SET payment_flag='over', observed_piconero=$1 WHERE id=$2`, amt, order.id); err != nil {
+				log.Printf("server: order state write failed: %v", err)
+			}
 			_ = notifyOrderEvent(ctx, pool, order.id, "overpaid", "")
 			continue
 		}
 		if amt < order.pico {
-			_, _ = pool.Exec(ctx, `UPDATE orders SET payment_flag='under', observed_piconero=$1 WHERE id=$2`, amt, order.id)
+			if _, err := pool.Exec(ctx, `UPDATE orders SET payment_flag='under', observed_piconero=$1 WHERE id=$2`, amt, order.id); err != nil {
+				log.Printf("server: order state write failed: %v", err)
+			}
 			_ = notifyOrderEvent(ctx, pool, order.id, "underpaid", "")
 			continue
 		}

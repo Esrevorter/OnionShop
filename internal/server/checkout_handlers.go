@@ -336,7 +336,9 @@ func (a *App) handleCheckoutSubmit(w http.ResponseWriter, r *http.Request) {
 		for _, l := range lines {
 			tag, uerr := pool.Exec(ctx, `UPDATE products SET stock = stock - $1 WHERE id=$2 AND stock >= $1`, l.qty, l.pid)
 			if uerr != nil || tag.RowsAffected() == 0 {
-				_, _ = pool.Exec(ctx, `DELETE FROM orders WHERE checkout_ref=$1`, checkoutRef)
+				if _, err := pool.Exec(ctx, `DELETE FROM orders WHERE checkout_ref=$1`, checkoutRef); err != nil {
+					log.Printf("server: checkout rollback failed: %v", err)
+				}
 				fail("An item in your cart went out of stock. Please refresh your cart.")
 				return
 			}
@@ -354,7 +356,9 @@ func (a *App) handleCheckoutSubmit(w http.ResponseWriter, r *http.Request) {
 		for _, l := range lines {
 			tag, uerr := pool.Exec(ctx, `UPDATE products SET stock = stock - $1 WHERE id=$2 AND stock >= $1`, l.qty, l.pid)
 			if uerr != nil || tag.RowsAffected() == 0 {
-				_, _ = pool.Exec(ctx, `DELETE FROM orders WHERE checkout_ref=$1`, checkoutRef)
+				if _, err := pool.Exec(ctx, `DELETE FROM orders WHERE checkout_ref=$1`, checkoutRef); err != nil {
+					log.Printf("server: checkout rollback failed: %v", err)
+				}
 				fail("An item in your cart went out of stock. Please refresh your cart.")
 				return
 			}
@@ -381,7 +385,9 @@ func (a *App) handleCheckoutSubmit(w http.ResponseWriter, r *http.Request) {
 		_ = pool.QueryRow(ctx, `SELECT user_id FROM vendors WHERE id=$1`, vendorUUID).Scan(&vendorUser)
 		cipher, cerr := encryptToVendor(ctx, pool, vendorUser, delivery)
 		if cerr != nil {
-			_, _ = pool.Exec(ctx, `DELETE FROM orders WHERE checkout_ref=$1`, checkoutRef)
+			if _, err := pool.Exec(ctx, `DELETE FROM orders WHERE checkout_ref=$1`, checkoutRef); err != nil {
+				log.Printf("server: checkout rollback failed: %v", err)
+			}
 			fail("A vendor in your cart must publish a PGP key before accepting orders (your address is encrypted to them).")
 			return
 		}

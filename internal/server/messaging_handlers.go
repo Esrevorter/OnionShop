@@ -156,7 +156,7 @@ func (a *App) handleMessageReply(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-	if honeypotTriggered(r) || !a.requireFriction(w, r, "message") {
+	if honeypotTriggered(r) {
 		http.Redirect(w, r, "/messages/"+uuidString(tid), http.StatusSeeOther)
 		return
 	}

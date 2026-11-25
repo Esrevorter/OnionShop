@@ -1,0 +1,884 @@
+{
+  "commit": "14bf57c9a368e7a61df4e3086b62c6155dfb9a79",
+  "sync": true,
+  "findings": [
+    {
+      "sev": "CRITICAL",
+      "cat": "supply-chain",
+      "title": "Image ships a committed binary",
+      "ev": "Dockerfile",
+      "impact": "Deployed code is a stale artefact, not the audited source; patches never reach production.",
+      "fix": "Build from source in a multi-stage Dockerfile."
+    },
+    {
+      "sev": "CRITICAL",
+      "cat": "secrets",
+      "title": "Secret file tracked in git: nginx/ssl/onion.key",
+      "ev": "nginx/ssl/onion.key",
+      "impact": "Credentials/keys published to the remote.",
+      "fix": "git rm --cached, rotate the secret, purge history."
+    },
+    {
+      "sev": "HIGH",
+      "cat": "money",
+      "title": "Floating point in a money path",
+      "ev": "internal/server/vendor_fee.go:208  FeeUSD:   strconv.FormatFloat(float64(cents)/100, 'f', 2, 64),",
+      "impact": "Rounding drift breaks exact-amount payment matching and ledger balance.",
+      "fix": "Use parseDecimalUnits / integer minor units end to end."
+    },
+    {
+      "sev": "HIGH",
+      "cat": "money",
+      "title": "Floating point in a money path",
+      "ev": "internal/server/shipping_handlers.go:97  priceUSD, err := strconv.ParseFloat(strings.TrimSpace(r.FormValue(\"price_usd\")), 64)",
+      "impact": "Rounding drift breaks exact-amount payment matching and ledger balance.",
+      "fix": "Use parseDecimalUnits / integer minor units end to end."
+    },
+    {
+      "sev": "HIGH",
+      "cat": "money",
+      "title": "Floating point in a money path",
+      "ev": "internal/server/order_notifications.go:32  xmr := float64(pico) / 1e12",
+      "impact": "Rounding drift breaks exact-amount payment matching and ledger balance.",
+      "fix": "Use parseDecimalUnits / integer minor units end to end."
+    },
+    {
+      "sev": "HIGH",
+      "cat": "friction",
+      "title": "CAPTCHA-gated POST but no GET mints a challenge: /messages/{{.ThreadID}}/reply",
+      "ev": "web/templates/page_message_thread.html / handler handleMessageReply",
+      "impact": "Every submission is silently swallowed (known bug class).",
+      "fix": "Mint the challenge on the rendering GET, or drop the friction gate."
+    },
+    {
+      "sev": "HIGH",
+      "cat": "friction",
+      "title": "CAPTCHA-gated POST but no GET mints a challenge: /tickets/{{.Ticket.IDStr}}/reply",
+      "ev": "web/templates/page_ticket_detail.html / handler handleTicketReply",
+      "impact": "Every submission is silently swallowed (known bug class).",
+      "fix": "Mint the challenge on the rendering GET, or drop the friction gate."
+    },
+    {
+      "sev": "HIGH",
+      "cat": "friction",
+      "title": "CAPTCHA-gated POST but no GET mints a challenge: /tickets/{{.Ticket.IDStr}}/close",
+      "ev": "web/templates/page_ticket_detail.html / handler handleTicketClose",
+      "impact": "Every submission is silently swallowed (known bug class).",
+      "fix": "Mint the challenge on the rendering GET, or drop the friction gate."
+    },
+    {
+      "sev": "HIGH",
+      "cat": "refunds",
+      "title": "Orders without a refund address",
+      "ev": "3",
+      "impact": "Refund path cannot return value to the buyer.",
+      "fix": "Backfill or block checkout without it."
+    },
+    {
+      "sev": "MEDIUM",
+      "cat": "integrity",
+      "title": "Financial/state write with discarded error",
+      "ev": "internal/server/dispute_handlers.go:87  _, _ = pool.Exec(ctx, `UPDATE orders SET status='disputed', updated_at=now() WHERE id=$1 AND status IN ('in_escrow','shipped')`, oid)",
+      "impact": "A failed UPDATE/INSERT is silently treated as success; state and ledger can diverge.",
+      "fix": "Check the error and RowsAffected; abort or log-and-compensate on failure."
+    },
+    {
+      "sev": "MEDIUM",
+      "cat": "integrity",
+      "title": "Financial/state write with discarded error",
+      "ev": "internal/server/checkout_handlers.go:339  _, _ = pool.Exec(ctx, `DELETE FROM orders WHERE checkout_ref=$1`, checkoutRef)",
+      "impact": "A failed UPDATE/INSERT is silently treated as success; state and ledger can diverge.",
+      "fix": "Check the error and RowsAffected; abort or log-and-compensate on failure."
+    },
+    {
+      "sev": "MEDIUM",
+      "cat": "integrity",
+      "title": "Financial/state write with discarded error",
+      "ev": "internal/server/checkout_handlers.go:357  _, _ = pool.Exec(ctx, `DELETE FROM orders WHERE checkout_ref=$1`, checkoutRef)",
+      "impact": "A failed UPDATE/INSERT is silently treated as success; state and ledger can diverge.",
+      "fix": "Check the error and RowsAffected; abort or log-and-compensate on failure."
+    },
+    {
+      "sev": "MEDIUM",
+      "cat": "integrity",
+      "title": "Financial/state write with discarded error",
+      "ev": "internal/server/checkout_handlers.go:384  _, _ = pool.Exec(ctx, `DELETE FROM orders WHERE checkout_ref=$1`, checkoutRef)",
+      "impact": "A failed UPDATE/INSERT is silently treated as success; state and ledger can diverge.",
+      "fix": "Check the error and RowsAffected; abort or log-and-compensate on failure."
+    },
+    {
+      "sev": "MEDIUM",
+      "cat": "integrity",
+      "title": "Financial/state write with discarded error",
+      "ev": "internal/server/payment_poller.go:46  _, _ = pool.Exec(ctx, `UPDATE orders SET status='cancelled', updated_at=now() WHERE status='awaiting_payment' AND created_at <= now() - inte",
+      "impact": "A failed UPDATE/INSERT is silently treated as success; state and ledger can diverge.",
+      "fix": "Check the error and RowsAffected; abort or log-and-compensate on failure."
+    },
+    {
+      "sev": "MEDIUM",
+      "cat": "integrity",
+      "title": "Financial/state write with discarded error",
+      "ev": "internal/server/payment_poller.go:89  _, _ = pool.Exec(ctx, `UPDATE orders SET payment_flag='over', observed_piconero=$1 WHERE id=$2`, amt, order.id)",
+      "impact": "A failed UPDATE/INSERT is silently treated as success; state and ledger can diverge.",
+      "fix": "Check the error and RowsAffected; abort or log-and-compensate on failure."
+    },
+    {
+      "sev": "MEDIUM",
+      "cat": "integrity",
+      "title": "Financial/state write with discarded error",
+      "ev": "internal/server/payment_poller.go:94  _, _ = pool.Exec(ctx, `UPDATE orders SET payment_flag='under', observed_piconero=$1 WHERE id=$2`, amt, order.id)",
+      "impact": "A failed UPDATE/INSERT is silently treated as success; state and ledger can diverge.",
+      "fix": "Check the error and RowsAffected; abort or log-and-compensate on failure."
+    },
+    {
+      "sev": "MEDIUM",
+      "cat": "integrity",
+      "title": "Financial/state write with discarded error",
+      "ev": "internal/server/withdrawal_handlers.go:160  _, _ = pool.Exec(ctx, `UPDATE withdrawals SET tx_hash=$2 WHERE id=$1`, wid, tx)",
+      "impact": "A failed UPDATE/INSERT is silently treated as success; state and ledger can diverge.",
+      "fix": "Check the error and RowsAffected; abort or log-and-compensate on failure."
+    },
+    {
+      "sev": "MEDIUM",
+      "cat": "integrity",
+      "title": "Financial/state write with discarded error",
+      "ev": "internal/server/order_notifications.go:87  _, _ = pool.Exec(ctx, `UPDATE orders SET refund_tx=$1 WHERE id=$2`, tx, orderID)",
+      "impact": "A failed UPDATE/INSERT is silently treated as success; state and ledger can diverge.",
+      "fix": "Check the error and RowsAffected; abort or log-and-compensate on failure."
+    }
+  ],
+  "review": [
+    {
+      "sev": "INFO",
+      "cat": "provenance",
+      "title": "Uncommitted working-tree changes present",
+      "ev": "M DECISIONS_REPORT.txt",
+      "impact": "Audit covers local state, not a published commit.",
+      "fix": "Commit or stash, then re-run."
+    },
+    {
+      "sev": "HIGH",
+      "cat": "xss",
+      "title": "template.HTML/URL on non-literal",
+      "ev": "internal/server/auth_handlers.go  template.HTML(strings.Join(out, \" \")",
+      "impact": "Bypasses contextual auto-escaping.",
+      "fix": "Escape explicitly or keep the value as plain text."
+    },
+    {
+      "sev": "MEDIUM",
+      "cat": "resource",
+      "title": "Query rows never closed in listLimit",
+      "ev": "internal/server/catalog_handlers.go:57",
+      "impact": "Connection-pool exhaustion under load.",
+      "fix": "defer rows.Close() immediately after the error check."
+    },
+    {
+      "sev": "MEDIUM",
+      "cat": "resource",
+      "title": "Query rows never closed in listOffset",
+      "ev": "internal/server/catalog_handlers.go:77",
+      "impact": "Connection-pool exhaustion under load.",
+      "fix": "defer rows.Close() immediately after the error check."
+    },
+    {
+      "sev": "MEDIUM",
+      "cat": "resource",
+      "title": "Query rows never closed in handleSearch",
+      "ev": "internal/server/catalog_handlers.go:125",
+      "impact": "Connection-pool exhaustion under load.",
+      "fix": "defer rows.Close() immediately after the error check."
+    },
+    {
+      "sev": "HIGH",
+      "cat": "privacy",
+      "title": "Client IP referenced",
+      "ev": "internal/server/headers.go:60  \"X-Forwarded-For\", \"X-Forwarded-Host\", \"X-Forwarded-Proto\",",
+      "impact": "Policy forbids logging/using client IPs; also useless behind Tor.",
+      "fix": "Rate-limit by authenticated identity; remove IP handling."
+    },
+    {
+      "sev": "MEDIUM",
+      "cat": "resource",
+      "title": "Query rows never closed in handleReviewList",
+      "ev": "internal/server/vendor_handlers.go:377",
+      "impact": "Connection-pool exhaustion under load.",
+      "fix": "defer rows.Close() immediately after the error check."
+    },
+    {
+      "sev": "MEDIUM",
+      "cat": "resource",
+      "title": "Query rows never closed in handleShippingList",
+      "ev": "internal/server/shipping_handlers.go:31",
+      "impact": "Connection-pool exhaustion under load.",
+      "fix": "defer rows.Close() immediately after the error check."
+    },
+    {
+      "sev": "MEDIUM",
+      "cat": "resource",
+      "title": "Query rows never closed in handleMessageStart",
+      "ev": "internal/server/messaging_handlers.go:62",
+      "impact": "Connection-pool exhaustion under load.",
+      "fix": "defer rows.Close() immediately after the error check."
+    },
+    {
+      "sev": "HIGH",
+      "cat": "injection",
+      "title": "SQL appears dynamically built",
+      "ev": "internal/server/order_notifications.go:37  _ = pool.QueryRow(ctx, `SELECT COUNT(*) FROM messages WHERE thread_id=$1 AND body LIKE $2`, threadID, body[:40]+\"%\").Scan(&n)",
+      "impact": "If any operand is user-controlled this is SQL injection.",
+      "fix": "Use parameterised queries ($1\u2026) exclusively; never interpolate values."
+    },
+    {
+      "sev": "HIGH",
+      "cat": "secrets",
+      "title": "Possible secret in log output",
+      "ev": "cmd/onionshop/main.go:191  log.Print(\"SESSION_HASH_KEY unset: generating ephemeral CAPTCHA secret (dev only)\")",
+      "impact": "Secrets in logs survive seizure and log shipping.",
+      "fix": "Log identifiers only."
+    },
+    {
+      "sev": "HIGH",
+      "cat": "authz",
+      "title": "Object-id handler without visible ownership predicate: handleAdminSetRole",
+      "ev": "internal/server/admin_user_admin.go:90",
+      "impact": "Possible IDOR: any authenticated user may act on another's object.",
+      "fix": "Bind every lookup to the session identity (or an explicit admin role check)."
+    },
+    {
+      "sev": "HIGH",
+      "cat": "authz",
+      "title": "Object-id handler without visible ownership predicate: handleOrderDetail",
+      "ev": "internal/server/orders_page.go:184",
+      "impact": "Possible IDOR: any authenticated user may act on another's object.",
+      "fix": "Bind every lookup to the session identity (or an explicit admin role check)."
+    },
+    {
+      "sev": "HIGH",
+      "cat": "authz",
+      "title": "Object-id handler without visible ownership predicate: handleAdminForceCancel",
+      "ev": "internal/server/admin_order_handlers.go:59",
+      "impact": "Possible IDOR: any authenticated user may act on another's object.",
+      "fix": "Bind every lookup to the session identity (or an explicit admin role check)."
+    },
+    {
+      "sev": "HIGH",
+      "cat": "authz",
+      "title": "Object-id handler without visible ownership predicate: handleOrderShip",
+      "ev": "internal/server/order_actions.go:26",
+      "impact": "Possible IDOR: any authenticated user may act on another's object.",
+      "fix": "Bind every lookup to the session identity (or an explicit admin role check)."
+    },
+    {
+      "sev": "HIGH",
+      "cat": "authz",
+      "title": "Object-id handler without visible ownership predicate: handleOrderExtend",
+      "ev": "internal/server/order_actions.go:65",
+      "impact": "Possible IDOR: any authenticated user may act on another's object.",
+      "fix": "Bind every lookup to the session identity (or an explicit admin role check)."
+    },
+    {
+      "sev": "HIGH",
+      "cat": "authz",
+      "title": "Object-id handler without visible ownership predicate: handleOrderRelease",
+      "ev": "internal/server/order_actions.go:94",
+      "impact": "Possible IDOR: any authenticated user may act on another's object.",
+      "fix": "Bind every lookup to the session identity (or an explicit admin role check)."
+    },
+    {
+      "sev": "HIGH",
+      "cat": "authz",
+      "title": "Object-id handler without visible ownership predicate: handleOrderCancel",
+      "ev": "internal/server/order_actions.go:127",
+      "impact": "Possible IDOR: any authenticated user may act on another's object.",
+      "fix": "Bind every lookup to the session identity (or an explicit admin role check)."
+    },
+    {
+      "sev": "HIGH",
+      "cat": "authz",
+      "title": "Object-id handler without visible ownership predicate: handleAdminResetPassword",
+      "ev": "internal/server/admin_handlers.go:290",
+      "impact": "Possible IDOR: any authenticated user may act on another's object.",
+      "fix": "Bind every lookup to the session identity (or an explicit admin role check)."
+    },
+    {
+      "sev": "HIGH",
+      "cat": "authz",
+      "title": "Object-id handler without visible ownership predicate: handleMessageDelete",
+      "ev": "internal/server/messaging_handlers.go:191",
+      "impact": "Possible IDOR: any authenticated user may act on another's object.",
+      "fix": "Bind every lookup to the session identity (or an explicit admin role check)."
+    },
+    {
+      "sev": "HIGH",
+      "cat": "authz",
+      "title": "Object-id handler without visible ownership predicate: handleAdminDisputeDetail",
+      "ev": "internal/server/admin_dispute_handlers.go:65",
+      "impact": "Possible IDOR: any authenticated user may act on another's object.",
+      "fix": "Bind every lookup to the session identity (or an explicit admin role check)."
+    },
+    {
+      "sev": "HIGH",
+      "cat": "authz",
+      "title": "Object-id handler without visible ownership predicate: handleAdminApproveVendor",
+      "ev": "internal/server/admin_vendor_queue.go:86",
+      "impact": "Possible IDOR: any authenticated user may act on another's object.",
+      "fix": "Bind every lookup to the session identity (or an explicit admin role check)."
+    },
+    {
+      "sev": "HIGH",
+      "cat": "authz",
+      "title": "Object-id handler without visible ownership predicate: handleAdminRejectVendor",
+      "ev": "internal/server/admin_vendor_queue.go:110",
+      "impact": "Possible IDOR: any authenticated user may act on another's object.",
+      "fix": "Bind every lookup to the session identity (or an explicit admin role check)."
+    },
+    {
+      "sev": "HIGH",
+      "cat": "authz",
+      "title": "Object-id handler without visible ownership predicate: handleAdminTicketDetail",
+      "ev": "internal/server/admin_ticket_handlers.go:53",
+      "impact": "Possible IDOR: any authenticated user may act on another's object.",
+      "fix": "Bind every lookup to the session identity (or an explicit admin role check)."
+    },
+    {
+      "sev": "HIGH",
+      "cat": "authz",
+      "title": "Object-id handler without visible ownership predicate: handleAdminTicketReply",
+      "ev": "internal/server/admin_ticket_handlers.go:90",
+      "impact": "Possible IDOR: any authenticated user may act on another's object.",
+      "fix": "Bind every lookup to the session identity (or an explicit admin role check)."
+    },
+    {
+      "sev": "LOW",
+      "cat": "resilience",
+      "title": "No mem_limit on security_opt",
+      "ev": "docker-compose.yml",
+      "impact": "One leaking service can OOM the host.",
+      "fix": "Set mem_limit and pids_limit."
+    },
+    {
+      "sev": "LOW",
+      "cat": "resilience",
+      "title": "No pids_limit on security_opt",
+      "ev": "docker-compose.yml",
+      "impact": "Fork bomb / thread leak unbounded.",
+      "fix": "Set pids_limit."
+    },
+    {
+      "sev": "LOW",
+      "cat": "resilience",
+      "title": "No healthcheck on security_opt",
+      "ev": "docker-compose.yml",
+      "impact": "Dependents may start against an unready service.",
+      "fix": "Add a real readiness healthcheck."
+    },
+    {
+      "sev": "LOW",
+      "cat": "resilience",
+      "title": "No mem_limit on tmpfs",
+      "ev": "docker-compose.yml",
+      "impact": "One leaking service can OOM the host.",
+      "fix": "Set mem_limit and pids_limit."
+    },
+    {
+      "sev": "LOW",
+      "cat": "resilience",
+      "title": "No pids_limit on tmpfs",
+      "ev": "docker-compose.yml",
+      "impact": "Fork bomb / thread leak unbounded.",
+      "fix": "Set pids_limit."
+    },
+    {
+      "sev": "LOW",
+      "cat": "resilience",
+      "title": "No healthcheck on tmpfs",
+      "ev": "docker-compose.yml",
+      "impact": "Dependents may start against an unready service.",
+      "fix": "Add a real readiness healthcheck."
+    },
+    {
+      "sev": "LOW",
+      "cat": "resilience",
+      "title": "No mem_limit on logging",
+      "ev": "docker-compose.yml",
+      "impact": "One leaking service can OOM the host.",
+      "fix": "Set mem_limit and pids_limit."
+    },
+    {
+      "sev": "LOW",
+      "cat": "resilience",
+      "title": "No pids_limit on logging",
+      "ev": "docker-compose.yml",
+      "impact": "Fork bomb / thread leak unbounded.",
+      "fix": "Set pids_limit."
+    },
+    {
+      "sev": "LOW",
+      "cat": "resilience",
+      "title": "No healthcheck on logging",
+      "ev": "docker-compose.yml",
+      "impact": "Dependents may start against an unready service.",
+      "fix": "Add a real readiness healthcheck."
+    },
+    {
+      "sev": "INFO",
+      "cat": "exposure",
+      "title": "Published ports on nginx",
+      "ev": "${NGINX_BIND_IP:-127.0.0.1}:8080:8080, ${NGINX_BIND_IP:-127.0.0.1}:8443:8443",
+      "impact": "Expected for nginx only; verify bind address and firewall.",
+      "fix": "Confirm NGINX_BIND_IP + Gateway-only rule."
+    },
+    {
+      "sev": "MEDIUM",
+      "cat": "supply-chain",
+      "title": "Mutable image tag on nginx",
+      "ev": "nginx:1.27-alpine",
+      "impact": "Tag can be re-pushed; builds are not reproducible.",
+      "fix": "Pin by digest after verifying upstream."
+    },
+    {
+      "sev": "MEDIUM",
+      "cat": "supply-chain",
+      "title": "Mutable image tag on app",
+      "ev": "onionshop-app:local",
+      "impact": "Tag can be re-pushed; builds are not reproducible.",
+      "fix": "Pin by digest after verifying upstream."
+    },
+    {
+      "sev": "MEDIUM",
+      "cat": "supply-chain",
+      "title": "Mutable image tag on postgres",
+      "ev": "postgres:16-alpine",
+      "impact": "Tag can be re-pushed; builds are not reproducible.",
+      "fix": "Pin by digest after verifying upstream."
+    },
+    {
+      "sev": "MEDIUM",
+      "cat": "supply-chain",
+      "title": "Mutable image tag on redis",
+      "ev": "redis:7-alpine",
+      "impact": "Tag can be re-pushed; builds are not reproducible.",
+      "fix": "Pin by digest after verifying upstream."
+    },
+    {
+      "sev": "MEDIUM",
+      "cat": "supply-chain",
+      "title": "Mutable image tag on monero-wallet-rpc",
+      "ev": "${WALLET_RPC_IMAGE:-ghcr.io/sethforprivacy/simple-monero-wallet-rpc:v0.18.3.4}",
+      "impact": "Tag can be re-pushed; builds are not reproducible.",
+      "fix": "Pin by digest after verifying upstream."
+    },
+    {
+      "sev": "LOW",
+      "cat": "resilience",
+      "title": "No healthcheck on monero-wallet-rpc",
+      "ev": "docker-compose.yml",
+      "impact": "Dependents may start against an unready service.",
+      "fix": "Add a real readiness healthcheck."
+    },
+    {
+      "sev": "LOW",
+      "cat": "resilience",
+      "title": "No mem_limit on pgdata",
+      "ev": "docker-compose.yml",
+      "impact": "One leaking service can OOM the host.",
+      "fix": "Set mem_limit and pids_limit."
+    },
+    {
+      "sev": "LOW",
+      "cat": "resilience",
+      "title": "No pids_limit on pgdata",
+      "ev": "docker-compose.yml",
+      "impact": "Fork bomb / thread leak unbounded.",
+      "fix": "Set pids_limit."
+    },
+    {
+      "sev": "LOW",
+      "cat": "resilience",
+      "title": "No healthcheck on pgdata",
+      "ev": "docker-compose.yml",
+      "impact": "Dependents may start against an unready service.",
+      "fix": "Add a real readiness healthcheck."
+    },
+    {
+      "sev": "LOW",
+      "cat": "resilience",
+      "title": "No mem_limit on backup_data",
+      "ev": "docker-compose.yml",
+      "impact": "One leaking service can OOM the host.",
+      "fix": "Set mem_limit and pids_limit."
+    },
+    {
+      "sev": "LOW",
+      "cat": "resilience",
+      "title": "No pids_limit on backup_data",
+      "ev": "docker-compose.yml",
+      "impact": "Fork bomb / thread leak unbounded.",
+      "fix": "Set pids_limit."
+    },
+    {
+      "sev": "LOW",
+      "cat": "resilience",
+      "title": "No healthcheck on backup_data",
+      "ev": "docker-compose.yml",
+      "impact": "Dependents may start against an unready service.",
+      "fix": "Add a real readiness healthcheck."
+    },
+    {
+      "sev": "LOW",
+      "cat": "resilience",
+      "title": "No mem_limit on appsock",
+      "ev": "docker-compose.yml",
+      "impact": "One leaking service can OOM the host.",
+      "fix": "Set mem_limit and pids_limit."
+    },
+    {
+      "sev": "LOW",
+      "cat": "resilience",
+      "title": "No pids_limit on appsock",
+      "ev": "docker-compose.yml",
+      "impact": "Fork bomb / thread leak unbounded.",
+      "fix": "Set pids_limit."
+    },
+    {
+      "sev": "LOW",
+      "cat": "resilience",
+      "title": "No healthcheck on appsock",
+      "ev": "docker-compose.yml",
+      "impact": "Dependents may start against an unready service.",
+      "fix": "Add a real readiness healthcheck."
+    },
+    {
+      "sev": "LOW",
+      "cat": "resilience",
+      "title": "No mem_limit on uploads_data",
+      "ev": "docker-compose.yml",
+      "impact": "One leaking service can OOM the host.",
+      "fix": "Set mem_limit and pids_limit."
+    },
+    {
+      "sev": "LOW",
+      "cat": "resilience",
+      "title": "No pids_limit on uploads_data",
+      "ev": "docker-compose.yml",
+      "impact": "Fork bomb / thread leak unbounded.",
+      "fix": "Set pids_limit."
+    },
+    {
+      "sev": "LOW",
+      "cat": "resilience",
+      "title": "No healthcheck on uploads_data",
+      "ev": "docker-compose.yml",
+      "impact": "Dependents may start against an unready service.",
+      "fix": "Add a real readiness healthcheck."
+    },
+    {
+      "sev": "LOW",
+      "cat": "resilience",
+      "title": "No mem_limit on internal_net",
+      "ev": "docker-compose.yml",
+      "impact": "One leaking service can OOM the host.",
+      "fix": "Set mem_limit and pids_limit."
+    },
+    {
+      "sev": "LOW",
+      "cat": "resilience",
+      "title": "No pids_limit on internal_net",
+      "ev": "docker-compose.yml",
+      "impact": "Fork bomb / thread leak unbounded.",
+      "fix": "Set pids_limit."
+    },
+    {
+      "sev": "LOW",
+      "cat": "resilience",
+      "title": "No healthcheck on internal_net",
+      "ev": "docker-compose.yml",
+      "impact": "Dependents may start against an unready service.",
+      "fix": "Add a real readiness healthcheck."
+    },
+    {
+      "sev": "LOW",
+      "cat": "resilience",
+      "title": "No mem_limit on edge_net",
+      "ev": "docker-compose.yml",
+      "impact": "One leaking service can OOM the host.",
+      "fix": "Set mem_limit and pids_limit."
+    },
+    {
+      "sev": "LOW",
+      "cat": "resilience",
+      "title": "No pids_limit on edge_net",
+      "ev": "docker-compose.yml",
+      "impact": "Fork bomb / thread leak unbounded.",
+      "fix": "Set pids_limit."
+    },
+    {
+      "sev": "LOW",
+      "cat": "resilience",
+      "title": "No healthcheck on edge_net",
+      "ev": "docker-compose.yml",
+      "impact": "Dependents may start against an unready service.",
+      "fix": "Add a real readiness healthcheck."
+    },
+    {
+      "sev": "MEDIUM",
+      "cat": "egress",
+      "title": "Network not internal: app",
+      "ev": "image: onionshop-app:local\n    build:\n      context: .\n      dockerfile: Dockerfile\n    <<: *default-hardening\n    user: \"1000:101\"\n    environment:\n      - ONIONSHOP_UNIX=/run/onionshop/app.sock\n    ",
+      "impact": "Container egress bypasses default-deny expectations.",
+      "fix": "Set internal: true, or document why (nginx edge needs a gateway for published ports)."
+    },
+    {
+      "sev": "MEDIUM",
+      "cat": "egress",
+      "title": "Network not internal: postgres",
+      "ev": "image: postgres:16-alpine # tag-only; verify/pin digest before production\n    <<: *default-hardening\n    user: \"999:999\"\n    mem_limit: 2000m\n    pids_limit: 256\n    cap_add:\n      - CHOWN\n      - DAC",
+      "impact": "Container egress bypasses default-deny expectations.",
+      "fix": "Set internal: true, or document why (nginx edge needs a gateway for published ports)."
+    },
+    {
+      "sev": "MEDIUM",
+      "cat": "egress",
+      "title": "Network not internal: redis",
+      "ev": "image: redis:7-alpine # tag-only; verify/pin digest before production\n    <<: *default-hardening\n    mem_limit: 512m\n    pids_limit: 256\n    user: \"999:999\"\n    command: >\n      redis-server\n      --r",
+      "impact": "Container egress bypasses default-deny expectations.",
+      "fix": "Set internal: true, or document why (nginx edge needs a gateway for published ports)."
+    },
+    {
+      "sev": "MEDIUM",
+      "cat": "egress",
+      "title": "Network not internal: monerod",
+      "ev": "entrypoint: [\"monerod\"]\n    # TODO: REPLACE PLACEHOLDER DIGEST with actual digest from registry.\n    # Run: docker pull ghcr.io/sethforprivacy/simple-monerod:v0.18.3.3\n    # Run: docker inspect --form",
+      "impact": "Container egress bypasses default-deny expectations.",
+      "fix": "Set internal: true, or document why (nginx edge needs a gateway for published ports)."
+    },
+    {
+      "sev": "MEDIUM",
+      "cat": "egress",
+      "title": "Network not internal: backup",
+      "ev": "build:\n      context: .\n      dockerfile: Dockerfile.backup\n    restart: unless-stopped\n    <<: *default-hardening\n    mem_limit: 1500m\n    pids_limit: 128\n    entrypoint: [\"/bin/sh\", \"-c\", \"exec /scr",
+      "impact": "Container egress bypasses default-deny expectations.",
+      "fix": "Set internal: true, or document why (nginx edge needs a gateway for published ports)."
+    },
+    {
+      "sev": "MEDIUM",
+      "cat": "egress",
+      "title": "Network not internal: edge_net",
+      "ev": "driver: bridge",
+      "impact": "Container egress bypasses default-deny expectations.",
+      "fix": "Set internal: true, or document why (nginx edge needs a gateway for published ports)."
+    },
+    {
+      "sev": "INFO",
+      "cat": "scope",
+      "title": "App not reachable - dynamic probes skipped",
+      "ev": "<urlopen error [Errno 111] Connection refused>",
+      "impact": "Runtime behaviour unverified.",
+      "fix": "Start the stack and re-run."
+    }
+  ],
+  "invariants": [
+    [
+      "ledger balanced per tx_ref",
+      true,
+      ""
+    ],
+    [
+      "no unpaid orders past expiry",
+      true,
+      "count=0"
+    ],
+    [
+      "no shipped orders past auto-release",
+      true,
+      "count=0"
+    ],
+    [
+      "no subaddress reuse across orders",
+      true,
+      ""
+    ],
+    [
+      "every payable order has address+amount",
+      true,
+      "count=0"
+    ],
+    [
+      "refund address captured",
+      false,
+      "count=3"
+    ],
+    [
+      "no negative stock",
+      true,
+      "count=0"
+    ],
+    [
+      "paid withdrawals carry tx_hash",
+      true,
+      "count=0"
+    ],
+    [
+      "released orders credited in ledger",
+      true,
+      "count=0"
+    ],
+    [
+      "message audience is a participant",
+      true,
+      "count=0"
+    ],
+    [
+      "ledger append-only trigger present",
+      true,
+      "ledger_append_only"
+    ],
+    [
+      "idempotency_key unique index",
+      true,
+      ""
+    ],
+    [
+      "orders.status CHECK present",
+      true,
+      "CHECK ((status = ANY (ARRAY['awaiting_payment'::text, 'in_escrow'::text, 'shipped'::text, 'disputed'::text, 'released'::text, 'refunded'::text, 'cancelled'::text])))\nCHECK ((total_usd_cents > 0))\nCHEC"
+    ],
+    [
+      "schema migrated to latest",
+      false,
+      "disk_max=22 applied=10"
+    ],
+    [
+      "escrow state machine is pure + enumerated",
+      true,
+      "internal/server/escrow.go"
+    ],
+    [
+      "payment detection is polling (no webhook)",
+      true,
+      "internal/server/payment_poller.go"
+    ],
+    [
+      "exact-amount + over/under handling",
+      true,
+      "internal/server/payment_poller.go"
+    ],
+    [
+      "ledger idempotency keys",
+      true,
+      "internal/server/wallet_ledger.go"
+    ],
+    [
+      "refunds return value on-chain",
+      true,
+      "internal/server/order_notifications.go"
+    ],
+    [
+      "buyer pre-ship cancel exists",
+      true,
+      "internal/server/order_actions.go"
+    ],
+    [
+      "ship guarded by status",
+      true,
+      "internal/server/order_actions.go"
+    ],
+    [
+      "release guarded by status",
+      true,
+      "internal/server/order_actions.go"
+    ],
+    [
+      "dispute sets disputed state",
+      true,
+      "internal/server/dispute_handlers.go"
+    ],
+    [
+      "unified lifecycle notifications",
+      true,
+      "internal/server/order_notifications.go"
+    ],
+    [
+      "audience-targeted inbox",
+      true,
+      "internal/server/messaging_store.go"
+    ],
+    [
+      "vendor fee gate enforced",
+      true,
+      "internal/server/product_handlers.go"
+    ],
+    [
+      "stock decremented atomically",
+      true,
+      "internal/server/checkout_handlers.go"
+    ],
+    [
+      "delivery details PGP-encrypted",
+      true,
+      "internal/server/checkout_handlers.go"
+    ],
+    [
+      "checkout re-validates price/stock",
+      true,
+      "internal/server/checkout_handlers.go"
+    ],
+    [
+      "withdrawal broadcasts on-chain",
+      true,
+      "internal/server/withdrawal_handlers.go"
+    ],
+    [
+      "exact decimal money parsing",
+      true,
+      "internal/server/money_parse.go"
+    ],
+    [
+      "PGP private keys rejected",
+      true,
+      "internal/server/pgp.go"
+    ],
+    [
+      "withdrawal checks balance minus pending",
+      true,
+      ""
+    ]
+  ],
+  "probes": [
+    [
+      "GET /health reachable",
+      false,
+      "status=0"
+    ],
+    [
+      "host port closed: monero-wallet-rpc/18083",
+      true,
+      "open=False"
+    ],
+    [
+      "host port closed: monerod/18081",
+      true,
+      "open=False"
+    ],
+    [
+      "host port closed: postgres/5432",
+      true,
+      "open=False"
+    ],
+    [
+      "host port closed: redis/6379",
+      true,
+      "open=False"
+    ],
+    [
+      "certificate SAN present",
+      true,
+      "subject=CN=nicey2emajmpiz6nzmraz5zj2dkualpohaxgsyirrlze63zrjlj23iad.onion X509v3 Subject Alternative Name:      DNS:nicey2emajmpiz6nzmraz5zj2dkualpohaxgsyirrlze63zrjlj23iad.onion notBefore=Nov 15 14:0"
+    ],
+    [
+      "ECDSA P-384 curve",
+      true,
+      "Public Key Algorithm: id-ecPublicKey"
+    ]
+  ]
+}

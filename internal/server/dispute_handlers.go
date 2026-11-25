@@ -1,6 +1,7 @@
 package server
 
 import (
+	"log"
 	"context"
 	"net/http"
 	"strings"
@@ -84,7 +85,9 @@ func (a *App) handleOpenDispute(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if pool, ok := a.deps.Pool.(*pgxpool.Pool); ok {
-		_, _ = pool.Exec(ctx, `UPDATE orders SET status='disputed', updated_at=now() WHERE id=$1 AND status IN ('in_escrow','shipped')`, oid)
+		if _, err := pool.Exec(ctx, `UPDATE orders SET status='disputed', updated_at=now() WHERE id=$1 AND status IN ('in_escrow','shipped')`, oid); err != nil {
+			log.Printf("server: order state write failed: %v", err)
+		}
 		_ = notifyOrderEvent(ctx, pool, oid, "disputed", reason)
 	}
 	http.Redirect(w, r, "/account", http.StatusSeeOther)
