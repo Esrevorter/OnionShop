@@ -1,0 +1,118 @@
+================ docs reconciliation ================
+sync: HEAD=1596dee8 origin/main=1596dee8  (local == GitHub: local files ARE ground truth)
+
+---- OLD README.md (verbatim, for audit) ----
+# OnionShop
+
+OnionShop is a server-rendered Go storefront for **Tor Browser and Tor v3 onion services only**. The UI has no JavaScript or third-party CDNs, and the application is designed not to log client IP addresses. Mainstream browsers are not a supported target; this is a project policy, not something the server can reliably enforce.
+
+> **Project status:** Application features in Phases 1–8 are implemented. Production deployment is **not yet production-ready**. See [Production readiness and deployment sequence](PRODUCTION_READINESS.md), especially the TLS/browser compatibility gate.
+
+## TLS policy
+
+- TLS policy: self-signed ECDSA P-384 with the exact onion DNS SAN. **No SPKI/certificate pinning, no CA-issued certificates** (authoritative: SECURITY_AND_OPSEC.md section 1).
+
+Generate the certificate only after the Tor v3 onion hostname is known:
+
+```sh
+./scripts/gen-certs.sh '<56-character-v3-hostname>.onion'
+```
+
+See `INSTALL.md` and `PRODUCTION_READINESS.md` for permissions, verification, and the required Tor Browser test.
+
+## Documentation
+
+| File | Contents |
+|---|---|
+| [AGENTS.md](AGENTS.md) | Contributor and agent constraints |
+| [ARCHITECTURE.md](ARCHITECTURE.md) | Application components and request flow |
+| [SECURITY_AND_OPSEC.md](SECURITY_AND_OPSEC.md) | Threat model, intended controls, and security limitations |
+| [PRODUCTION_READINESS.md](PRODUCTION_READINESS.md) | Deployment sequence, configuration checks, and unresolved production gates |
+| [INSTALL.md](INSTALL.md) | Operator installation and development instructions |
+| [TASKS.md](TASKS.md) | Feature and infrastructure status |
+| [FIXMEFIRST.md](FIXMEFIRST.md) | Audit findings and remediation status |
+
+## Stack
+
+- Go, chi, `html/template`, pgx, Redis, and PostgreSQL
+- nginx reverse proxy; application traffic to nginx uses a UNIX socket
+- BTCPay Server invoice polling (no inbound webhooks)
+- Tor onion service; admin access is intended to use a separate private onion and Dropbear
+
+## Development
+
+```sh
+make test       # go test ./...
+make build      # sqlc generation then Go build
+make sqlc       # requires sqlc v1.27.0
+make compose-config
+```
+
+- TLS policy: self-signed ECDSA P-384 with the exact onion DNS SAN. **No SPKI/certificate pinning, no CA-issued certificates** (authoritative: SECURITY_AND_OPSEC.md section 1).
+
+## License
+
+MIT — see [LICENSE](LICENSE).
+
+
+---- doc inventory and staleness markers ----
+  AGENTS.md                    1893 bytes  clean
+  ARCHITECTURE.md              4211 bytes  stale: MoneroPay, SPKI pin
+  AUDIT.md                    12501 bytes  stale: BTCPay, SPKI pin
+  CONTRIBUTING.md              2618 bytes  stale: BTCPay, SPKI pin
+  INSTALL.md                   6447 bytes  clean
+  PRODUCTION_READINESS.md      4394 bytes  stale: SPKI pin
+  README.md                    2368 bytes  stale: BTCPay, FIXMEFIRST
+  SECURITY_AND_OPSEC.md        6462 bytes  clean
+  TASKS.md                    35510 bytes  stale: .env.example, BTCPay, MoneroPay, SPKI pin, amount_sat, btcpay, moneropay, price_sat
+  UI.md                        3530 bytes  clean
+
+---- rewriting README.md ----
+  README.md rewritten to shipped reality
+
+---- TASKS.md: archive superseded MoneroPay plan ----
+  archived 23071 bytes of superseded plan; Phase 10 now reflects reality
+
+---- Phase 9 infrastructure evidence ----
+  [present] stale socket unlink (defect 15)
+  [present] duplicate headers hidden (defect 16)
+  [present] fail-fast on missing DB (defect 12)
+  mem_limit occurrences: 7 | pids_limit: 7 | digest-pinned images: 1
+
+---- AUDIT.md: record closed findings ----
+  closed-findings table appended
+
+---- AGENTS.md / CONTRIBUTING.md ----
+  AGENTS.md: implementation contract appended
+  CONTRIBUTING.md: current gates appended
+
+---- references to removed artifacts ----
+  none
+
+---- internal markdown link check ----
+  all internal links resolve
+
+---- gates ----
+  OK   bash -n install/install.sh
+  OK   docker compose config --quiet
+  OK   go build ./...
+  OK   go vet ./internal/server
+  OK   go test ./internal/server/... -count=1
+
+---- commit / push / verify ----
+  VERIFIED origin/main == HEAD
+
+Doc inventory after:
+  AGENTS.md                                      3138 bytes
+  ARCHITECTURE.md                                4211 bytes
+  AUDIT.md                                      14409 bytes
+  CONTRIBUTING.md                                3194 bytes
+  INSTALL.md                                     6447 bytes
+  PRODUCTION_READINESS.md                        4394 bytes
+  README.md                                      6202 bytes
+  SECURITY_AND_OPSEC.md                          6462 bytes
+  TASKS.md                                      15598 bytes
+  UI.md                                          3530 bytes
+  docs/archive/PHASE10_MONEROPAY_PLAN.md        23514 bytes
+
+Report: DOCS_REPORT.txt

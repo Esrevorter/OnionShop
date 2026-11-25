@@ -1,0 +1,74 @@
+=========== decision alignment ===========
+sync: HEAD=3d0e439d origin/main=3d0e439d
+NOTE: uploaded audit snapshot is stale; live tree already verified PASS on those gaps.
+
+1) writing docs/DECISIONS.md
+   ADR-001 (no pinning) + ADR-002 (in-house settlement) recorded
+
+2) sweep for stale references (archives excluded)
+   pinning references: 48
+     AUDIT.md:11  - [x] **Remove HSTS from Nginx:** `nginx.conf` currently emits `Strict-Transport-Security`. This vio
+     AUDIT.md:37  - [ ] **Publish Both Certificate Fingerprints:** Tor Browser's cert viewer shows the *certificate's*
+     AUDIT.md:38  - **Action:** Update `pgp.txt` and announcements to include **both** the Cert SHA-256 and the SPKI S
+     AUDIT.md:134  3. **Resolve Auth/Authenticity:** Abandon the TLS/SPKI implementation, implement the two-step person
+     CONTRIBUTING.md:10  self-signed, SPKI-pinned .onion cert — see AGENTS.md §4, SECURITY_AND_OPSEC.md §1).
+     CONTRIBUTING.md:11  4. No browser-facing HSTS header (self-signed + HSTS = permanent lockout footgun; SPKI pinning in
+     Makefile:67  certs: ## Generate self-signed ECDSA P-384 TLS cert with exact onion DNS SAN; NO SPKI pin
+     INSTALL.md:11  **Do not use a public CA-issued certificate for this project. Do not publish, store, or enforce SPKI
+     INSTALL.md:19  The script refuses to overwrite an existing pair unless `--force` is provided; planned rotation must
+     ARCHITECTURE.md:14  - **nginx:** loopback-only reverse proxy, TLS termination, static assets, and UNIX-socket proxy to G
+     ARCHITECTURE.md:24  Go and nginx emit security headers. No HSTS or TLS pinning is configured. A certificate SAN match an
+     AGENTS.md:26  - TLS policy: self-signed ECDSA P-384 with the exact onion DNS SAN. **No SPKI/certificate pinning, n
+     AGENTS.md:41  - TLS: self-signed ECDSA P-384 with the exact onion SAN. No CA certs, no SPKI pins,
+     decision_alignment.py:3  ADR-001 no SPKI/CA pinning -> self-signed exact-onion-SAN TLS
+     decision_alignment.py:42  ## ADR-001 — TLS identity: self-signed exact-onion-SAN, no pinning
+     decision_alignment.py:45  **Decision.** No SPKI/certificate-hash pinning, no HPKP, no publicly CA-issued
+     decision_alignment.py:103  plog("   ADR-001 (no pinning) + ADR-002 (in-house settlement) recorded")
+     decision_alignment.py:119  PIN = re.compile(r"(SPKI|Public-Key-Pins|pin-sha256|HPKP|pinning)", re.I)
+     decision_alignment.py:128  plog("   pinning references: " + str(len(pin_hits)))
+     decision_alignment.py:136  "**No SPKI/certificate pinning, no CA-issued certificates, no HSTS** "
+     decision_alignment.py:191  "  No SPKI/certificate pinning, no CA-issued certificates, no HSTS.\n"
+     decision_alignment.py:199  "- **ADR-001:** never add SPKI/HPKP pins, CA-issued certs or HSTS. Self-signed\n"
+     decision_alignment.py:213  ("nginx: no HPKP / pin header", not re.search(r"(Public-Key-Pins|pin-sha256)", ngx, re.I)),
+     decision_alignment.py:215  ("gen-certs: no pin output", not re.search(r"pin-sha256|SPKI", gc, re.I)),
+     decision_alignment.py:290  "docs+schema: record ADR-001 (no pinning) / ADR-002 (in-house settlement), purge stale references an
+   BTCPay/MoneroPay references: 120
+     AUDIT.md:26  - [x] **Resolve BTCPay Stub & Egress Rules:** The BTCPay container violates the "no floating tags" r
+     AUDIT.md:27  - **Action:** Pin the image to a digest, add the NBXplorer/bitcoind compose stack, and document the 
+     AUDIT.md:61  - [ ] **Implement Core Features:** Build Phases 5–7 (Cart, Checkout, BTCPay polling, Escrow state ma
+     AUDIT.md:139  ## Closed findings — BTCPay removal and Monero settlement (verified 2026-11-24)
+     AUDIT.md:143  | `btcpay` image digest `sha256:e63283733215...f04620f4c00000000` was a placeholder, not a real dige
+     AUDIT.md:144  | No `bitcoind` and no NBXplorer anywhere in the stack; `BTCPAY_CHAINS`/`BTCPAY_BTCEXPLORERURL` unse
+     AUDIT.md:145  | `read_only: true` with only `/tmp` tmpfs left BTCPay nowhere to write keys/plugins/logs | service 
+     AUDIT.md:146  | `btcpay_net` was `driver: bridge` without `internal: true`, dual-homing the service — an egress ho
+     AUDIT.md:147  | `btcpaydb` reused `${DB_USER}`/`${DB_PASSWORD}` — one credential leak crossed both databases | ser
+     AUDIT.md:148  | `BTCPAY_API_URL` / `BTCPAY_API_KEY` in app environment and installer secret generation | removed f
+     AUDIT.md:149  | Checkout hardcoded `InvoiceLink: "https://btcpay.example.com/invoice?id=test"` | replaced by real 
+     CONTRIBUTING.md:14  5. Payments: BTCPay status is obtained by **polling**, never webhooks (the hidden service is
+     ARCHITECTURE.md:18  - **Monero settlement (implemented):** `monerod` (own node) plus `monero-wallet-rpc`, internal netwo
+     AGENTS.md:30  - Settlement: in-house `monero-wallet-rpc` JSON-RPC client. **Do not add MoneroPay or
+     AGENTS.md:31  BTCPay.** Polling only; never introduce an inbound webhook or callback route.
+     decision_alignment.py:4  ADR-002 no BTCPay/MoneroPay -> in-house monero-wallet-rpc client
+     decision_alignment.py:67  **Decision.** Neither **BTCPay Server** nor **MoneroPay** is used. Settlement is a
+     decision_alignment.py:76  - *BTCPay* additionally brings clearnet correlation surfaces (rate providers,
+     decision_alignment.py:80  payment: no `bitcoind`, no NBXplorer, a fake image digest, and an egress hole.
+     decision_alignment.py:81  - *MoneroPay* is essentially the client we needed, already written — but it adds
+     decision_alignment.py:100  The original MoneroPay plan is preserved as historical rationale in
+     decision_alignment.py:101  `docs/archive/PHASE10_MONEROPAY_PLAN.md` (if present). It is **not** a TODO list.
+     decision_alignment.py:120  LEGACY = re.compile(r"(btcpay|moneropay|bitcoind|nbxplorer)", re.I)
+     decision_alignment.py:130  plog("   BTCPay/MoneroPay references: " + str(len(leg_hits)))
+     decision_alignment.py:145  s = s.replace("Provision unique application/database/Redis/BTCPay secrets.",
+
+3) aligning docs
+   README.md: settled-decisions section added
+   AGENTS.md: guardrails added
+
+4) infrastructure assertions
+   [PASS] compose: no btcpay/moneropay service
+   [PASS] compose: no BTCPAY/MONEROPAY env
+   [PASS] installer: no BTCPAY secret generation
+   [PASS] nginx: no HPKP / pin header
+   [PASS] nginx: no HSTS
+   [FAIL] gen-certs: no pin output
+   [PASS] gen-certs: ECDSA P-384
+   infrastructure violates a settled decision - fix before committing

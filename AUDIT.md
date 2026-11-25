@@ -23,8 +23,8 @@ These items represent conflicts where the documentation explicitly forbids a con
 - [x] **Fix Backup Sidecar Egress:** The `backup` container in `docker-compose.yml` has an entrypoint that runs `apk add postgresql16-client age` at boot. However, the service is on `internal_net` (`internal: true`), meaning it has no internet access and will fail to start.
   - **Action:** Remove the runtime `apk add`. Bake `pg_dump` and `age` into the backup image via a multi-stage `Dockerfile.backup`.
 
-- [x] **Resolve BTCPay Stub & Egress Rules:** The BTCPay container violates the "no floating tags" rule (`latest`), lacks NBXplorer/bitcoind for on-chain tracking, and needs blockchain egress, which conflicts with the host's "egress only for the tor uid" nftables policy.
-  - **Action:** Pin the image to a digest, add the NBXplorer/bitcoind compose stack, and document the Tor-routed sync path for the host firewall.
+- [x] **Resolve BTCPay Stub & Egress Rules:** **[SUPERSEDED by ADR-002: the services were removed entirely, not completed.]** The BTCPay container violates the "no floating tags" rule (`latest`), lacks NBXplorer/bitcoind for on-chain tracking, and needs blockchain egress, which conflicts with the host's "egress only for the tor uid" nftables policy.
+  - **Action:** Pin the image to a digest, remove the Bitcoin stack entirely (superseded by ADR-002), and document the Tor-routed sync path for the host firewall.
 
 ---
 
@@ -34,7 +34,7 @@ These items represent conflicts where the documentation explicitly forbids a con
 - [ ] **Define Account Recovery SOP:** Support-desk social engineering is the #1 account takeover vector. Define a strict PGP-signed recovery procedure (or an explicit "no recovery" policy) and ensure every step is audit-logged.
 - [ ] **Implement Two-Step "Personal Phrase" Login:** `SECURITY_AND_OPSEC.md` §4 suggests users verify their phrase *before* logging in, but currently, it only renders on the `/account` page (post-auth).
   - **Action:** Implement a two-step login. `GET /login` takes a username; the server renders the user's personal phrase alongside the password field.
-- [ ] **Publish Both Certificate Fingerprints:** Tor Browser's cert viewer shows the *certificate's* SHA-256 fingerprint, not the Subject Public Key Info (SPKI) hash. Ordinary users cannot verify the SPKI pin.
+- [x] ~~Publish Both Certificate Fingerprints~~ — **SUPERSEDED by ADR-001** (no certificate/SPKI fingerprints are published; see docs/DECISIONS.md). Original finding: Tor Browser's cert viewer shows the *certificate's* SHA-256 fingerprint, not the Subject Public Key Info (SPKI) hash. Ordinary users cannot verify the SPKI pin.
   - **Action:** Update `pgp.txt` and announcements to include **both** the Cert SHA-256 and the SPKI SHA-256, with a screenshot guide for Tor Browser users.
 - [x] **Enable Tor Proof-of-Work (PoW) DoS Defense:** Onion services are vulnerable to rendezvous circuit exhaustion.
   - **Action:** Add `HiddenServicePoWDefensesEnabled 1`, `HiddenServicePoWQueueRate 25`, and `HiddenServicePoWQueueBurst 50` to `deploy/torrc` (requires Tor >= 0.4.8).
@@ -58,7 +58,7 @@ These items represent conflicts where the documentation explicitly forbids a con
   - **Action:** Add `tsvector` columns with GIN indexes and `pg_trgm` for typo-tolerant search in the catalog migration.
 - [ ] **Add CI Smoke Test:** Add a compose-level integration test to CI that boots the stack, hits `/healthz` over the intended ingress path, and asserts the exact security headers are present. This would have caught the HSTS, port mapping, and CSP split-brain bugs.
   - **Action:** Add the compose-level integration test.
-- [ ] **Implement Core Features:** Build Phases 5–7 (Cart, Checkout, BTCPay polling, Escrow state machine, Disputes, Tickets UI, Messaging UI) as outlined in `TASKS.md`.
+- [ ] **Implement Core Features:** Build Phases 5–7 (Cart, Checkout, Monero payment polling, Escrow state machine, Disputes, Tickets UI, Messaging UI) as outlined in `TASKS.md`.
 
 ## 4. No-JS Modern UI Implementation Guide
 

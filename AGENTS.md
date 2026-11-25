@@ -43,3 +43,9 @@
 - Friction: mint a CAPTCHA on the GET that renders the form, or use CSRF + honeypot
   only. An un-mintable challenge silently swallows submissions.
 - Templates: no JS; `<details>` for disclosure; `user-select:all` for copy blocks.
+
+## Settled decisions (do not re-open)
+- **ADR-001:** never add SPKI/HPKP pins, CA-issued certs or HSTS. Self-signed
+  exact-onion-SAN only. See docs/DECISIONS.md.
+- **ADR-002:** never add BTCPay or MoneroPay, and never add an inbound payment
+  webhook. Settlement is the in-house wallet-rpc client, polling only.

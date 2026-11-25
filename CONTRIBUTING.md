@@ -1,48 +1,33 @@
 # Contributing to OnionShop
 
-These rules mirror AGENTS.md and apply to human contributors as well.
+## Ground rules
+1. **Server-rendered HTML only.** CSP is `script-src 'none'` — no JavaScript, no
+   external assets, no CDN. Interactive controls are native forms and `<details>`.
+2. **Tor Browser is the supported client.** TLS is a self-signed ECDSA P-384 leaf
+   whose DNS SAN is exactly the v3 `.onion` hostname. **No CA-issued certificates,
+   no SPKI/certificate pins, no HSTS** — see `docs/DECISIONS.md` ADR-001.
+3. **Never log or use client IP addresses.** Rate-limit by authenticated identity;
+   use CAPTCHA/honeypot friction. No email, no third-party requests.
+4. **Settlement is our own `monero-wallet-rpc` client** against our own `monerod`.
+   No BTCPay, no MoneroPay (`docs/DECISIONS.md` ADR-002). Payment status is obtained
+   by **polling**; never add an inbound webhook or callback route.
+5. **Money is integer cents/piconero.** Parse decimal input with `parseDecimalUnits`
+   (or `parseDecimalUnitsAllowZero` where zero is meaningful). Never `ParseFloat`
+   in a money path; whole-ledger aggregates use NUMERIC.
+6. **Only public PGP keys are stored.** The server never decrypts anything.
+7. **Escrow transitions route through `escrow.go` `Apply`**, with a status guard in
+   the SQL `UPDATE`. Ledger legs are double-entry, append-only and idempotent.
 
-## Non-negotiables
-1. **No JavaScript** of any kind (no React/Vue/Alpine/HTMX), **no CDNs**, **no IP logging**.
-2. All rendering through `html/template`; every POST form carries
-   `<input type="hidden" name="csrf_token" value="{{.CsrfToken}}">`.
-3. Cookies: `HttpOnly` + `Secure` + `SameSite=Strict` (HTTPS is terminated at nginx with a
-   self-signed, SPKI-pinned .onion cert — see AGENTS.md §4, SECURITY_AND_OPSEC.md §1).
-4. No browser-facing HSTS header (self-signed + HSTS = permanent lockout footgun; SPKI pinning in
-   PGP-signed announcements is the authenticity mechanism). Security headers are defined in
-   ARCHITECTURE.md §3 and must be emitted consistently by both nginx and Go middleware.
-5. Payments: BTCPay status is obtained by **polling**, never webhooks (the hidden service is
-   unreachable inbound). Every external event needs an idempotency key. See ARCHITECTURE.md §2.
-6. DB access via `pgx`/`sqlc` (never GORM); all queries take a `context.Context`; ledger writes
-   happen inside explicit Postgres transactions. Passwords: Argon2id with stored parameters.
-7. Server stores only PGP **public** keys; never log PII, key material, or ciphertext. Logs go to
-   a size-capped tmpfs/RAM buffer only — no log shipping off-host (SECURITY_AND_OPSEC.md §2).
-8. CAPTCHAs are locally generated images (`img-src 'self'`) with single-use, session-bound
-   tokens — never external services (hCaptcha/reCAPTCHA/Turnstile are CDNs). Honeypot fields
-   supplement registration, ticket, and message forms. See AGENTS.md §3.
-9. Support tickets & private messages follow ARCHITECTURE.md §7–8: message bodies render as
-   escaped plain text, user-posted URLs stay inert (never auto-linked), staff actions on
-   tickets/threads are audit-logged.
-10. Infrastructure changes (nginx config, compose files, firewall/systemd units) must preserve the
-    hardening baseline in SECURITY_AND_OPSEC.md §5: loopback-only listeners, default-deny egress,
-    drop-all capabilities, read-only rootfs + tmpfs for volatile paths, Dropbear-over-onion admin
-    (no OpenSSH, no clearnet SSH), LUKS2 at rest, no secrets in Git/images. Review these files like
-    code; container images are pinned by digest.
+## Friction contract
+A CAPTCHA may only be required where the GET that renders the form **mints a
+challenge**. Low-risk POSTs (cart actions, publish/remove, shipping toggles,
+message replies) use CSRF + honeypot only. An un-mintable challenge silently
+swallows every submission — this bug class has been fixed twice; do not reintroduce it.
 
-## Dev workflow
-```bash
-make up          # Postgres + Redis (localhost-published ports only)
-make migrate     # apply db/migrations
-make test vet lint
-```
-CI enforces `go vet`, `staticcheck`, `golangci-lint`, `govulncheck`, and `go test`.
-Keep TASKS.md checkboxes honest: mark `[x]` only when code is committed and building.
-
-## Local gates (current)
-
+## Local gates
 ```sh
-export GOTMPDIR="$HOME/.gotmp"   # /tmp is noexec on Whonix
-sqlc generate                     # internal/store/gen is gitignored
+export GOTMPDIR="$HOME/.gotmp"   # required where /tmp is noexec (Whonix)
+sqlc generate                    # internal/store/gen is gitignored
 go build ./...
 go vet ./internal/server
 go test ./internal/server/... -count=1
@@ -51,6 +36,19 @@ docker compose config --quiet
 docker compose build
 ```
 
-Run the stack with `sudo ./install/install.sh --dev` (Debian 13). The installer
-applies migrations idempotently; `make migrate` needs DATABASE_URL from your
-environment because the installer generates a random DB password.
+## Running the stack
+```sh
+sudo ./install/install.sh --dev          # Debian 13; bootstraps, migrates, starts
+./install/install.sh --check-only        # read-only preflight, no root needed
+```
+The installer applies `db/migrations/*.up.sql` idempotently. `make migrate` needs
+`DATABASE_URL` from your environment because the installer generates a random
+DB password.
+
+## Migrations
+Add `NNNN_name.up.sql` **and** `NNNN_name.down.sql`. Never edit an applied
+migration. Money columns are integer minor units; no float conversions, ever.
+
+## Commits
+Keep changes scoped and explain the *why*. Documentation that contradicts a
+settled ADR is a defect — update it in the same commit as the code.

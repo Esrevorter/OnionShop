@@ -120,3 +120,12 @@ is regtest-only, and wallet-rpc has no regtest mode).
 ## License
 
 MIT — see [LICENSE](LICENSE).
+
+## Settled decisions
+
+Two choices are closed and enforced repo-wide — see [docs/DECISIONS.md](docs/DECISIONS.md):
+
+- **ADR-001 TLS:** self-signed ECDSA P-384 with the exact `.onion` DNS SAN.
+  No SPKI/certificate pinning, no CA-issued certificates, no HSTS.
+- **ADR-002 Settlement:** in-house `monero-wallet-rpc` JSON-RPC client against
+  our own `monerod`. No BTCPay, no MoneroPay. Polling only, never webhooks.

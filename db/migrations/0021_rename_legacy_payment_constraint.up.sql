@@ -1,0 +1,1 @@
+ALTER TABLE orders RENAME CONSTRAINT orders_btcpay_invoice_id_key TO orders_xmr_payment_id_key;
