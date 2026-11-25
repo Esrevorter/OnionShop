@@ -23,7 +23,6 @@ while [[ $# -gt 0 ]]; do
 done
 
 log "phase 0 - preflight"
-[[ $EUID -eq 0 ]] || die "run with sudo"
 if [[ -r /etc/os-release ]]; then
   . /etc/os-release
   log "host: ${PRETTY_NAME:-unknown}"
@@ -34,6 +33,7 @@ if [[ $CHECK -eq 1 ]]; then
   docker compose version >/dev/null 2>&1 && log "compose v2 present" || warn "compose v2 missing"
   log "check-only: no side effects"; exit 0
 fi
+[[ $EUID -eq 0 ]] || die "run with sudo"
 
 if [[ $BOOTSTRAP -eq 1 ]]; then
   log "phase 1 - bootstrap dependencies"
