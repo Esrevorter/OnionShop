@@ -80,3 +80,7 @@ panic-wipe-dry: ## show what scripts/panic-wipe.sh would do (no execution)
 
 clean:
 	rm -rf bin/
+
+.PHONY: tplcheck
+tplcheck: ## Parse every template with html/template
+	go run ./cmd/tplcheck
