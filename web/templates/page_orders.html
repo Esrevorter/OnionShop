@@ -11,7 +11,7 @@
   {{else}}
   <div class="table-container">
     <table class="data-table">
-      <thead><tr><th>Order</th><th>Placed</th><th>{{if .IsVendorView}}Customer{{else}}Vendor{{end}}</th><th>Total</th><th>Status</th><th></th></tr></thead>
+      <thead><tr><th>Order</th><th>Placed</th><th>{{if .IsVendorView}}Buyer{{else}}Vendor{{end}}</th><th>Total</th><th>Status</th><th></th></tr></thead>
       <tbody>
       {{range .Orders}}
         <tr>

@@ -26,7 +26,7 @@
         <tr>
           <td><strong>{{.VendorName}}</strong></td>
           <td>{{fmtXMR .AmountPico}} XMR</td>
-          <td><code style="word-break:break-all;">{{.XmrAddress}}</code></td>
+          <td><code style="word-break:break-all;"><code class="crypto">{{.XmrAddress}}</code></code></td>
           <td>{{.CreatedAt}}</td>
           <td><span class="badge {{if eq .Status "pending"}}badge-muted{{else if eq .Status "approved"}}badge-success{{else}}badge-danger{{end}}">{{.Status}}</span></td>
           <td>

@@ -30,6 +30,9 @@ import (
 const honeypotField = "sta"
 
 type AuthData struct {
+	// Errors carries field-level validation messages keyed by form field name.
+	Errors map[string]string
+
 	VendorApplicationPending bool
 	IsSignedIn       bool
 	CsrfToken       string

@@ -5,13 +5,13 @@
   <div class="admin-header"><h1>All Orders</h1><a href="/admin" class="btn-secondary">← Dashboard</a></div>
   <div class="table-container">
     <table class="data-table">
-      <thead><tr><th>Order</th><th>Customer</th><th>Vendor</th><th>Total</th><th>Status</th><th>Date</th><th>Actions</th></tr></thead>
+      <thead><tr><th>Order</th><th>Buyer</th><th>Vendor</th><th>Total</th><th>Status</th><th>Date</th><th>Actions</th></tr></thead>
       <tbody>
       {{if .Orders}}
         {{range .Orders}}
         <tr>
           <td><code>{{.IDStr}}</code></td>
-          <td>{{.Customer}}</td>
+          <td>{{.Buyer}}</td>
           <td>{{.Vendor}}</td>
           <td>{{fmtFiat .TotalUSD $.PreferredCurrency}}</td>
           <td><span class="badge badge-success">{{.Status}}</span></td>

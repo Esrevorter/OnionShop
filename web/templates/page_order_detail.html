@@ -13,7 +13,7 @@
       <span class="badge {{statusBadge .Order.Status}}">{{.Order.Status}}</span>
     </div>
     
-    <p class="muted">{{if .IsVendor}}Customer: {{.Order.CustomerName}}{{else}}Vendor: {{.Order.ShopName}}{{end}}{{if .Order.ShippingTitle}} · Shipping: {{.Order.ShippingTitle}}{{end}}</p>
+    <p class="muted">{{if .IsVendor}}Buyer: {{.Order.BuyerName}}{{else}}Vendor: {{.Order.ShopName}}{{end}}{{if .Order.ShippingTitle}} · Shipping: {{.Order.ShippingTitle}}{{end}}</p>
     <p class="muted">Placed: {{.Order.CreatedAt}}</p>
 
     <table class="data-table" style="margin: 1rem 0;">
