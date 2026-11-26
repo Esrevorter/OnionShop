@@ -152,3 +152,13 @@ footer a{color:var(--text-dim)}
 .sr-only{position:absolute;width:1px;height:1px;margin:-1px;padding:0;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap;border:0}
 .captcha-block label{margin:0}
 .captcha-block input[type="text"]{width:96px;max-width:96px}
+
+/* P0: CSP-safe destructive-action confirm (replaces JS confirm(), which is blocked by script-src 'none') */
+.confirm-discard>summary{list-style:none;cursor:pointer}
+.confirm-discard>summary::-webkit-details-marker{display:none}
+.confirm-discard[open]>summary{margin-bottom:var(--s2, .5rem)}
+.confirm-discard[open]>form{padding:var(--s3, .75rem);border:1px solid rgba(229,72,77,.45);border-left:4px solid var(--danger,#e5484d);border-radius:var(--r-m, 10px);background:rgba(229,72,77,.06)}
+.confirm-discard form{display:inline-flex;flex-direction:column;gap:var(--s2, .5rem);max-width:32rem}
+
+/* P0: product price hierarchy — one primary figure, quiet secondary reference */
+.price-reference{font-size:.85rem;margin-top:calc(var(--s1, .25rem) * -1)}

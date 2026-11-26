@@ -15,7 +15,7 @@
     <div class="auth-card" style="max-width:600px;">
       <h2>Send exactly {{fmtXMR .Active.AmountPico}} XMR</h2>
       <p class="lede" style="font-size:.9rem;">Detection is automatic once the transaction confirms. The registration fee is non-refundable.</p>
-      <code style="word-break:break-all; display:block; margin:.5rem 0; padding:.6rem .8rem; background:var(--surface); border:1px solid var(--line); border-radius:.5rem; font-family:ui-monospace,Menlo,Consolas,monospace; user-select:all; cursor:copy;" title="Click to select, then copy">{.Active.Address}</code>
+      <code style="word-break:break-all; display:block; margin:.5rem 0; padding:.6rem .8rem; background:var(--surface); border:1px solid var(--line); border-radius:.5rem; font-family:ui-monospace,Menlo,Consolas,monospace; user-select:all; cursor:copy;" title="Click to select, then copy">{{.Active.Address}}</code>
       <span class="muted" style="font-size:.8rem;">Click to select, then copy. Send exactly the amount shown.</span>
       <p class="muted">Status: {{.Active.Status}} · Requested: {{.Active.CreatedAt}}</p>
     </div>
