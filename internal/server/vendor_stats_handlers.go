@@ -17,6 +17,12 @@ func (a *App) registerVendorStatsRoutes(r chi.Router) {
 }
 
 func (a *App) handleVendorStats(w http.ResponseWriter, r *http.Request) {
+	// vendor self-service is vendor-only; operators manage vendors via /admin/vendors.
+	if role := CurrentRole(r.Context(), a.sm); role != "vendor" {
+		http.Redirect(w, r, "/admin/vendors", http.StatusSeeOther)
+		return
+	}
+
 	uid, ok := a.currentUUID(r)
 	if !ok {
 		http.Redirect(w, r, "/login", http.StatusSeeOther)

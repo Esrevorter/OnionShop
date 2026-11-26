@@ -29,6 +29,12 @@ func (a *App) shippingPool() (*pgxpool.Pool, bool) {
 }
 
 func (a *App) handleShippingList(w http.ResponseWriter, r *http.Request) {
+	// vendor self-service is vendor-only; operators manage vendors via /admin/vendors.
+	if role := CurrentRole(r.Context(), a.sm); role != "vendor" {
+		http.Redirect(w, r, "/admin/vendors", http.StatusSeeOther)
+		return
+	}
+
 	pool, ok := a.shippingPool()
 	if !ok {
 		writeGenericError(w)

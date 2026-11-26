@@ -60,7 +60,7 @@ details>summary{cursor:pointer;}
       {{if .IsAuthenticated}}
         <a href="/cart">Cart</a>
         <a href="/orders">Orders</a>
-        {{if or .IsAdmin .IsVendor}}
+        {{if .IsVendor}}
         <details class="nav-group">
           <summary>Selling</summary>
           <div class="nav-menu">
