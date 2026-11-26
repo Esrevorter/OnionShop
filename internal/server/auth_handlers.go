@@ -30,6 +30,8 @@ import (
 const honeypotField = "sta"
 
 type AuthData struct {
+	CaptchaTextAlt bool
+
 	// Errors carries field-level validation messages keyed by form field name.
 	Errors map[string]string
 
@@ -1036,6 +1038,7 @@ func (a *App) buildTemplates(dir string) error {
 
 func (a *App) baseData(r *http.Request) AuthData {
 	d := AuthData{
+		CaptchaTextAlt: captchaTextAlt(),
 		CsrfToken:       CSRFToken(r.Context(), a.sm),
 		IsAuthenticated: CurrentUserID(r.Context(), a.sm) != "",
 		IsAdmin:         CurrentRole(r.Context(), a.sm) == "admin",

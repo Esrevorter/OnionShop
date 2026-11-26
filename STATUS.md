@@ -42,3 +42,6 @@ Vendor nav guard now uses the role field actually present on AuthData (taken fro
 
 ## Compact UI pass
 Ground truth read from origin/main before edits; captcha on one flex row at 150px, inputs 440px/7px, textarea 84px, tighter rhythm; stylesheet content-hashed.
+
+## Captcha core remediation
+Local tree reconciled against origin/main (aborted-run leftovers removed). Prompt sr-only + env-gated (CAPTCHA_TEXT_ALT=0 in production removes it from the DOM); image-left compact row with 96px answer. Follow-up deferred: spoken audio alternative for production screen-reader users.
