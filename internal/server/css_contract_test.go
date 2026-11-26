@@ -36,8 +36,9 @@ func TestCSSClassContract(t *testing.T) {
 		t.Fatalf("template glob: %v (%d files)", err, len(pages))
 	}
 
-	actionRE := regexp.MustCompile(`\{\{.*?\}\}`) // non-greedy; actions never nest
-	classRE := regexp.MustCompile(`class="([^"]*)"`)
+	actionRE := regexp.MustCompile(`(?s)\{\{.*?\}\}`) // non-greedy + DOTALL: multi-line {{if}} blocks
+	// Attribute-value scan that respects HTML5 quoting: double, single, or bare.
+	classRE := regexp.MustCompile(`class\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>"'=]+))`)
 
 	missing := map[string][]string{}
 	for _, path := range pages {
@@ -49,7 +50,13 @@ func TestCSSClassContract(t *testing.T) {
 		// can no longer confuse the attribute regex.
 		stripped := actionRE.ReplaceAllString(string(b), " ")
 		for _, m := range classRE.FindAllStringSubmatch(stripped, -1) {
-			for _, tok := range strings.Fields(m[1]) {
+			val := m[1]
+			if val == "" && m[2] != "" {
+				val = m[2]
+			} else if val == "" && m[3] != "" {
+				val = m[3]
+			}
+			for _, tok := range strings.Fields(val) {
 				if !defined[tok] {
 					missing[tok] = append(missing[tok], filepath.Base(path))
 				}
