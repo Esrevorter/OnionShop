@@ -1,6 +1,7 @@
 package server
 
 import (
+	"errors"
 	"image"
 	"image/color"
 	"image/jpeg"
@@ -15,7 +16,30 @@ import (
 const (
 	thumbMaxEdge = 480
 	fullMaxEdge  = 1600
+
+	// maxDecodePixels bounds the decoded dimensions of any uploaded/stored
+	// image to prevent decompression-bomb style memory exhaustion. A
+	// 4096x4096 RGBA image is ~67MB; anything larger is rejected before
+	// full decode.
+	maxDecodePixels = 4096 * 4096
 )
+
+// decodeImageSized decodes an image only if its declared dimensions are within
+// maxDecodePixels. It reads from r, which must be a fresh reader positioned at
+// the start of the image data.
+func decodeImageSized(r io.Reader) (image.Image, string, error) {
+	cfg, _, err := image.DecodeConfig(r)
+	if err != nil {
+		return nil, "", err
+	}
+	if cfg.Width <= 0 || cfg.Height <= 0 {
+		return nil, "", errors.New("server: invalid image dimensions")
+	}
+	if int64(cfg.Width)*int64(cfg.Height) > maxDecodePixels {
+		return nil, "", errors.New("server: image dimensions too large")
+	}
+	return image.Decode(r)
+}
 
 // deriveThumb maps a stored public full path to its thumbnail path.
 func deriveThumb(p string) string {
@@ -100,7 +124,7 @@ func EnsureThumbOnDisk(fullPath string) (bool, error) {
 	if err != nil {
 		return false, err
 	}
-	img, _, err := image.Decode(f)
+	img, _, err := decodeImageSizedSeekable(f)
 	f.Close()
 	if err != nil {
 		return false, err
@@ -121,4 +145,20 @@ func EnsureThumbOnDisk(fullPath string) (bool, error) {
 		return false, err
 	}
 	return true, nil
+}
+
+// decodeImageSizedSeekable is decodeImageSized for an *os.File: it peeks the
+// header, checks dimensions, rewinds, then fully decodes.
+func decodeImageSizedSeekable(f *os.File) (image.Image, string, error) {
+cfg, _, err := image.DecodeConfig(f)
+if err != nil {
+return nil, "", err
+}
+if cfg.Width <= 0 || cfg.Height <= 0 || int64(cfg.Width)*int64(cfg.Height) > maxDecodePixels {
+return nil, "", errors.New("server: image dimensions too large")
+}
+if _, err := f.Seek(0, io.SeekStart); err != nil {
+return nil, "", err
+}
+return image.Decode(f)
 }

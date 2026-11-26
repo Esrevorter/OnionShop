@@ -1,6 +1,8 @@
 package server
 
 import (
+	"io"
+	"bytes"
 	"context"
 	"crypto/rand"
 	"encoding/hex"
@@ -155,6 +157,8 @@ func (a *App) parseProductForm(r *http.Request, vendorID pgtype.UUID) (*ProductR
 	}, ""
 }
 
+const maxUploadBytes = 10 << 20 // 10 MiB per uploaded image file
+
 func generateRandomFilename(ext string) string {
 	b := make([]byte, 16)
 	rand.Read(b)
@@ -207,8 +211,21 @@ func handleImageUploads(r *http.Request, existingPaths string) (string, error) {
 		if err != nil {
 			return "", fmt.Errorf("failed to open uploaded file")
 		}
-		img, format, err := image.Decode(file)
+		// Bound raw upload size and declared dimensions before decoding to
+		// blunt decompression-bomb style memory exhaustion.
+		buf, err := io.ReadAll(io.LimitReader(file, maxUploadBytes+1))
 		file.Close()
+		if err != nil || int64(len(buf)) > maxUploadBytes {
+			return "", fmt.Errorf("image file too large")
+		}
+		cfg, _, err := image.DecodeConfig(bytes.NewReader(buf))
+		if err != nil {
+			return "", fmt.Errorf("invalid or corrupted image data")
+		}
+		if cfg.Width <= 0 || cfg.Height <= 0 || int64(cfg.Width)*int64(cfg.Height) > maxDecodePixels {
+			return "", fmt.Errorf("image dimensions too large")
+		}
+		img, format, err := image.Decode(bytes.NewReader(buf))
 		if err != nil {
 			return "", fmt.Errorf("invalid or corrupted image data")
 		}

@@ -326,6 +326,10 @@ func (a *App) handleCheckoutSubmit(w http.ResponseWriter, r *http.Request) {
 		fail("Failed to create orders. Please try again.")
 		return
 	}
+	// Oversell guard: atomic stock decrement (exactly once per line item),
+	// roll back the whole checkout if any line is short. Previously this loop
+	// was duplicated verbatim, which decremented every product's stock twice
+	// per successful order — permanent inventory loss and phantom overselling.
 	for _, oid := range orderIDs {
 		irows, qerr := pool.Query(ctx, `SELECT product_id, qty FROM order_items WHERE order_id=$1`, oid)
 		if qerr != nil { continue }

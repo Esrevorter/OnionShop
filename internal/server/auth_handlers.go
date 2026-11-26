@@ -14,6 +14,7 @@ import (
 	"image/png"
 	"log"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -429,6 +430,29 @@ func (a *App) handleCaptchaImage(w http.ResponseWriter, r *http.Request) {
 }
 func honeypotTriggered(r *http.Request) bool { return strings.TrimSpace(r.FormValue(honeypotField)) != "" }
 
+// frictionGrantKey records how long a successful human verification stays
+// valid for this session. Privileged actions never reach this path (they use
+// CSRF + honeypot + audit); credential, key and payout changes always
+// re-challenge regardless of the grant.
+const frictionGrantKey = "friction_grant_until"
+
+const frictionGrantTTL = 30 * time.Minute
+
+// frictionSensitive reports purposes that must ALWAYS present a fresh
+// challenge: authentication, account secrets/keys, and payouts.
+func frictionSensitive(purpose string) bool {
+	switch purpose {
+	case "register", "login", "login2fa", "account", "withdraw":
+		return true
+	}
+	for _, k := range []string{"login", "register", "account", "withdraw", "2fa", "password"} {
+		if strings.Contains(purpose, k) {
+			return true
+		}
+	}
+	return false
+}
+
 func (a *App) requireFriction(w http.ResponseWriter, r *http.Request, purpose string) (ok bool) {
 	ctx := r.Context()
 	userID := CurrentUserID(ctx, a.sm)
@@ -441,6 +465,7 @@ func (a *App) requireFriction(w http.ResponseWriter, r *http.Request, purpose st
 	token := a.sessionTokenForRequest(r)
 	id := r.FormValue("captcha_id")
 	ans := r.FormValue("captcha_answer")
+	if err := a.captcha.Verify(ctx, r.FormValue("captcha_token"), id, ans, token, userID); err != nil { return false }
 	if err := a.captcha.Verify(ctx, r.FormValue("captcha_token"), id, ans, token, userID); err != nil {
 		return false
 	}
@@ -585,13 +610,18 @@ func (a *App) handleLoginSubmit(w http.ResponseWriter, r *http.Request) {
 	
 	ok, err := VerifyPassword(password, user.PasswordHash)
 	if err != nil || !ok { fail(badCreds); return }
-	if user.Status != "active" { fail("this account cannot sign in right now"); return }
-
+	// Consume the status check inside the same argon2 timing envelope as a
+	// successful verification so "account disabled" cannot be distinguished
+	// from bad credentials by response timing (username enumeration guard).
+	statusOK := user.Status == "active"
 	if p, _, perr := decodeArgon(user.PasswordHash); perr == nil && NeedsUpgrade(p) {
 		if nh, _, herr := HashPassword(password); herr == nil {
 			if uerr := a.auth.AuthUpdatePasswordHash(ctx, user.ID, nh); uerr != nil { log.Printf("auth: password param upgrade failed (non-fatal): %v", sanitizedErr(uerr)) }
 		}
+	} else {
+		DummyVerify() // equalize work between upgraded/non-upgraded accounts
 	}
+	if !statusOK { fail(badCreds); return }
 
 	// 2FA Check
 	if user.TOTPEnabled {
@@ -744,8 +774,11 @@ func (a *App) handle2FALoginSubmit(w http.ResponseWriter, r *http.Request) {
 
 	totpCode := strings.TrimSpace(r.FormValue("totp_code"))
 	if !totp.Validate(totpCode, user.TOTPSecret) {
-		fail("invalid authentication code")
-		return
+		// Fall back to single-use backup codes (SHA-256 hashed at rest).
+		if !consumeBackupCode(ctx, a.auth, user, totpCode) {
+			fail("invalid authentication code")
+			return
+		}
 	}
 
 	a.sm.Remove(ctx, "pending_2fa_uid")
@@ -793,13 +826,15 @@ func (a *App) handle2FASetup(w http.ResponseWriter, r *http.Request) {
 
 	var codes []string
 	for i := 0; i < 8; i++ {
-		b := make([]byte, 4)
-		rand.Read(b)
+		b := make([]byte, 10) // 80 bits of entropy per code
+		if _, err := rand.Read(b); err != nil { writeGenericError(w); return }
 		codes = append(codes, strings.ToUpper(hex.EncodeToString(b)))
 	}
 	data.BackupCodes = codes
 	data.TOTPSecret = key.Secret()
-	a.sm.Put(ctx, "pending_totp_backup", strings.Join(codes, ","))
+	// Only SHA-256 hashes ever reach the database; plaintext lives solely in
+	// this short-lived setup session so it can be shown once to the user.
+	a.sm.Put(ctx, "pending_totp_backup", strings.Join(hashBackupCodes(codes), ","))
 
 	if data.Captcha = a.newChallenge(w, r, "account"); data.Captcha == nil { return }
 	a.render(w, "2fa_setup", http.StatusOK, data)
@@ -815,9 +850,7 @@ func (a *App) handle2FAEnable(w http.ResponseWriter, r *http.Request) {
 	fail := func(msg string) {
 		data.Error = msg
 		data.TOTPSecret = a.sm.GetString(ctx, "pending_totp_secret")
-		if s := a.sm.GetString(ctx, "pending_totp_backup"); s != "" {
-			data.BackupCodes = strings.Split(s, ",")
-		}
+		// NOTE: pending_totp_backup now holds SHA-256 hashes; never render it.
 		if data.Captcha = a.newChallenge(w, r, "account"); data.Captcha == nil { return }
 		a.render(w, "2fa_setup", http.StatusUnprocessableEntity, data)
 	}
@@ -846,6 +879,7 @@ func (a *App) handle2FAEnable(w http.ResponseWriter, r *http.Request) {
 	backupCodesStr := a.sm.GetString(ctx, "pending_totp_backup")
 	if backupCodesStr == "" { fail("setup session expired, please restart"); return }
 	if pgStore, ok := a.auth.(*PGAuthStore); ok {
+		// backupCodesStr already contains SHA-256 hashes (see handle2FASetup).
 		if _, err := pgStore.pool.Exec(ctx, `UPDATE public.users SET totp_secret = $2, totp_enabled = $3, backup_codes = $4, updated_at = now() WHERE id = $1`, *uid, pendingSecret, true, backupCodesStr); err != nil {
 			fail("could not enable 2FA")
 			return
@@ -857,9 +891,12 @@ func (a *App) handle2FAEnable(w http.ResponseWriter, r *http.Request) {
 
 	a.sm.Remove(ctx, "pending_totp_secret")
 	a.sm.Remove(ctx, "pending_totp_backup")
-	data.Flash = "Two-Factor Authentication enabled. Save your backup codes!"
+	data.Flash = "Two-Factor Authentication enabled. These are your only backup codes — save them now; they cannot be shown again."
 	data.TOTPEnabled = true
-	data.BackupCodes = strings.Split(backupCodesStr, ",")
+	// Recover plaintext once for display by re-reading what we just generated:
+	// the session no longer holds it, so instead we rendered codes in setup and
+	// stash nothing further. Plaintext is intentionally NOT re-derived here.
+	data.BackupCodes = nil
 	if data.Captcha = a.newChallenge(w, r, "account"); data.Captcha == nil { return }
 	a.render(w, "account", http.StatusOK, data)
 }
@@ -905,6 +942,51 @@ func (a *App) handle2FADisable(w http.ResponseWriter, r *http.Request) {
 	data.TOTPEnabled = false
 	if data.Captcha = a.newChallenge(w, r, "account"); data.Captcha == nil { return }
 	a.render(w, "account", http.StatusOK, data)
+}
+
+// hashBackupCodes returns the lowercase hex SHA-256 of each code. Backup codes
+// are low-entropy-ish secrets, so only hashes are ever persisted at rest.
+func hashBackupCodes(codes []string) []string {
+	out := make([]string, 0, len(codes))
+	for _, c := range codes {
+		h := sha256.Sum256([]byte(strings.ToUpper(strings.TrimSpace(c))))
+		out = append(out, hex.EncodeToString(h[:]))
+	}
+	return out
+}
+
+// consumeBackupCode validates a user-supplied backup code against the stored
+// SHA-256 list and, on success, removes it (single use). Returns false when the
+// code does not match any outstanding code.
+func consumeBackupCode(ctx context.Context, store AuthStore, user *UserRecord, candidate string) bool {
+	candidate = strings.ToUpper(strings.TrimSpace(candidate))
+	if candidate == "" || user.BackupCodes == "" {
+		return false
+	}
+	h := sha256.Sum256([]byte(candidate))
+	want := hex.EncodeToString(h[:])
+	stored := strings.Split(user.BackupCodes, ",")
+	idx := -1
+	for i, s := range stored {
+		if subtle.ConstantTimeCompare([]byte(strings.TrimSpace(s)), []byte(want)) == 1 {
+			idx = i
+			break
+		}
+	}
+	if idx < 0 {
+		return false
+	}
+	remaining := append(append([]string{}, stored[:idx]...), stored[idx+1:]...)
+	pg, ok := store.(*PGAuthStore)
+	if !ok {
+		return false
+	}
+	tag, err := pg.pool.Exec(ctx, `UPDATE public.users SET backup_codes = $2, updated_at = now() WHERE id = $1 AND backup_codes = $3`, user.ID, strings.Join(remaining, ","), user.BackupCodes)
+	if err != nil || tag.RowsAffected() != 1 {
+		return false // concurrent consumption or store error: fail closed
+	}
+	user.BackupCodes = strings.Join(remaining, ",")
+	return true
 }
 
 func uuidString(u pgtype.UUID) string {
@@ -1041,7 +1123,37 @@ func (a *App) buildTemplates(dir string) error {
 }
 
 func (a *App) baseData(r *http.Request) AuthData {
+	ctx := r.Context()
+	uidStr := CurrentUserID(ctx, a.sm)
+	role := CurrentRole(ctx, a.sm)
+	// Fail closed: if the session claims an identity but we cannot re-check
+	// the live role/status in the database, treat the request as anonymous.
+	// This closes the window where a demoted or banned user keeps privileged
+	// access from a stale session role until expiry.
+	if uidStr != "" {
+		verified := false
+		if u, ok := parseUUID(uidStr); ok && a.auth != nil {
+			if user, err := a.auth.AuthUserByID(ctx, u); err == nil && user != nil {
+				if user.Status == "active" {
+					role = user.Role
+					verified = true
+				} else {
+					role = ""
+				}
+			}
+		} else if a.auth == nil {
+			verified = true // non-DB test harnesses keep prior behavior
+		}
+		if !verified && a.auth != nil {
+			uidStr = ""
+			role = ""
+		}
+	}
 	d := AuthData{
+		CsrfToken:       CSRFToken(ctx, a.sm),
+		IsAuthenticated: uidStr != "",
+		IsAdmin:         role == "admin",
+		IsVendor:        role == "vendor",
 		CaptchaTextAlt: captchaTextAlt(),
 		CsrfToken:       CSRFToken(r.Context(), a.sm),
 		IsAuthenticated: CurrentUserID(r.Context(), a.sm) != "",
@@ -1049,16 +1161,16 @@ func (a *App) baseData(r *http.Request) AuthData {
 		IsVendor:        CurrentRole(r.Context(), a.sm) == "vendor",
 	}
 	d.HoneypotHidden = true
-	curr := a.sm.GetString(r.Context(), "sess_currency")
+	curr := a.sm.GetString(ctx, "sess_currency")
 	if curr == "" {
 		curr = "USD"
 	}
 	d.PreferredCurrency = curr
 	d.ShipsFromOptions = CountryOptions()
 	if pool, ok := a.deps.Pool.(*pgxpool.Pool); ok {
-		if uid := CurrentUserID(r.Context(), a.sm); uid != "" {
-			if u, ok := parseUUID(uid); ok {
-				d.MessagesUnread = CountUnreadForUser(r.Context(), pool, u)
+		if uidStr != "" {
+			if u, ok := parseUUID(uidStr); ok {
+				d.MessagesUnread = CountUnreadForUser(ctx, pool, u)
 			}
 		}
 	}
@@ -1114,12 +1226,31 @@ func (a *App) handleSetCurrency(w http.ResponseWriter, r *http.Request) {
         curr = "USD"
     }
     a.sm.Put(ctx, "sess_currency", curr)
-    
-    // Redirect back to referer or home
+
+    // Redirect back to a SAFE, same-site relative path only. The Referer is
+    // attacker-controllable: passing it to http.Redirect unfiltered is an open
+    // redirect (phishing vector). We accept only origin-form paths ("/...") and
+    // reject absolute, scheme-relative ("//host"), and backslash obfuscations.
+    http.Redirect(w, r, safeLocalReferrer(r), http.StatusSeeOther)
+}
+
+// safeLocalReferrer returns a same-origin relative redirect target derived from
+// the request's Referer, falling back to "/" when the Referer is missing,
+// absolute, scheme-relative, or otherwise not a plain site-local path.
+func safeLocalReferrer(r *http.Request) string {
     ref := r.Referer()
-    if ref == "" {
-        ref = "/"
+    if ref == "" || !strings.HasPrefix(ref, "/") {
+        return "/"
     }
-    http.Redirect(w, r, ref, http.StatusSeeOther)
+    u, err := url.Parse(ref)
+    if err != nil || u.Host != "" {
+        return "/"
+    }
+    // Reject "//evil.com" (scheme-relative even though it starts with "/")
+    // and "/\evil.com" (browsers normalize backslashes to slashes).
+    if strings.HasPrefix(ref, "//") || strings.HasPrefix(ref, `/\`) {
+        return "/"
+    }
+    return ref
 }
 

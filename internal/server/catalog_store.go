@@ -616,15 +616,73 @@ func (s *PGCatalogStore) populateRealETA(ctx context.Context, products []Storefr
 func (s *PGCatalogStore) GetVendorBalanceSat(ctx context.Context, vendorID pgtype.UUID) (int64, error) {
 	return VendorBalancePiconero(ctx, s.pool, vendorID), nil
 }
+// CreateWithdrawalRequest atomically validates the vendor's available balance
+// and records the pending withdrawal. Previously the balance check and the
+// INSERT were separate statements with no transaction, so two concurrent
+// requests could both pass the TOCTOU check and overdraw the vendor account
+// (double-spend). An advisory lock plus a row lock serialize requests per
+// vendor, and outstanding pending/approved requests count against the balance.
 func (s *PGCatalogStore) CreateWithdrawalRequest(ctx context.Context, vendorID pgtype.UUID, amount int64, address string) error {
-	bal := VendorBalancePiconero(ctx, s.pool, vendorID)
-	var pending int64
-	_ = s.pool.QueryRow(ctx, `SELECT COALESCE(SUM(amount_piconero),0) FROM withdrawals WHERE vendor_id=$1 AND status IN ('pending','approved')`, vendorID).Scan(&pending)
-	if amount <= 0 || amount > bal-pending {
+	if amount <= 0 {
+		return fmt.Errorf("invalid withdrawal amount")
+	}
+	tx, err := s.pool.BeginTx(ctx, pgx.TxOptions{IsoLevel: pgx.Serializable})
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+
+	// Advisory-lock the vendor so concurrent withdrawals for the same vendor
+	// serialize instead of racing on the balance check.
+	lockKey := uuidInt64(vendorID)
+	if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock($1)`, lockKey); err != nil {
+		return err
+	}
+	// Lock (and lazily create) the vendor ledger account row as a second guard.
+	var acctID int
+	if err := tx.QueryRow(ctx, `SELECT id FROM accounts WHERE name=$1 FOR UPDATE`, vendorAccountName(vendorID)).Scan(&acctID); err != nil {
+		if acctID, err = ensureVendorAccountTx(ctx, tx, vendorID); err != nil {
+			return err
+		}
+	}
+	// Available balance = ledger credits - debits, minus funds already tied up
+	// in outstanding (pending/approved) withdrawal requests.
+	var bal int64
+	if err := tx.QueryRow(ctx, `SELECT COALESCE(SUM(amount_piconero) FILTER (WHERE direction='credit'),0) - COALESCE(SUM(amount_piconero) FILTER (WHERE direction='debit'),0) FROM ledger_entries WHERE account_id=$1`, acctID).Scan(&bal); err != nil {
+		return err
+	}
+	var outstanding int64
+	if err := tx.QueryRow(ctx, `SELECT COALESCE(SUM(amount_piconero),0) FROM withdrawals WHERE vendor_id=$1 AND status IN ('pending','approved')`, vendorID).Scan(&outstanding); err != nil {
+		return err
+	}
+	if amount > bal-outstanding {
 		return fmt.Errorf("insufficient available balance")
 	}
-	_, err := s.pool.Exec(ctx, `INSERT INTO withdrawals (vendor_id, amount_piconero, xmr_address, status) VALUES ($1,$2,$3,'pending')`, vendorID, amount, address)
-	return err
+	if _, err := tx.Exec(ctx, `INSERT INTO withdrawals (vendor_id, amount_piconero, xmr_address, status) VALUES ($1,$2,$3,'pending')`, vendorID, amount, address); err != nil {
+		return err
+	}
+	return tx.Commit(ctx)
+}
+
+// ensureVendorAccountTx creates the vendor's ledger account inside an open tx.
+func ensureVendorAccountTx(ctx context.Context, tx pgx.Tx, vendorID pgtype.UUID) (int, error) {
+	name := vendorAccountName(vendorID)
+	if _, err := tx.Exec(ctx, `INSERT INTO accounts (name, kind) VALUES ($1,'liability') ON CONFLICT (name) DO NOTHING`, name); err != nil {
+		return 0, err
+	}
+	var id int
+	err := tx.QueryRow(ctx, `SELECT id FROM accounts WHERE name=$1`, name).Scan(&id)
+	return id, err
+}
+
+// uuidInt64 derives a stable int64 from a UUID for use as an advisory-lock key.
+func uuidInt64(u pgtype.UUID) int64 {
+	if !u.Valid {
+		return 0
+	}
+	return int64(u.Bytes[0])<<56 | int64(u.Bytes[1])<<48 | int64(u.Bytes[2])<<40 |
+		int64(u.Bytes[3])<<32 | int64(u.Bytes[4])<<24 | int64(u.Bytes[5])<<16 |
+		int64(u.Bytes[6])<<8 | int64(u.Bytes[7])
 }
 func (s *PGCatalogStore) ListWithdrawalsByVendor(ctx context.Context, vendorID pgtype.UUID) ([]WithdrawalRecord, error) {
 	rows, err := s.pool.Query(ctx, `SELECT id, vendor_id, amount_piconero, xmr_address, status, created_at FROM withdrawals WHERE vendor_id=$1 ORDER BY created_at DESC`, vendorID)
@@ -649,8 +707,32 @@ func (s *PGCatalogStore) GetWithdrawal(ctx context.Context, id pgtype.UUID) (*Wi
 	return &w, nil
 }
 func (s *PGCatalogStore) ReviewWithdrawal(ctx context.Context, id, reviewer pgtype.UUID, status string) error {
-	_, err := s.pool.Exec(ctx, `UPDATE withdrawals SET status=$2, reviewed_by=$3, reviewed_at=now() WHERE id=$1`, id, status, reviewer)
-	return err
+	tx, err := s.pool.BeginTx(ctx, pgx.TxOptions{IsoLevel: pgx.Serializable})
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+
+	var cur string
+	// Lock the withdrawal row so two concurrent reviews cannot both observe a
+	// non-final state and double-apply the payout ledger legs.
+	if err := tx.QueryRow(ctx, `SELECT status FROM withdrawals WHERE id=$1 FOR UPDATE`, id).Scan(&cur); err != nil {
+		return err
+	}
+	// Idempotency guard: paid/rejected are terminal states. Previously the
+	// handler re-ran the Monero payout + ledger write on every "paid" POST,
+	// even for already-paid withdrawals, sending funds twice.
+	switch cur {
+	case "pending", "approved":
+	case "paid", "rejected":
+		return fmt.Errorf("withdrawal already finalized")
+	default:
+		return fmt.Errorf("unexpected withdrawal status %q", cur)
+	}
+	if _, err := tx.Exec(ctx, `UPDATE withdrawals SET status=$2, reviewed_by=$3, reviewed_at=now() WHERE id=$1`, id, status, reviewer); err != nil {
+		return err
+	}
+	return tx.Commit(ctx)
 }
 
 // VendorGetByUser satisfies the WithdrawalStore interface by looking up a vendor
