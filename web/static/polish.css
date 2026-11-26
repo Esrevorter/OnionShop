@@ -39,3 +39,13 @@ input[type="checkbox"],input[type="radio"]{width:auto;max-width:none;accent-colo
 
 code.crypto:empty,pre.crypto:empty{display:none}
 button code,button pre,button .crypto{display:inline;background:none;border:0;padding:0;margin:0;font:inherit}
+
+/* Header action row: identical box metrics for anchor and submit controls. */
+a[href="/messages"], form[action="/logout"] button, button[name="currency"]{
+  display:inline-flex;align-items:center;justify-content:center;
+  padding:6px 14px;border-radius:999px;border:1px solid #24402f;
+  font-size:.85rem;line-height:1.2;font-weight:600;vertical-align:middle;
+  background:#182a20;color:#e8f2ec;text-decoration:none;box-sizing:border-box;
+}
+a[href="/messages"]:hover, form[action="/logout"] button:hover{background:#1f3628}
+button[name="currency"]{border-color:transparent}
