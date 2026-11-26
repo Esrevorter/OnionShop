@@ -196,10 +196,10 @@ func (a *App) CSRFProtect() func(http.Handler) http.Handler {
 				next.ServeHTTP(w, r)
 				return
 			}
-			if r.URL.Path == "/logout" && r.Method == http.MethodPost {
-				next.ServeHTTP(w, r)
-				return
-			}
+			// NOTE: /logout previously had a CSRF exemption here. That let any
+			// third-party site force-logout users (DoS / login-CSRF). The logout
+			// form already submits csrf_token, so protection is enforced like
+			// every other state-changing route.
 			want, _ := a.sm.Get(r.Context(), CSRFKey).(string)
 			got := r.FormValue(CSRFFormField)
 			if got == "" {
