@@ -14,7 +14,7 @@
           <td>{{.Buyer}}</td>
           <td>{{.Vendor}}</td>
           <td>{{fmtFiat .TotalUSD $.PreferredCurrency}}</td>
-          <td><span class="badge badge-success">{{.Status}}</span></td>
+          <td><span class="badge {{statusBadge .Status}}">{{.Status}}</span></td>
           <td>{{.CreatedAt}}</td>
           <td>
             {{if or (eq .Status "awaiting_payment") (eq .Status "in_escrow")}}

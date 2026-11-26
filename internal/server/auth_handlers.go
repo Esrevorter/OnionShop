@@ -999,9 +999,13 @@ var templateFuncs = template.FuncMap{
 	"split": strings.Split,
 	"mul": func(a, b int64) int64 { return a * b },
 	"statusBadge": func(s string) string {
+		// Status color grammar (P1): amber = awaiting action, green = settled money,
+		// red = alert/dispute, muted = terminal-neutral. See web/static/shop.css.
 		switch s {
-		case "in_escrow", "shipped", "released": return "badge-success"
-		default: return "badge-muted"
+		case "awaiting_payment", "open", "pending": return "badge-warning"
+		case "in_escrow", "shipped", "released", "approved", "active", "yes": return "badge-success"
+		case "disputed", "removed": return "badge-danger"
+		default: return "badge-muted" // refunded, cancelled, closed, draft, ...
 		}
 	},
 }

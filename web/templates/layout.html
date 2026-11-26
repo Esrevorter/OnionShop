@@ -6,24 +6,7 @@
 <meta name="color-scheme" content="dark">
 <title>{{block "title" .}}OnionShop{{end}}</title>
 <link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
-<link rel="stylesheet" href="/static/main.css?v=20261121c">
-<style>
-.site-nav details.nav-group{position:relative;display:inline-block;}
-.site-nav details.nav-group>summary{list-style:none;cursor:pointer;padding:.35rem .65rem;border-radius:.55rem;white-space:nowrap;}
-.site-nav details.nav-group>summary::-webkit-details-marker{display:none;}
-.site-nav details.nav-group>summary::after{content:" \25BE";opacity:.65;font-size:.8em;}
-.site-nav details.nav-group[open]>summary{background:rgba(255,255,255,.08);}
-.site-nav .nav-menu{position:absolute;right:0;top:calc(100% + .4rem);min-width:230px;background:var(--surface-raised,#121a18);border:1px solid var(--line,rgba(255,255,255,.14));border-radius:.75rem;padding:.4rem;display:flex;flex-direction:column;gap:.1rem;z-index:60;box-shadow:0 14px 34px rgba(0,0,0,.5);}
-.site-nav .nav-menu a{padding:.5rem .65rem;border-radius:.5rem;text-decoration:none;color:inherit;font-size:.95rem;}
-.site-nav .nav-menu a:hover{background:rgba(255,255,255,.08);}
-.help-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:1rem;margin-top:1rem;}
-.help-card{text-decoration:none;color:inherit;display:block;}
-.help-card:hover{border-color:var(--accent,#8a5fc4);}
-.help-steps{margin:.5rem 0 0;padding-left:1.2rem;line-height:1.75;}
-.help-list{margin:.5rem 0 0;padding-left:1.1rem;line-height:1.8;}
-details>summary{cursor:pointer;}
-</style>
-<link rel="stylesheet" href="/static/polish.ead59aaa0e.css">
+<link rel="stylesheet" href="/static/shop.css">
 </head>
 <body>
 <header class="site-header">
@@ -115,11 +98,11 @@ details>summary{cursor:pointer;}
         <button type="submit" name="currency" value="AUD" class="currency-btn {{if eq .PreferredCurrency "AUD"}}currency-active{{end}}">AUD</button>
       </form>
         {{if .IsSignedIn}}
-        <a href="/messages" class="currency-btn" style="text-decoration:none;{{if .MessagesUnread}} color:#ff5c5c; border-color:#ff5c5c; font-weight:700;{{end}}">Messages{{if .MessagesUnread}} ({{.MessagesUnread}}){{end}}</a>
+        <a href="/messages" class="currency-btn messages-link{{if .MessagesUnread}} unread{{end}}">Messages{{if .MessagesUnread}} <span class="badge badge-danger">{{.MessagesUnread}} new</span>{{end}}</a>
       
-        <form method="post" action="/logout" class="nav-form" style="margin:0; display:inline;">
+        <form method="post" action="/logout" class="nav-form">
           <input type="hidden" name="csrf_token" value="{{.CsrfToken}}">
-          <button class="secondary" type="submit" style="border:none; background:none; cursor:pointer; font-size:inherit; color:var(--accent); padding:.45rem .7rem;">Log out</button>
+          <button class="btn-ghost" type="submit">Log out</button>
         </form>
         {{end}}
       

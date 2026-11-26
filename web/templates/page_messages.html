@@ -14,7 +14,7 @@
           <span class="muted">{{.LastAt.Format "2006-01-02 15:04"}}</span>
         </div>
         <p class="muted" style="margin:.35rem 0 0;">{{.LastBody}}</p>
-        {{if .Unread}}<span class="badge badge-success">{{.Unread}} new</span>{{end}}
+        {{if .Unread}}<span class="badge badge-danger">{{.Unread}} new</span>{{end}}
         {{if .HasOrder}}<span class="badge badge-muted">order</span>{{end}}
       </a>
       <form method="post" action="/messages/{{.IDStr}}/hide" style="margin-top:.5rem;">
