@@ -33,7 +33,7 @@ CRED_FILE   = os.path.join(REPO_ROOT, "CRED")
 REMOTE_NAME = "origin"
 
 # The agent workspace branch. Update when a new task branch is opened.
-DEFAULT_BRANCH = "qwen-code-9e2a012c-b9a9-4d88-8425-f5a0d0929430"
+DEFAULT_BRANCH = "main"
 
 # Commits that MUST be present in the fetched branch before we sync.
 # These are the ones verified green in the agent workspace. If you see a
@@ -175,7 +175,29 @@ def main():
         die(f"{remote_ref} does not exist on origin.\n"
             f"Has the PR been pushed/merged? Try: git branch -r")
     short_hashes = set(log.split())
-    missing = [c for c in REQUIRED_COMMITS if not any(h.startswith(c) for h in short_hashes)]
+
+    def _present(c):
+        if any(h.startswith(c) for h in short_hashes):
+            return True
+        # Squash-merges rewrite SHAs; match by patch-id instead.
+        a = subprocess.run(["git", "patch-id"], input="", capture_output=True, text=True)
+        try:
+            pa = subprocess.run(["git", "show", c], capture_output=True).stdout
+            ia = subprocess.run(["git", "patch-id"], input=pa,
+                                capture_output=True, text=True).stdout.split()
+            if not ia:
+                return False
+            for h in short_hashes:
+                pb = subprocess.run(["git", "show", h], capture_output=True).stdout
+                ib = subprocess.run(["git", "patch-id"], input=pb,
+                                    capture_output=True, text=True).stdout.split()
+                if ib and ib[0] == ia[0]:
+                    return True
+        except Exception:
+            pass
+        return False
+
+    missing = [c for c in REQUIRED_COMMITS if not _present(c)]
     if missing:
         die(f"Refusing to sync: {remote_ref} is MISSING tested commits {missing}.\n"
             f"This means your dev copy would NOT match what was verified in the\n"
