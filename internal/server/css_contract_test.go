@@ -10,10 +10,15 @@ import (
 )
 
 // TestCSSClassContract is the P1 guardrail: every static class token used in a
-// template must be defined in the single design-system stylesheet, and no
-// template may reference the retired stylesheets (main.css / polish.css) or
-// inline <style> blocks in layout.html. If you add a component class to a
-// template, add it to web/static/shop.css in the same PR.
+// template must be defined in the single design-system stylesheet. Dynamic
+// class names produced by template expressions are handled by stripping all
+// {{ ... }} / {{- ... -}} action regions before tokenizing, so constructs like
+//
+//	class="pill {{if eq .PreferredCurrency "USD"}}currency-active{{end}}"
+//
+// yield only the static tokens ("pill") instead of garbage fragments.
+// If you add a component class to a template, add it to web/static/shop.css in
+// the same PR.
 func TestCSSClassContract(t *testing.T) {
 	const cssPath = "../../web/static/shop.css"
 	cssBytes, err := os.ReadFile(cssPath)
@@ -30,22 +35,20 @@ func TestCSSClassContract(t *testing.T) {
 	if err != nil || len(pages) == 0 {
 		t.Fatalf("template glob: %v (%d files)", err, len(pages))
 	}
-	// Match a full start-tag; then extract the class attribute from it. This
-	// correctly handles `class="a {{if eq .X "b"}}c{{end}} d"` where the value
-	// contains nested double quotes (the tag ends at the LAST quote before >).
-	tagRE := regexp.MustCompile(`<([a-zA-Z][a-zA-Z0-9-]*)\s+([^<>]*?)/?>`)
-	classRE := regexp.MustCompile(`class="(.*)"`)
+
+	actionRE := regexp.MustCompile(`\{\{.*?\}\}`) // non-greedy; actions never nest
+	classRE := regexp.MustCompile(`class="([^"]*)"`)
+
 	missing := map[string][]string{}
 	for _, path := range pages {
 		b, err := os.ReadFile(path)
 		if err != nil {
 			t.Fatalf("read %s: %v", path, err)
 		}
-		for _, tag := range tagRE.FindAllStringSubmatch(string(b), -1) {
-			m := classRE.FindStringSubmatch(tag[2])
-			if m == nil {
-				continue
-			}
+		// Remove template actions first: any quotes or braces inside an action
+		// can no longer confuse the attribute regex.
+		stripped := actionRE.ReplaceAllString(string(b), " ")
+		for _, m := range classRE.FindAllStringSubmatch(stripped, -1) {
 			for _, tok := range strings.Fields(m[1]) {
 				if !defined[tok] {
 					missing[tok] = append(missing[tok], filepath.Base(path))
