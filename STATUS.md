@@ -21,3 +21,6 @@ deploy + verify
 
 ## Header alignment
 Messages anchor, Log out submit and currency buttons now share identical padding, radius, line-height and inline-flex centering, so they sit on one baseline at equal height.
+
+## Design system
+polish.css replaced with a token-driven system: onion-violet primary, Monero-orange and ledger-green surfaces, semantic lime/amber/red/cyan, layered radial background, sticky blurred header, themed scrollbars, focus rings, responsive grid and print styles. Functional guards (honeypot, empty-crypto, button descendants, header control alignment) retained. Verified: served CSS contains tokens; /account renders no empty crypto boxes and no inputs inside buttons.
