@@ -35,16 +35,25 @@ REMOTE_NAME = "origin"
 # The agent workspace branch. Update when a new task branch is opened.
 DEFAULT_BRANCH = "main"
 
-# Commits that MUST be present in the fetched branch before we sync.
-# These are the ones verified green in the agent workspace. If you see a
-# "missing required commit" error, the PR was merged without the latest push
-# or you pointed --branch at the wrong ref.
+# Commits that MUST be PRESENT (by content) in the fetched branch before we sync.
+# NOTE: squash-merges rewrite SHAs and combine patches, so neither SHA nor
+# patch-id matching is reliable across merges. Instead we verify the *content*
+# each commit introduced/changed: for every REQUIRED_CONTENT path, the blob
+# hash at our tested commit must appear somewhere on the target branch
+# (tree match = present; merge conflicts could legitimately change it, in which
+# case the go tests below are the real gate).
 REQUIRED_COMMITS = [
-    "3f039b5",  # P1d — robust web/ path resolution in contract test
-    "1d540cb",  # P1c — quote-aware tokenizer (kills the 148 false positives)
-    "b460ab0",  # P1b — contract parser rewrite
-    "ef86c9e",  # P1  — design-system merge (shop.css)
     "15c06a1",  # P0  — XMR address render, CSP-safe confirms, price hierarchy
+    "ef86c9e",  # P1  — design-system merge (shop.css)
+    "b460ab0",  # P1b — contract parser rewrite
+    "1d540cb",  # P1c — quote-aware tokenizer (kills the 148 false positives)
+    "3f039b5",  # P1d — robust web/ path resolution in contract test
+]
+
+# Content markers: <path> as of <commit> must exist identically on target branch.
+REQUIRED_CONTENT = [
+    ("internal/server/css_contract_test.go", "3f039b5"),  # final P1c/P1d parser
+    ("web/static/shop.css",                  "ef86c9e"),  # unified design system
 ]
 
 GO_MIN_VERSION = (1, 25)          # module requirement
@@ -165,8 +174,8 @@ def main():
     auth = git_auth_args(user, pat)          # Basic base64(user:pat), in-memory only
     ok(f"authenticated as {user} (PAT never written to disk or URL)")
 
-    # ---- 2. Fetch & verify tested commits EXIST remotely ----------------
-    step(2, f"Fetch origin/{args.branch} and verify tested commits")
+    # ---- 2. Fetch & verify tested CONTENT exists on target branch --------
+    step(2, f"Fetch origin/{args.branch} and verify tested commits/content")
     sh(["git", "fetch", "--prune", REMOTE_NAME], auth=auth)
     remote_ref = f"{REMOTE_NAME}/{args.branch}"
     try:
@@ -174,36 +183,32 @@ def main():
     except SystemExit:
         die(f"{remote_ref} does not exist on origin.\n"
             f"Has the PR been pushed/merged? Try: git branch -r")
-    short_hashes = set(log.split())
 
-    def _present(c):
-        if any(h.startswith(c) for h in short_hashes):
-            return True
-        # Squash-merges rewrite SHAs; match by patch-id instead.
-        a = subprocess.run(["git", "patch-id"], input="", capture_output=True, text=True)
-        try:
-            pa = subprocess.run(["git", "show", c], capture_output=True).stdout
-            ia = subprocess.run(["git", "patch-id"], input=pa,
-                                capture_output=True, text=True).stdout.split()
-            if not ia:
-                return False
-            for h in short_hashes:
-                pb = subprocess.run(["git", "show", h], capture_output=True).stdout
-                ib = subprocess.run(["git", "patch-id"], input=pb,
-                                    capture_output=True, text=True).stdout.split()
-                if ib and ib[0] == ia[0]:
-                    return True
-        except Exception:
-            pass
-        return False
+    def _content_present(path, commit):
+        """True if the exact blob of <path>@<commit> is on the target branch."""
+        r = subprocess.run(["git", "cat-file", "-e", f"{commit}:{path}"],
+                           capture_output=True)
+        if r.returncode != 0:
+            return False  # we don't have that commit locally -> skip check
+        want = subprocess.run(["git", "rev-parse", f"{commit}:{path}"],
+                              capture_output=True, text=True).stdout.strip()
+        have = subprocess.run(["git", "rev-parse", f"{remote_ref}:{path}"],
+                              capture_output=True, text=True)
+        return have.returncode == 0 and have.stdout.strip() == want
 
-    missing = [c for c in REQUIRED_COMMITS if not _present(c)]
-    if missing:
-        die(f"Refusing to sync: {remote_ref} is MISSING tested commits {missing}.\n"
-            f"This means your dev copy would NOT match what was verified in the\n"
-            f"agent workspace. Merge/push first, then re-run this script.")
+    problems = []
+    for path, commit in REQUIRED_CONTENT:
+        if _content_present(path, commit):
+            ok(f"content marker matches: {path} (from {commit})")
+        else:
+            problems.append(f"{path}@{commit}")
+    if problems:
+        die("Refusing to sync: target branch lacks tested content:\n  " +
+            "\n  ".join(problems) +
+            "\nThe PR may not be merged yet, or was merged from an older push.\n"
+            "Check: gh pr list / git log --oneline origin/" + args.branch + " -5")
     head = sh(["git", "rev-parse", "--short", remote_ref])
-    ok(f"{remote_ref} @ {head} contains all {len(REQUIRED_COMMITS)} tested commits")
+    ok(f"{remote_ref} @ {head} carries the tested content — safe to sync")
 
     # ---- 3. Sync working tree (fast-forward, stash if dirty) ------------
     step(3, "Update local checkout")
