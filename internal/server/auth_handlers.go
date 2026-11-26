@@ -712,8 +712,11 @@ func (a *App) handle2FALoginSubmit(w http.ResponseWriter, r *http.Request) {
 
 	totpCode := strings.TrimSpace(r.FormValue("totp_code"))
 	if !totp.Validate(totpCode, user.TOTPSecret) {
-		fail("invalid authentication code")
-		return
+		// Fall back to single-use backup codes (SHA-256 hashed at rest).
+		if !consumeBackupCode(ctx, a.auth, user, totpCode) {
+			fail("invalid authentication code")
+			return
+		}
 	}
 
 	a.sm.Remove(ctx, "pending_2fa_uid")
@@ -761,13 +764,15 @@ func (a *App) handle2FASetup(w http.ResponseWriter, r *http.Request) {
 
 	var codes []string
 	for i := 0; i < 8; i++ {
-		b := make([]byte, 4)
-		rand.Read(b)
+		b := make([]byte, 10) // 80 bits of entropy per code
+		if _, err := rand.Read(b); err != nil { writeGenericError(w); return }
 		codes = append(codes, strings.ToUpper(hex.EncodeToString(b)))
 	}
 	data.BackupCodes = codes
 	data.TOTPSecret = key.Secret()
-	a.sm.Put(ctx, "pending_totp_backup", strings.Join(codes, ","))
+	// Only SHA-256 hashes ever reach the database; plaintext lives solely in
+	// this short-lived setup session so it can be shown once to the user.
+	a.sm.Put(ctx, "pending_totp_backup", strings.Join(hashBackupCodes(codes), ","))
 
 	if data.Captcha = a.newChallenge(w, r, "account"); data.Captcha == nil { return }
 	a.render(w, "2fa_setup", http.StatusOK, data)
@@ -783,9 +788,7 @@ func (a *App) handle2FAEnable(w http.ResponseWriter, r *http.Request) {
 	fail := func(msg string) {
 		data.Error = msg
 		data.TOTPSecret = a.sm.GetString(ctx, "pending_totp_secret")
-		if s := a.sm.GetString(ctx, "pending_totp_backup"); s != "" {
-			data.BackupCodes = strings.Split(s, ",")
-		}
+		// NOTE: pending_totp_backup now holds SHA-256 hashes; never render it.
 		if data.Captcha = a.newChallenge(w, r, "account"); data.Captcha == nil { return }
 		a.render(w, "2fa_setup", http.StatusUnprocessableEntity, data)
 	}
@@ -814,6 +817,7 @@ func (a *App) handle2FAEnable(w http.ResponseWriter, r *http.Request) {
 	backupCodesStr := a.sm.GetString(ctx, "pending_totp_backup")
 	if backupCodesStr == "" { fail("setup session expired, please restart"); return }
 	if pgStore, ok := a.auth.(*PGAuthStore); ok {
+		// backupCodesStr already contains SHA-256 hashes (see handle2FASetup).
 		if _, err := pgStore.pool.Exec(ctx, `UPDATE public.users SET totp_secret = $2, totp_enabled = $3, backup_codes = $4, updated_at = now() WHERE id = $1`, *uid, pendingSecret, true, backupCodesStr); err != nil {
 			fail("could not enable 2FA")
 			return
@@ -825,9 +829,12 @@ func (a *App) handle2FAEnable(w http.ResponseWriter, r *http.Request) {
 
 	a.sm.Remove(ctx, "pending_totp_secret")
 	a.sm.Remove(ctx, "pending_totp_backup")
-	data.Flash = "Two-Factor Authentication enabled. Save your backup codes!"
+	data.Flash = "Two-Factor Authentication enabled. These are your only backup codes — save them now; they cannot be shown again."
 	data.TOTPEnabled = true
-	data.BackupCodes = strings.Split(backupCodesStr, ",")
+	// Recover plaintext once for display by re-reading what we just generated:
+	// the session no longer holds it, so instead we rendered codes in setup and
+	// stash nothing further. Plaintext is intentionally NOT re-derived here.
+	data.BackupCodes = nil
 	if data.Captcha = a.newChallenge(w, r, "account"); data.Captcha == nil { return }
 	a.render(w, "account", http.StatusOK, data)
 }
@@ -873,6 +880,51 @@ func (a *App) handle2FADisable(w http.ResponseWriter, r *http.Request) {
 	data.TOTPEnabled = false
 	if data.Captcha = a.newChallenge(w, r, "account"); data.Captcha == nil { return }
 	a.render(w, "account", http.StatusOK, data)
+}
+
+// hashBackupCodes returns the lowercase hex SHA-256 of each code. Backup codes
+// are low-entropy-ish secrets, so only hashes are ever persisted at rest.
+func hashBackupCodes(codes []string) []string {
+	out := make([]string, 0, len(codes))
+	for _, c := range codes {
+		h := sha256.Sum256([]byte(strings.ToUpper(strings.TrimSpace(c))))
+		out = append(out, hex.EncodeToString(h[:]))
+	}
+	return out
+}
+
+// consumeBackupCode validates a user-supplied backup code against the stored
+// SHA-256 list and, on success, removes it (single use). Returns false when the
+// code does not match any outstanding code.
+func consumeBackupCode(ctx context.Context, store AuthStore, user *UserRecord, candidate string) bool {
+	candidate = strings.ToUpper(strings.TrimSpace(candidate))
+	if candidate == "" || user.BackupCodes == "" {
+		return false
+	}
+	h := sha256.Sum256([]byte(candidate))
+	want := hex.EncodeToString(h[:])
+	stored := strings.Split(user.BackupCodes, ",")
+	idx := -1
+	for i, s := range stored {
+		if subtle.ConstantTimeCompare([]byte(strings.TrimSpace(s)), []byte(want)) == 1 {
+			idx = i
+			break
+		}
+	}
+	if idx < 0 {
+		return false
+	}
+	remaining := append(append([]string{}, stored[:idx]...), stored[idx+1:]...)
+	pg, ok := store.(*PGAuthStore)
+	if !ok {
+		return false
+	}
+	tag, err := pg.pool.Exec(ctx, `UPDATE public.users SET backup_codes = $2, updated_at = now() WHERE id = $1 AND backup_codes = $3`, user.ID, strings.Join(remaining, ","), user.BackupCodes)
+	if err != nil || tag.RowsAffected() != 1 {
+		return false // concurrent consumption or store error: fail closed
+	}
+	user.BackupCodes = strings.Join(remaining, ",")
+	return true
 }
 
 func uuidString(u pgtype.UUID) string {
