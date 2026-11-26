@@ -44,14 +44,18 @@
           {{end}}
         </div>
       </details>
-      <form method="post" action="/account/2fa/disable" style="margin-top: 1rem;" onsubmit="return confirm('Are you sure you want to disable 2FA?');">
-        {{template "friction" .}}
-        <label for="disable_password">Enter current password to confirm</label>
-        <input id="disable_password" type="password" name="password" required>
-        <div class="form-actions">
-          <button type="submit" class="danger">Disable 2FA</button>
-        </div>
-      </form>
+      <details class="confirm-discard">
+        <summary class="button danger">Disable 2FA</summary>
+        <form method="post" action="/account/2fa/disable" style="margin-top: 1rem;">
+          {{template "friction" .}}
+          <p class="notice error"><strong>Warning:</strong> disabling 2FA weakens your account security. This cannot be undone until you re-enroll.</p>
+          <label for="disable_password">Enter current password to confirm</label>
+          <input id="disable_password" type="password" name="password" required>
+          <div class="form-actions">
+            <button type="submit" class="danger">Confirm: Disable 2FA</button>
+          </div>
+        </form>
+      </details>
     {{else}}
       <p class="lede" style="font-size: 0.9rem; margin-bottom: 1rem;">
         Protect your account with an authenticator app (e.g., Aegis, Raivo). 
@@ -66,7 +70,7 @@
     <p>Only <strong>public</strong> keys are accepted. See the <a href="/pgp">PGP tool page</a> for details.</p>
     {{if .PGPPublicKey}}
       <p>Stored key fingerprint: <code>{{if .PGPFingerprint}}{{.PGPFingerprint}}{{else}}(unparseable){{end}}</code></p>
-      <pre style="background: #222; padding: 1rem; border-radius: 4px; overflow-x: auto;">{{.PGPPublicKey}}</pre>
+      <pre style="background: #222; padding: 1rem; border-radius: 4px; overflow-x: auto;"><code class="crypto">{{.PGPPublicKey}}</code></pre>
       <form method="post" action="/account/pgp/clear" autocomplete="off">
         {{template "friction" .}}
         <input type="hidden" name="csrf_token" value="{{.CsrfToken}}">

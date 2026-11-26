@@ -19,6 +19,7 @@
   <form method="post" action="/checkout" autocomplete="off">
     <label for="refund_address">Refund XMR address (returned here if refunded)</label>
       <input id="refund_address" name="refund_address" type="text" required minlength="10" maxlength="200" placeholder="your Monero refund address">
+            {{if .Errors}}{{with index .Errors "refund_address"}}<p class="field-error">{{.}}</p>{{end}}{{end}}
       {{template "friction" .}}
     <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 2rem;">
       <div class="auth-card">

@@ -305,7 +305,7 @@ func (a *App) handleVendorDecision(w http.ResponseWriter, r *http.Request) {
 		}
 		a.renderAs(w, "admin_vendors", code, data)
 	}
-	if honeypotTriggered(r) || !a.requireFriction(w, r, vendorPurpose) {
+	if honeypotTriggered(r) {
 		fail(http.StatusUnauthorized, "challenge failed, please try again")
 		return
 	}

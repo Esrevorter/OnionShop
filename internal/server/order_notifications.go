@@ -1,6 +1,7 @@
 package server
 
 import (
+	"log"
 	"context"
 	"fmt"
 
@@ -29,7 +30,7 @@ func notifyOrderEvent(ctx context.Context, pool *pgxpool.Pool, orderID pgtype.UU
 		RETURNING id`, customer, vendor, orderID).Scan(&threadID); err != nil {
 		return err
 	}
-	xmr := float64(pico) / 1e12
+	xmr := formatPiconero(pico)
 	short := uuidString(orderID)
 	if len(short) > 8 { short = short[:8] }
 	ins := func(sender pgtype.UUID, body string, aud pgtype.UUID) error {
@@ -42,9 +43,9 @@ func notifyOrderEvent(ctx context.Context, pool *pgxpool.Pool, orderID pgtype.UU
 	}
 	switch event {
 	case "created":
-		return ins(vendor, fmt.Sprintf("Order #%s received. Awaiting payment of %.12f XMR. Open the order and use Pay. Unpaid orders expire after 12 hours.", short, xmr), customer)
+		return ins(vendor, fmt.Sprintf("Order #%s received. Awaiting payment of %s XMR. Open the order and use Pay. Unpaid orders expire after 12 hours.", short, xmr), customer)
 	case "paid":
-		if err := ins(vendor, fmt.Sprintf("Payment for order #%s confirmed (%.12f XMR). Funds are in escrow.", short, xmr), customer); err != nil { return err }
+		if err := ins(vendor, fmt.Sprintf("Payment for order #%s confirmed (%s XMR). Funds are in escrow.", short, xmr), customer); err != nil { return err }
 		return ins(customer, fmt.Sprintf("Payment for order #%s confirmed. Funds in escrow - please prepare and mark shipped.", short), vendor)
 	case "shipped":
 		body := fmt.Sprintf("Order #%s has been SHIPPED. Confirm receipt to release funds, or open a dispute if there is a problem.", short)
@@ -84,7 +85,9 @@ func refundOrder(ctx context.Context, pool *pgxpool.Pool, provider MoneroProvide
 	}
 	if addr != "" {
 		if tx, err := provider.SendTransaction(ctx, addr, pico); err == nil {
-			_, _ = pool.Exec(ctx, `UPDATE orders SET refund_tx=$1 WHERE id=$2`, tx, orderID)
+			if _, err := pool.Exec(ctx, `UPDATE orders SET refund_tx=$1 WHERE id=$2`, tx, orderID); err != nil {
+				log.Printf("server: order state write failed: %v", err)
+			}
 		}
 	}
 	_ = PostEscrowRefund(ctx, pool, orderID, pico)

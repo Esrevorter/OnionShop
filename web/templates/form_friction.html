@@ -5,7 +5,7 @@
   <p><strong>Human verification</strong> <span class="form-help">Please solve this short challenge.</span></p>
   <input type="hidden" name="captcha_id" value="{{.Captcha.ID}}">
   <input type="hidden" name="captcha_token" value="{{.Captcha.Token}}">
-  <p>{{.Captcha.Prompt}}</p>
+  {{if .CaptchaTextAlt}}<p class="sr-only">{{.Captcha.Prompt}}</p>{{end}}
   <img class="captcha-img" src="/captcha/{{.Captcha.ID}}" alt="Visual CAPTCHA challenge">
   <label for="captcha-answer">Answer</label><input id="captcha-answer" type="text" name="captcha_answer" autocomplete="off" maxlength="4" inputmode="numeric" required>
 </div>

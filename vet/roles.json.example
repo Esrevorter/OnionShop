@@ -1,0 +1,9 @@
+{
+  "base": "https://127.0.0.1:8443",
+  "roles": {
+    "buyer":    {"user": "dekoperman",   "pass": "REPLACE", "totp": "", "refund_address": ""},
+    "vendor":   {"user": "devendortest", "pass": "REPLACE", "totp": "", "payout_address": ""},
+    "operator": {"user": "REPLACE",      "pass": "REPLACE", "totp": ""},
+    "admin":    {"user": "REPLACE",      "pass": "REPLACE", "totp": ""}
+  }
+}

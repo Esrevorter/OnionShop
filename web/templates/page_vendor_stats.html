@@ -91,13 +91,13 @@
     <h2>Recent Orders</h2>
     {{if .Stats.RecentOrders}}
     <table class="data-table">
-      <thead><tr><th>Order ID</th><th>Customer</th><th>Status</th><th>Total</th><th>Date</th></tr></thead>
+      <thead><tr><th>Order ID</th><th>Buyer</th><th>Status</th><th>Total</th><th>Date</th></tr></thead>
       <tbody>
         {{range .Stats.RecentOrders}}
         <tr>
           <td><code>{{.IDStr}}</code></td>
           <td>{{.CustomerName}}</td>
-          <td><span class="badge {{if eq .Status "released"}}badge-success{{else}}badge-muted{{end}}">{{.Status}}</span></td>
+          <td><span class="badge {{statusBadge .Status}}">{{.Status}}</span></td>
           <td>{{fmtFiat .TotalCents $.PreferredCurrency}}</td>
           <td>{{.CreatedAt}}</td>
         </tr>

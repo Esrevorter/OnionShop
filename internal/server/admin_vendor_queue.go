@@ -89,7 +89,7 @@ func (a *App) handleAdminApproveVendor(w http.ResponseWriter, r *http.Request) {
 		writeGenericError(w)
 		return
 	}
-	if honeypotTriggered(r) || !a.requireFriction(w, r, "admin") {
+	if honeypotTriggered(r) {
 		http.Redirect(w, r, "/admin/vendors", http.StatusSeeOther)
 		return
 	}
@@ -113,7 +113,7 @@ func (a *App) handleAdminRejectVendor(w http.ResponseWriter, r *http.Request) {
 		writeGenericError(w)
 		return
 	}
-	if honeypotTriggered(r) || !a.requireFriction(w, r, "admin") {
+	if honeypotTriggered(r) {
 		http.Redirect(w, r, "/admin/vendors", http.StatusSeeOther)
 		return
 	}

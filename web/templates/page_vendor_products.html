@@ -53,10 +53,14 @@
               </form>
               {{end}}
               <a href="/vendor/products/{{.ID}}/edit" class="button secondary btn-sm">Edit</a>
-              <form method="post" action="/vendor/products/{{.ID}}/remove" style="display:inline;" onsubmit="return confirm('Are you sure you want to remove this listing? This cannot be undone.');">
-                {{template "friction" $}}
-                <button type="submit" class="btn-danger btn-sm">Remove</button>
-              </form>
+              <details class="confirm-discard">
+                <summary class="button danger btn-sm">Remove</summary>
+                <form method="post" action="/vendor/products/{{.ID}}/remove">
+                  {{template "friction" $}}
+                  <p class="notice error"><strong>Warning:</strong> removing this listing is permanent and deletes it from the marketplace.</p>
+                  <button type="submit" class="danger btn-sm">Confirm: Remove listing</button>
+                </form>
+              </details>
             </div>
             {{end}}
           </td>
