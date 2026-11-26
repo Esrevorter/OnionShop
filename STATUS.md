@@ -18,3 +18,6 @@ deploy + verify
    empty crypto boxes: 0
    key button: <button type="submit">Replace Key</button>
    VERIFIED origin/main == HEAD
+
+## Header alignment
+Messages anchor, Log out submit and currency buttons now share identical padding, radius, line-height and inline-flex centering, so they sit on one baseline at equal height.
