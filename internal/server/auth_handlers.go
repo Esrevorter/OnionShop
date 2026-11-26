@@ -548,13 +548,18 @@ func (a *App) handleLoginSubmit(w http.ResponseWriter, r *http.Request) {
 	
 	ok, err := VerifyPassword(password, user.PasswordHash)
 	if err != nil || !ok { fail(badCreds); return }
-	if user.Status != "active" { fail("this account cannot sign in right now"); return }
-
+	// Consume the status check inside the same argon2 timing envelope as a
+	// successful verification so "account disabled" cannot be distinguished
+	// from bad credentials by response timing (username enumeration guard).
+	statusOK := user.Status == "active"
 	if p, _, perr := decodeArgon(user.PasswordHash); perr == nil && NeedsUpgrade(p) {
 		if nh, _, herr := HashPassword(password); herr == nil {
 			if uerr := a.auth.AuthUpdatePasswordHash(ctx, user.ID, nh); uerr != nil { log.Printf("auth: password param upgrade failed (non-fatal): %v", sanitizedErr(uerr)) }
 		}
+	} else {
+		DummyVerify() // equalize work between upgraded/non-upgraded accounts
 	}
+	if !statusOK { fail(badCreds); return }
 
 	// 2FA Check
 	if user.TOTPEnabled {
@@ -1000,23 +1005,49 @@ func (a *App) buildTemplates(dir string) error {
 }
 
 func (a *App) baseData(r *http.Request) AuthData {
+	ctx := r.Context()
+	uidStr := CurrentUserID(ctx, a.sm)
+	role := CurrentRole(ctx, a.sm)
+	// Fail closed: if the session claims an identity but we cannot re-check
+	// the live role/status in the database, treat the request as anonymous.
+	// This closes the window where a demoted or banned user keeps privileged
+	// access from a stale session role until expiry.
+	if uidStr != "" {
+		verified := false
+		if u, ok := parseUUID(uidStr); ok && a.auth != nil {
+			if user, err := a.auth.AuthUserByID(ctx, u); err == nil && user != nil {
+				if user.Status == "active" {
+					role = user.Role
+					verified = true
+				} else {
+					role = ""
+				}
+			}
+		} else if a.auth == nil {
+			verified = true // non-DB test harnesses keep prior behavior
+		}
+		if !verified && a.auth != nil {
+			uidStr = ""
+			role = ""
+		}
+	}
 	d := AuthData{
-		CsrfToken:       CSRFToken(r.Context(), a.sm),
-		IsAuthenticated: CurrentUserID(r.Context(), a.sm) != "",
-		IsAdmin:         CurrentRole(r.Context(), a.sm) == "admin",
-		IsVendor:        CurrentRole(r.Context(), a.sm) == "vendor",
+		CsrfToken:       CSRFToken(ctx, a.sm),
+		IsAuthenticated: uidStr != "",
+		IsAdmin:         role == "admin",
+		IsVendor:        role == "vendor",
 	}
 	d.HoneypotHidden = true
-	curr := a.sm.GetString(r.Context(), "sess_currency")
+	curr := a.sm.GetString(ctx, "sess_currency")
 	if curr == "" {
 		curr = "USD"
 	}
 	d.PreferredCurrency = curr
 	d.ShipsFromOptions = CountryOptions()
 	if pool, ok := a.deps.Pool.(*pgxpool.Pool); ok {
-		if uid := CurrentUserID(r.Context(), a.sm); uid != "" {
-			if u, ok := parseUUID(uid); ok {
-				d.MessagesUnread = CountUnreadForUser(r.Context(), pool, u)
+		if uidStr != "" {
+			if u, ok := parseUUID(uidStr); ok {
+				d.MessagesUnread = CountUnreadForUser(ctx, pool, u)
 			}
 		}
 	}
