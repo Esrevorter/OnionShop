@@ -31,3 +31,6 @@ code.crypto,.crypto,pre{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,m
 ::selection{background:#7fd6a4;color:#08130c}
 @media (prefers-reduced-motion: reduce){*{transition:none!important;animation:none!important}}
 @media (max-width:640px){main{padding:16px 12px 48px}table{font-size:.85rem}th,td{padding:6px 8px}}
+
+/* Honeypot must never be visible to humans, regardless of cascade order. */
+.hp,.hp *{display:none!important}
