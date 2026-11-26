@@ -10,13 +10,18 @@ import (
 )
 
 // TestCSSClassContract is the P1 guardrail: every static class token used in a
-// template must be defined in the single design-system stylesheet, and no
-// template may reference the retired stylesheets (main.css / polish.css) or
-// inline <style> blocks in layout.html. If you add a component class to a
-// template, add it to web/static/shop.css in the same PR.
+// template must be defined in the single design-system stylesheet. Dynamic
+// class names produced by template expressions are handled by stripping all
+// {{ ... }} / {{- ... -}} action regions before tokenizing, so constructs like
+//
+//	class="pill {{if eq .PreferredCurrency "USD"}}currency-active{{end}}"
+//
+// yield only the static tokens ("pill") instead of garbage fragments.
+// If you add a component class to a template, add it to web/static/shop.css in
+// the same PR.
 func TestCSSClassContract(t *testing.T) {
-	const cssPath = "../../web/static/shop.css"
-	cssBytes, err := os.ReadFile(cssPath)
+	webRoot := repoWebDir(t)
+	cssBytes, err := os.ReadFile(filepath.Join(webRoot, "static", "shop.css"))
 	if err != nil {
 		t.Fatalf("read stylesheet: %v", err)
 	}
@@ -26,27 +31,32 @@ func TestCSSClassContract(t *testing.T) {
 		defined[m[1]] = true
 	}
 
-	pages, err := filepath.Glob("../../web/templates/*.html")
+	pages, err := filepath.Glob(filepath.Join(webRoot, "templates", "*.html"))
 	if err != nil || len(pages) == 0 {
 		t.Fatalf("template glob: %v (%d files)", err, len(pages))
 	}
-	// Match a full start-tag; then extract the class attribute from it. This
-	// correctly handles `class="a {{if eq .X "b"}}c{{end}} d"` where the value
-	// contains nested double quotes (the tag ends at the LAST quote before >).
-	tagRE := regexp.MustCompile(`<([a-zA-Z][a-zA-Z0-9-]*)\s+([^<>]*?)/?>`)
-	classRE := regexp.MustCompile(`class="(.*)"`)
+
+	actionRE := regexp.MustCompile(`(?s)\{\{.*?\}\}`) // non-greedy + DOTALL: multi-line {{if}} blocks
+	// Attribute-value scan that respects HTML5 quoting: double, single, or bare.
+	classRE := regexp.MustCompile(`class\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>"'=]+))`)
+
 	missing := map[string][]string{}
 	for _, path := range pages {
 		b, err := os.ReadFile(path)
 		if err != nil {
 			t.Fatalf("read %s: %v", path, err)
 		}
-		for _, tag := range tagRE.FindAllStringSubmatch(string(b), -1) {
-			m := classRE.FindStringSubmatch(tag[2])
-			if m == nil {
-				continue
+		// Remove template actions first: any quotes or braces inside an action
+		// can no longer confuse the attribute regex.
+		stripped := actionRE.ReplaceAllString(string(b), " ")
+		for _, m := range classRE.FindAllStringSubmatch(stripped, -1) {
+			val := m[1]
+			if val == "" && m[2] != "" {
+				val = m[2]
+			} else if val == "" && m[3] != "" {
+				val = m[3]
 			}
-			for _, tok := range strings.Fields(m[1]) {
+			for _, tok := range strings.Fields(val) {
 				if !defined[tok] {
 					missing[tok] = append(missing[tok], filepath.Base(path))
 				}
@@ -68,7 +78,7 @@ func TestCSSClassContract(t *testing.T) {
 // TestNoRetiredStylesheetRefs ensures the merged-away assets stay gone and the
 // layout ships exactly one stylesheet with no inline <style> blocks.
 func TestNoRetiredStylesheetRefs(t *testing.T) {
-	layout, err := os.ReadFile("../../web/templates/layout.html")
+	layout, err := os.ReadFile(filepath.Join(repoWebDir(t), "templates", "layout.html"))
 	if err != nil {
 		t.Fatalf("read layout: %v", err)
 	}
@@ -81,6 +91,39 @@ func TestNoRetiredStylesheetRefs(t *testing.T) {
 	if n := strings.Count(s, `<link rel="stylesheet"`); n != 1 {
 		t.Errorf("layout.html has %d stylesheet links, want exactly 1", n)
 	}
+}
+
+// repoWebDir locates the repository's web/ directory regardless of the test
+// invocation context. Hardcoded "../../web" breaks when `go test ./...` runs
+// from a different module root or an overlay layout, which previously made
+// TestCSSClassContract read a stale copy of the tree and report 148 bogus
+// "missing class" errors. Resolution order:
+//  1. ONIONSHOP_WEB_DIR env override (mirrors ONIONSHOP_TEMPLATE_DIR in main).
+//  2. Walk up from the test's working directory looking for web/templates.
+func repoWebDir(t *testing.T) string {
+	t.Helper()
+	if v := os.Getenv("ONIONSHOP_WEB_DIR"); v != "" {
+		if _, err := os.Stat(filepath.Join(v, "templates", "layout.html")); err == nil {
+			return v
+		}
+	}
+	dir, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("getwd: %v", err)
+	}
+	for i := 0; i < 6; i++ {
+		candidate := filepath.Join(dir, "web")
+		if _, err := os.Stat(filepath.Join(candidate, "templates", "layout.html")); err == nil {
+			return candidate
+		}
+		parent := filepath.Dir(dir)
+		if parent == dir {
+			break
+		}
+		dir = parent
+	}
+	t.Fatalf("could not locate web/templates/layout.html above the test working directory; set ONIONSHOP_WEB_DIR if using an unusual layout")
+	return ""
 }
 
 func dedupe(in []string) []string {
