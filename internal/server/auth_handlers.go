@@ -14,6 +14,7 @@ import (
 	"image/png"
 	"log"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -1071,12 +1072,31 @@ func (a *App) handleSetCurrency(w http.ResponseWriter, r *http.Request) {
         curr = "USD"
     }
     a.sm.Put(ctx, "sess_currency", curr)
-    
-    // Redirect back to referer or home
+
+    // Redirect back to a SAFE, same-site relative path only. The Referer is
+    // attacker-controllable: passing it to http.Redirect unfiltered is an open
+    // redirect (phishing vector). We accept only origin-form paths ("/...") and
+    // reject absolute, scheme-relative ("//host"), and backslash obfuscations.
+    http.Redirect(w, r, safeLocalReferrer(r), http.StatusSeeOther)
+}
+
+// safeLocalReferrer returns a same-origin relative redirect target derived from
+// the request's Referer, falling back to "/" when the Referer is missing,
+// absolute, scheme-relative, or otherwise not a plain site-local path.
+func safeLocalReferrer(r *http.Request) string {
     ref := r.Referer()
-    if ref == "" {
-        ref = "/"
+    if ref == "" || !strings.HasPrefix(ref, "/") {
+        return "/"
     }
-    http.Redirect(w, r, ref, http.StatusSeeOther)
+    u, err := url.Parse(ref)
+    if err != nil || u.Host != "" {
+        return "/"
+    }
+    // Reject "//evil.com" (scheme-relative even though it starts with "/")
+    // and "/\evil.com" (browsers normalize backslashes to slashes).
+    if strings.HasPrefix(ref, "//") || strings.HasPrefix(ref, `/\`) {
+        return "/"
+    }
+    return ref
 }
 

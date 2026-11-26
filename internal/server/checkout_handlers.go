@@ -326,24 +326,10 @@ func (a *App) handleCheckoutSubmit(w http.ResponseWriter, r *http.Request) {
 		fail("Failed to create orders. Please try again.")
 		return
 	}
-	for _, oid := range orderIDs {
-		irows, qerr := pool.Query(ctx, `SELECT product_id, qty FROM order_items WHERE order_id=$1`, oid)
-		if qerr != nil { continue }
-		type line struct{ pid pgtype.UUID; qty int64 }
-		var lines []line
-		for irows.Next() { var l line; if irows.Scan(&l.pid,&l.qty)==nil { lines=append(lines,l) } }
-		irows.Close()
-		for _, l := range lines {
-			tag, uerr := pool.Exec(ctx, `UPDATE products SET stock = stock - $1 WHERE id=$2 AND stock >= $1`, l.qty, l.pid)
-			if uerr != nil || tag.RowsAffected() == 0 {
-				_, _ = pool.Exec(ctx, `DELETE FROM orders WHERE checkout_ref=$1`, checkoutRef)
-				fail("An item in your cart went out of stock. Please refresh your cart.")
-				return
-			}
-		}
-	}
-
-	// Oversell guard: atomic stock decrement, roll back checkout if short.
+	// Oversell guard: atomic stock decrement (exactly once per line item),
+	// roll back the whole checkout if any line is short. Previously this loop
+	// was duplicated verbatim, which decremented every product's stock twice
+	// per successful order — permanent inventory loss and phantom overselling.
 	for _, oid := range orderIDs {
 		irows, qerr := pool.Query(ctx, `SELECT product_id, qty FROM order_items WHERE order_id=$1`, oid)
 		if qerr != nil { continue }
