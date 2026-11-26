@@ -27,3 +27,4 @@ nginx/ssl/*.crt
 nginx/ssl/
 vet/roles.json
 vet/*.md
+*_REPORT.md

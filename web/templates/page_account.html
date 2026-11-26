@@ -64,7 +64,7 @@
   <div class="auth-card">
     <h2>PGP Public Key</h2>
     <p>Only <strong>public</strong> keys are accepted. See the <a href="/pgp">PGP tool page</a> for details.</p>
-    <code class="crypto">{{if .PGPPublicKey}}</code>
+    {{if .PGPPublicKey}}
       <p>Stored key fingerprint: <code>{{if .PGPFingerprint}}{{.PGPFingerprint}}{{else}}(unparseable){{end}}</code></p>
       <pre style="background: #222; padding: 1rem; border-radius: 4px; overflow-x: auto;"><code class="crypto">{{.PGPPublicKey}}</code></pre>
       <form method="post" action="/account/pgp/clear" autocomplete="off">
@@ -78,7 +78,7 @@
       <input type="hidden" name="csrf_token" value="{{.CsrfToken}}">
       <label for="pgp_public_key">ASCII-armored PUBLIC key block</label>
       <textarea id="pgp_public_key" name="pgp_public_key" rows="8" spellcheck="false">{{.PGPPublicKey}}</textarea>
-      <div class="form-actions"><button type="submit"><code class="crypto">{{if .PGPPublicKey}}</code>Replace Key{{else}}Upload Key{{end}}</button></div>
+      <div class="form-actions"><button type="submit">{{if .PGPPublicKey}}Replace Key{{else}}Upload Key{{end}}</button></div>
     </form>
   </div>
 </section>
