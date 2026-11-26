@@ -15,7 +15,7 @@
         <tr>
           <td><a href="/tickets/{{.IDStr}}">{{.Subject}}</a></td>
           <td>{{.Category}}</td>
-          <td><span class="badge {{if eq .Status "open"}}badge-success{{else if eq .Status "closed"}}badge-muted{{else}}badge-muted{{end}}">{{.Status}}</span></td>
+          <td><span class="badge {{statusBadge .Status}}">{{.Status}}</span></td>
           <td>{{.UpdatedAt}}</td>
           <td><a href="/tickets/{{.IDStr}}" class="btn-secondary">View</a></td>
         </tr>

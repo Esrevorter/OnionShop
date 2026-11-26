@@ -97,7 +97,7 @@
         <tr>
           <td><code>{{.IDStr}}</code></td>
           <td>{{.CustomerName}}</td>
-          <td><span class="badge {{if eq .Status "released"}}badge-success{{else}}badge-muted{{end}}">{{.Status}}</span></td>
+          <td><span class="badge {{statusBadge .Status}}">{{.Status}}</span></td>
           <td>{{fmtFiat .TotalCents $.PreferredCurrency}}</td>
           <td>{{.CreatedAt}}</td>
         </tr>
