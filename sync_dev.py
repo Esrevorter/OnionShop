@@ -19,6 +19,7 @@ Usage (from repo root):
 """
 
 import argparse
+import base64
 import os
 import subprocess
 import sys
@@ -50,14 +51,25 @@ GO_MIN_VERSION = (1, 25)          # module requirement
 TMPDIR_LOCAL   = os.path.expanduser("~/gotmp")  # avoids noexec /tmp failures
 
 
-def sh(cmd, cwd=REPO_ROOT, env=None, check=True, capture=True):
-    """Run a shell command list, echoing it, returning stdout text."""
-    print(f"  $ {' '.join(cmd)}")
+def sh(cmd, cwd=REPO_ROOT, env=None, check=True, capture=True, auth=None):
+    """Run a shell command list, echoing it (auth args masked), returning stdout.
+
+    `auth` is the list of git -c args carrying the base64 Authorization header;
+    it is never printed and never persisted."""
+    printable = " ".join(
+        a if "extraHeader" not in a else "[auth-header]" for a in cmd
+    )
+    print(f"  $ {printable}")
+    full = list(cmd)
+    if auth:
+        # insert -c args right after 'git'
+        idx = full.index("git") + 1 if "git" in full[:1] else 1
+        full = full[:idx] + list(auth) + full[idx:]
     e = os.environ.copy()
     if env:
         e.update(env)
     r = subprocess.run(
-        cmd, cwd=cwd, env=e,
+        full, cwd=cwd, env=e,
         capture_output=capture, text=True,
     )
     if check and r.returncode != 0:
@@ -86,34 +98,51 @@ def step(n, title):
 # Credentials
 # --------------------------------------------------------------------------
 def load_creds():
-    if not os.path.isfile(CRED_FILE):
-        die(f"CRED file not found at {CRED_FILE}\n"
-            f"Create it with two lines: GitHub username, then a fine-grained "
-            f"PAT with read access to the repo.")
-    with open(CRED_FILE) as f:
-        lines = [l.strip() for l in f if l.strip()]
-    if len(lines) < 2:
+    """Return (username, PAT). Reads ./CRED first; falls back to GH_USER/GH_TOKEN.
+    The PAT is NEVER echoed or written anywhere by this script."""
+    if os.path.isfile(CRED_FILE):
+        with open(CRED_FILE) as f:
+            lines = [l.strip() for l in f if l.strip() and not l.startswith("#")]
+        if len(lines) >= 2:
+            return lines[0], lines[1]
         die("CRED must contain username on line 1 and PAT on line 2.")
-    user, pat = lines[0], lines[1]
-    # Never echo the PAT.
-    return user, pat
+    user, tok = os.environ.get("GH_USER"), os.environ.get("GH_TOKEN")
+    if user and tok:
+        return user, tok
+    die(f"No credentials found.\n"
+        f"Create {CRED_FILE} with two lines: GitHub username, then PAT "
+        f"(or export GH_USER / GH_TOKEN).")
 
 
-def ensure_auth_url(user, pat, branch):
-    """Point origin at an https URL carrying credentials, keeping any existing
-    upstream host/path. Idempotent."""
+def b64(value: str) -> str:
+    return base64.b64encode(value.encode("utf-8")).decode("ascii")
+
+
+def git_auth_args(user, pat):
+    """Base64-only authentication: credentials go into an Authorization header
+    (Basic base64(user:pat)) via per-invocation -c config — never into the
+    remote URL, .git/config, or credential files."""
+    basic = b64(f"{user}:{pat}")
+    return ["-c", f"http.extraHeader=Authorization: Basic {basic}"]
+
+
+def clean_remote_url():
+    """Normalize origin to an https URL WITHOUT embedded credentials, so no
+    plaintext secret can ever land in .git/config."""
     current = sh(["git", "remote", "get-url", REMOTE_NAME])
     if current.startswith("https://"):
-        host_path = current.split("://", 1)[1]
-        host_path = host_path.split("@", 1)[-1]          # strip old creds
+        host_path = current.split("://", 1)[1].split("@", 1)[-1]
     elif current.startswith("git@"):
-        host, path = current[4:].split(":", 1)           # ssh form -> https
+        host, path = current[4:].split(":", 1)
         host_path = f"{host}/{path}"
+    elif current.startswith("http://"):
+        host_path = current.split("://", 1)[1]
     else:
         die(f"Unsupported remote URL scheme: {current!r}")
-    authed = f"https://{user}:{pat}@{host_path}"
-    sh(["git", "remote", "set-url", REMOTE_NAME, authed])
-    return authed
+    clean = f"https://{host_path}"
+    if current != clean:
+        sh(["git", "remote", "set-url", REMOTE_NAME, clean])
+    return clean
 
 
 # --------------------------------------------------------------------------
@@ -129,15 +158,16 @@ def main():
     os.chdir(REPO_ROOT)
     t0 = time.time()
 
-    # ---- 1. Credentials -------------------------------------------------
-    step(1, "Load GitHub credentials from CRED")
+    # ---- 1. Credentials (base64-only auth) -------------------------------
+    step(1, "Load GitHub credentials from CRED → base64 Authorization header")
     user, pat = load_creds()
-    ensure_auth_url(user, pat, args.branch)
-    ok(f"authenticated as {user} (PAT hidden)")
+    clean_remote_url()                       # strip any creds from .git/config
+    auth = git_auth_args(user, pat)          # Basic base64(user:pat), in-memory only
+    ok(f"authenticated as {user} (PAT never written to disk or URL)")
 
     # ---- 2. Fetch & verify tested commits EXIST remotely ----------------
     step(2, f"Fetch origin/{args.branch} and verify tested commits")
-    sh(["git", "fetch", "--prune", REMOTE_NAME])
+    sh(["git", "fetch", "--prune", REMOTE_NAME], auth=auth)
     remote_ref = f"{REMOTE_NAME}/{args.branch}"
     try:
         log = sh(["git", "log", "--format=%h", remote_ref])
