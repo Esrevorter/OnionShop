@@ -36,3 +36,6 @@
 FAIL
 FAIL	github.com/example/onionshop/internal/server	3.568s
 FAIL
+
+## Nav guard field repair
+Vendor nav guard now uses the role field actually present on AuthData (taken from the pre-edit guard in HEAD), restoring /account rendering and keeping vendor links vendor-only.
