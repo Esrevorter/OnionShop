@@ -39,3 +39,6 @@ FAIL
 
 ## Nav guard field repair
 Vendor nav guard now uses the role field actually present on AuthData (taken from the pre-edit guard in HEAD), restoring /account rendering and keeping vendor links vendor-only.
+
+## Compact UI pass
+Ground truth read from origin/main before edits; captcha on one flex row at 150px, inputs 440px/7px, textarea 84px, tighter rhythm; stylesheet content-hashed.
