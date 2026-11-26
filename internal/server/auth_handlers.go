@@ -425,16 +425,47 @@ func (a *App) handleCaptchaImage(w http.ResponseWriter, r *http.Request) {
 }
 func honeypotTriggered(r *http.Request) bool { return strings.TrimSpace(r.FormValue(honeypotField)) != "" }
 
+// frictionGrantKey records how long a successful human verification stays
+// valid for this session. Privileged actions never reach this path (they use
+// CSRF + honeypot + audit); credential, key and payout changes always
+// re-challenge regardless of the grant.
+const frictionGrantKey = "friction_grant_until"
+
+const frictionGrantTTL = 30 * time.Minute
+
+// frictionSensitive reports purposes that must ALWAYS present a fresh
+// challenge: authentication, account secrets/keys, and payouts.
+func frictionSensitive(purpose string) bool {
+	switch purpose {
+	case "register", "login", "login2fa", "account", "withdraw":
+		return true
+	}
+	for _, k := range []string{"login", "register", "account", "withdraw", "2fa", "password"} {
+		if strings.Contains(purpose, k) {
+			return true
+		}
+	}
+	return false
+}
+
 func (a *App) requireFriction(w http.ResponseWriter, r *http.Request, purpose string) (ok bool) {
 	ctx := r.Context()
-	token := a.sessionTokenForRequest(r)
 	userID := CurrentUserID(ctx, a.sm)
+	sensitive := frictionSensitive(purpose)
+	if !sensitive && userID != "" {
+		if until := a.sm.GetInt64(ctx, frictionGrantKey); until > time.Now().Unix() {
+			return true
+		}
+	}
+	token := a.sessionTokenForRequest(r)
 	id := r.FormValue("captcha_id")
 	ans := r.FormValue("captcha_answer")
 	if err := a.captcha.Verify(ctx, r.FormValue("captcha_token"), id, ans, token, userID); err != nil { return false }
-	_ = purpose
 	a.captcha.Burn(ctx, id)
 	a.sm.PopString(ctx, pendingTokenKey)
+	if !sensitive && userID != "" {
+		a.sm.Put(ctx, frictionGrantKey, time.Now().Add(frictionGrantTTL).Unix())
+	}
 	return true
 }
 
