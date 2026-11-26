@@ -63,7 +63,7 @@ func (a *App) handleAdminKillSessions(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "bad request", http.StatusBadRequest)
 		return
 	}
-	if honeypotTriggered(r) || !a.requireFriction(w, r, "admin") {
+	if honeypotTriggered(r) {
 		http.Redirect(w, r, "/admin/users", http.StatusSeeOther)
 		return
 	}

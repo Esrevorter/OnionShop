@@ -29,6 +29,12 @@ func (a *App) shippingPool() (*pgxpool.Pool, bool) {
 }
 
 func (a *App) handleShippingList(w http.ResponseWriter, r *http.Request) {
+	// vendor self-service is vendor-only; operators manage vendors via /admin/vendors.
+	if role := CurrentRole(r.Context(), a.sm); role != "vendor" {
+		http.Redirect(w, r, "/admin/vendors", http.StatusSeeOther)
+		return
+	}
+
 	pool, ok := a.shippingPool()
 	if !ok {
 		writeGenericError(w)
@@ -94,14 +100,14 @@ func (a *App) handleShippingCreate(w http.ResponseWriter, r *http.Request) {
 	if etaDays < 1 || etaDays > 60 {
 		etaDays = 14
 	}
-	priceUSD, err := strconv.ParseFloat(strings.TrimSpace(r.FormValue("price_usd")), 64)
-	if err != nil || priceUSD < 0 {
+	priceCents, err := parseDecimalUnits(r.FormValue("price_usd"), 2)
+	if err != nil  {
 		http.Redirect(w, r, "/vendor/shipping?error=not_found", http.StatusSeeOther)
 		return
 	}
 	if err := ShippingCreate(r.Context(), pool, ShippingOption{
 		VendorID: vrow.ID, Title: title, Description: "",
-		PriceUSDCents: int64(priceUSD * 100), Eta: eta, EtaDays: etaDays, Active: true,
+		PriceUSDCents: priceCents, Eta: eta, EtaDays: etaDays, Active: true,
 	}); err != nil {
 		writeGenericError(w)
 		return

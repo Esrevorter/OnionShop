@@ -13,7 +13,7 @@
           <td><a href="/admin/disputes/{{.IDStr}}">{{.IDStr}}</a></td>
           <td><code>{{.OrderID}}</code></td>
           <td>{{.OpenedBy}}</td>
-          <td><span class="badge badge-success">{{.Status}}</span></td>
+          <td><span class="badge {{statusBadge .Status}}">{{.Status}}</span></td>
           <td>{{.CreatedAt}}</td>
         </tr>
         {{end}}

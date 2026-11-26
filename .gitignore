@@ -22,3 +22,9 @@ secrets/
 *.bak*
 *.orig
 *.rej
+nginx/ssl/*.key
+nginx/ssl/*.crt
+nginx/ssl/
+vet/roles.json
+vet/*.md
+*_REPORT.md

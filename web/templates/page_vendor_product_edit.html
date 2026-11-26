@@ -15,6 +15,7 @@
 
       <label for="title">Product Title (3-200 characters)</label>
       <input id="title" type="text" name="title" maxlength="200" value="{{if .Editing}}{{.Editing.Title}}{{end}}" required>
+            {{if .Errors}}{{with index .Errors "title"}}<p class="field-error">{{.}}</p>{{end}}{{end}}
 
       <label for="description">Description (max 20000 characters)</label>
       <textarea id="description" name="description" rows="6" maxlength="20000" required>{{if .Editing}}{{.Editing.Description}}{{end}}</textarea>
@@ -23,11 +24,13 @@
         <div>
           <label for="price_usd">Price (USD)</label>
           <input id="price_usd" type="number" step="0.01" min="0.01" name="price_usd" placeholder="10.00" {{if .Editing}}value="{{fmtUSD .Editing.PriceUSDCents}}"{{end}} required>
+            {{if .Errors}}{{with index .Errors "price_usd"}}<p class="field-error">{{.}}</p>{{end}}{{end}}
           <p class="form-help">Enter the price in <strong>USD</strong> (base currency). Buyers see it converted to their preferred currency (currently <strong>{{.PreferredCurrency}}</strong>).</p>
         </div>
         <div>
           <label for="stock">Available Stock</label>
           <input id="stock" type="number" name="stock" min="0" value="{{if .Editing}}{{.Editing.Stock}}{{else}}0{{end}}" required>
+            {{if .Errors}}{{with index .Errors "stock"}}<p class="field-error">{{.}}</p>{{end}}{{end}}
         </div>
       </div>
 

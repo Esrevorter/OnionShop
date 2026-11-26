@@ -205,7 +205,7 @@ func (a *App) handleAdminSettings(w http.ResponseWriter, r *http.Request) {
 	cents := vendorFeeCents(ctx, pool)
 	data := AdminSettingsData{
 		AuthData: a.baseData(r),
-		FeeUSD:   strconv.FormatFloat(float64(cents)/100, 'f', 2, 64),
+		FeeUSD:   fmt.Sprintf("%d.%02d", cents/100, cents%100),
 	}
 	if r.URL.Query().Get("saved") == "1" {
 		data.Flash = "Vendor fee updated."

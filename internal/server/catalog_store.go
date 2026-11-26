@@ -735,3 +735,19 @@ func (s *PGCatalogStore) ReviewWithdrawal(ctx context.Context, id, reviewer pgty
 	return tx.Commit(ctx)
 }
 
+// VendorGetByUser satisfies the WithdrawalStore interface by looking up a vendor
+// record by the owning user's UUID. It reuses the package-private scanVendor
+// helper defined in auth_handlers.go.
+func (s *PGCatalogStore) VendorGetByUser(ctx context.Context, userID pgtype.UUID) (*VendorRecord, error) {
+	v, err := scanVendor(s.pool.QueryRow(ctx, `
+		SELECT v.id, v.user_id, v.shop_name, v.approved, v.created_at
+		FROM public.vendors v
+		WHERE v.user_id = $1`, userID))
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, ErrNotFound
+	}
+	if err != nil {
+		return nil, fmt.Errorf("store: vendor by user: %w", err)
+	}
+	return &v, nil
+}

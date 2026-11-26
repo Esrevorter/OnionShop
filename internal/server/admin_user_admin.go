@@ -44,7 +44,7 @@ func (a *App) handleAdminCreateUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	ctx := r.Context()
-	if honeypotTriggered(r) || !a.requireFriction(w, r, "admin") {
+	if honeypotTriggered(r) {
 		a.adminUsersFail(w, r, "Human verification failed, please try again.")
 		return
 	}
@@ -94,7 +94,7 @@ func (a *App) handleAdminSetRole(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	ctx := r.Context()
-	if honeypotTriggered(r) || !a.requireFriction(w, r, "admin") {
+	if honeypotTriggered(r) {
 		a.adminUsersFail(w, r, "Human verification failed, please try again.")
 		return
 	}

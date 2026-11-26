@@ -7,9 +7,6 @@
     <a href="/admin" class="btn-secondary">← Back to Dashboard</a>
   </div>
 
-  {{if .Error}}
-  <div class="flash" role="alert" style="border-color:var(--danger,#f87171); color:#fca5a5; margin-bottom:1rem;">{{.Error}}</div>
-  {{end}}
 
   <div class="table-container" style="margin-top: 1.5rem;">
     <table class="data-table">
@@ -29,7 +26,7 @@
         <tr>
           <td><strong>{{.VendorName}}</strong></td>
           <td>{{fmtXMR .AmountPico}} XMR</td>
-          <td><code style="word-break:break-all;">{{.XmrAddress}}</code></td>
+          <td><code style="word-break:break-all;"><code class="crypto">{{.XmrAddress}}</code></code></td>
           <td>{{.CreatedAt}}</td>
           <td><span class="badge {{if eq .Status "pending"}}badge-muted{{else if eq .Status "approved"}}badge-success{{else}}badge-danger{{end}}">{{.Status}}</span></td>
           <td>

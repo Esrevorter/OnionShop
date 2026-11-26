@@ -17,8 +17,7 @@
     <aside class="price-panel">
       <p class="eyebrow">Price</p>
       <p class="price-large">{{fmtFiat .PriceUSDCents $.PreferredCurrency}}</p>
-      <p class="muted">≈ {{fmtUSD .PriceUSDCents}} USD (base)</p>
-      <p class="muted">{{fmtFiat .PriceUSDCents $.PreferredCurrency}}</p>
+      {{if ne $.PreferredCurrency "USD"}}<p class="muted price-reference">≈ {{fmtUSD .PriceUSDCents}} USD</p>{{end}}
       <p>{{if gt .Stock 0}}In stock: {{.Stock}}{{else}}Currently out of stock{{end}}</p>
       <p class="muted">Confirm product details and seller information before placing an order.</p>
       {{if $.IsAuthenticated}}

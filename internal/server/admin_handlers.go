@@ -111,25 +111,7 @@ func (a *App) handleAdminBanUser(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	_ = r.ParseForm()
 
-	fail := func(msg string) {
-		data := adminUserListData{AuthData: a.baseData(r)}
-		data.Error = msg
-		users, err := fetchAdminUsers(ctx, pool)
-		if err == nil {
-			data.Users = users
-		}
-		if data.Captcha = a.newChallenge(w, r, "admin"); data.Captcha == nil {
-			return
-		}
-		a.renderAs(w, "admin_users", http.StatusUnprocessableEntity, data)
-	}
-
-	if !a.requireFriction(w, r, "admin") {
-		fail("Human verification failed, please try again.")
-		return
-	}
-
-	targetID := strings.TrimSpace(r.FormValue("user_id"))
+		targetID := strings.TrimSpace(r.FormValue("user_id"))
 	action := r.FormValue("action")
 	if targetID == "" || (action != "ban" && action != "unban") {
 		http.Error(w, "bad request", http.StatusBadRequest)
@@ -243,12 +225,7 @@ func (a *App) handleAdminCategoryCreate(w http.ResponseWriter, r *http.Request) 
 		a.renderAs(w, "admin_categories", http.StatusUnprocessableEntity, CategoryData{AuthData: data})
 	}
 
-	if !a.requireFriction(w, r, "admin") {
-		fail("Human verification failed, please try again.")
-		return
-	}
-
-	name := strings.TrimSpace(r.FormValue("name"))
+		name := strings.TrimSpace(r.FormValue("name"))
 	slug := strings.ToLower(strings.TrimSpace(r.FormValue("slug")))
 
 	if len(name) < 2 || len(name) > 50 {
@@ -304,14 +281,7 @@ func (a *App) handleAdminResetPassword(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if !a.requireFriction(w, r, "admin") {
-		data.Error = "Human verification failed."
-		users, _ := fetchAdminUsers(ctx, pool)
-		a.renderAs(w, "admin_users", http.StatusUnprocessableEntity, adminUserListData{AuthData: data, Users: users})
-		return
-	}
-
-	tempPass := generateTempPassword()
+		tempPass := generateTempPassword()
 	hash, _, err := HashPassword(tempPass)
 	if err != nil {
 		log.Printf("server: password hash failed: %v", err)

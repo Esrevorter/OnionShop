@@ -198,6 +198,9 @@ func (a *App) handleOrderDetail(w http.ResponseWriter, r *http.Request) {
 	if err != nil { http.NotFound(w, r); return }
 	
 	order, err := GetOrderDetail(ctx, pool, oid, cuid, isVendor)
+	if err != nil && (role == "admin" || role == "mod") {
+		order, err = getOrderDetailPrivileged(ctx, pool, oid)
+	}
 	if err != nil { http.NotFound(w, r); return }
 	data.Order = *order
 	
@@ -217,4 +220,34 @@ func (a *App) registerOrderRoutes(r chi.Router) {
 	anyUser := a.RequireRole("customer", "vendor", "mod", "admin")
 	r.Method(http.MethodGet, "/orders", anyUser(http.HandlerFunc(a.renderOrdersPage)))
 	r.Method(http.MethodGet, "/orders/{id}", anyUser(http.HandlerFunc(a.handleOrderDetail)))
+}
+
+// getOrderDetailPrivileged lets moderators/administrators open any order.
+// Ownership filtering in GetOrderDetail is correct for buyers and vendors;
+// operators managing disputes, cancellations and audits must not be 404'd.
+func getOrderDetailPrivileged(ctx context.Context, pool *pgxpool.Pool, orderID pgtype.UUID) (*OrderView, error) {
+	var o OrderView; var id pgtype.UUID; var created interface{}
+	err := pool.QueryRow(ctx, `
+		SELECT o.id, o.status, o.total_usd_cents, o.shipping_usd_cents, o.xmr_amount_piconero,
+		       COALESCE(o.xmr_address,''), COALESCE(o.xmr_payment_id,''), COALESCE(o.shipping_ciphertext,''),
+		       COALESCE(cu.username,''), COALESCE(v.shop_name,''), COALESCE(s.title,''), o.created_at
+		FROM orders o
+		LEFT JOIN vendors v ON v.id = o.vendor_id
+		LEFT JOIN users cu ON cu.id = o.customer_id
+		LEFT JOIN shipping_options s ON s.id = o.shipping_option_id
+		WHERE o.id=$1`, orderID).
+		Scan(&id, &o.Status, &o.TotalUSDCents, &o.ShippingUSDCents, &o.XmrPiconero,
+		     &o.XmrAddress, &o.XmrPaymentID, &o.ShippingCiphertext,
+		     &o.CustomerName, &o.ShopName, &o.ShippingTitle, &created)
+	if err != nil { return nil, err }
+	o.IDStr, o.CreatedAt = uuidString(id), fmtCreated(created)
+	irows, ierr := pool.Query(ctx, `SELECT product_title, qty, unit_price_usd_cents FROM order_items WHERE order_id=$1 ORDER BY id`, id)
+	if ierr == nil {
+		for irows.Next() {
+			var it OrderItemView
+			if irows.Scan(&it.Title, &it.Qty, &it.PriceUSDCents) == nil { o.Items = append(o.Items, it) }
+		}
+		irows.Close()
+	}
+	return &o, nil
 }

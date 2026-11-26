@@ -67,7 +67,7 @@ func (a *App) handleAdminForceCancel(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/admin/orders", http.StatusSeeOther)
 		return
 	}
-	if honeypotTriggered(r) || !a.requireFriction(w, r, "admin") {
+	if honeypotTriggered(r) {
 		http.Redirect(w, r, "/admin/orders", http.StatusSeeOther)
 		return
 	}

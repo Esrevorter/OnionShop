@@ -1,6 +1,7 @@
 package server
 
 import (
+	"log"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"context"
 	"net/http"
@@ -58,6 +59,7 @@ func (a *App) handleWallet(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+		if data.Captcha = a.newChallenge(w, r, "account"); data.Captcha == nil { return }
 	a.render(w, "wallet", http.StatusOK, data)
 }
 
@@ -157,7 +159,9 @@ func (a *App) handleAdminReviewWithdrawal(w http.ResponseWriter, r *http.Request
 				if pool, ok := a.deps.Pool.(*pgxpool.Pool); ok {
 					tx, serr := NewMoneroProvider().SendTransaction(ctx, wr.XmrAddress, wr.AmountPiconero)
 					if serr != nil { w.WriteHeader(http.StatusBadGateway); return }
-					_, _ = pool.Exec(ctx, `UPDATE withdrawals SET tx_hash=$2 WHERE id=$1`, wid, tx)
+					if _, err := pool.Exec(ctx, `UPDATE withdrawals SET tx_hash=$2 WHERE id=$1`, wid, tx); err != nil {
+						log.Printf("server: withdrawal tx record failed: %v", err)
+					}
 					var txref pgtype.UUID
 					_ = pool.QueryRow(ctx, `SELECT gen_random_uuid()`).Scan(&txref)
 					_ = NewLedgerService(pool).RecordLedgerTx(ctx, txref, "withdraw:"+uuidString(wid), &wr.VendorID, "vendor withdrawal paid", []LedgerLeg{

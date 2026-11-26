@@ -44,10 +44,10 @@
     <table class="data-table">
       <thead><tr><th>Status</th><th>Meaning</th><th>What happens next</th></tr></thead>
       <tbody>
-        <tr><td><span class="badge badge-muted">awaiting_payment</span></td><td>Order created, not yet paid</td><td>Pay the exact amount within 12 hours, or it is cancelled</td></tr>
+        <tr><td><span class="badge badge-warning">awaiting_payment</span></td><td>Order created, not yet paid</td><td>Pay the exact amount within 12 hours, or it is cancelled</td></tr>
         <tr><td><span class="badge badge-success">in_escrow</span></td><td>Payment confirmed, funds held</td><td>Vendor ships; buyer may cancel for a refund before shipment</td></tr>
-        <tr><td><span class="badge badge-success">shipped</span></td><td>Vendor marked it sent</td><td>Buyer confirms receipt (release) or opens a dispute</td></tr>
-        <tr><td><span class="badge badge-muted">disputed</span></td><td>A moderator is reviewing</td><td>Resolution releases to vendor or refunds the buyer</td></tr>
+        <tr><td><span class="badge badge-warning">shipped</span></td><td>Vendor marked it sent</td><td>Buyer confirms receipt (release) or opens a dispute</td></tr>
+        <tr><td><span class="badge badge-danger">disputed</span></td><td>A moderator is reviewing</td><td>Resolution releases to vendor or refunds the buyer</td></tr>
         <tr><td><span class="badge badge-success">released</span></td><td>Completed</td><td>Funds credited to the vendor; buyer can leave a review</td></tr>
         <tr><td><span class="badge badge-muted">refunded</span></td><td>Money returned</td><td>Sent on-chain to the buyer's refund address</td></tr>
         <tr><td><span class="badge badge-muted">cancelled</span></td><td>Unpaid / expired</td><td>Nothing was charged</td></tr>

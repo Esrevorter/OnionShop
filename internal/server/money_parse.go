@@ -1,6 +1,7 @@
 package server
 
 import (
+	"strconv"
 	"fmt"
 	"strings"
 )
@@ -49,4 +50,20 @@ func parseDecimal(s string, decimals int, allowZero bool) (int64, error) {
 	total := w*scale + fr
 	if total == 0 && !allowZero { return 0, fmt.Errorf("amount must be positive") }
 	return total, nil
+}
+
+// formatPiconero renders integer piconero as a trimmed native-XMR string.
+// Integer arithmetic only: no float anywhere in the money path.
+func formatPiconero(pico int64) string {
+	neg := ""
+	if pico < 0 { neg, pico = "-", -pico }
+	micro := (pico + 500000) / 1000000
+	whole, frac := micro/1000000, micro%1000000
+	out := neg + strconv.FormatInt(whole, 10)
+	if frac > 0 {
+		fs := strconv.FormatInt(1000000+frac, 10)[1:]
+		for len(fs) > 0 && fs[len(fs)-1] == '0' { fs = fs[:len(fs)-1] }
+		out += "." + fs
+	}
+	return out
 }

@@ -31,6 +31,11 @@ import (
 const honeypotField = "sta"
 
 type AuthData struct {
+	CaptchaTextAlt bool
+
+	// Errors carries field-level validation messages keyed by form field name.
+	Errors map[string]string
+
 	VendorApplicationPending bool
 	IsSignedIn       bool
 	CsrfToken       string
@@ -402,8 +407,8 @@ func (a *App) RegisterAuthRoutesFull(auth AuthStore, captcha *CaptchaService, se
 	a.registerCatalogRoutes(r)
 	a.registerHelpRoutes(r)
 	a.registerWalletRoutes(r)
-	if ws, ok := catalog.(WithdrawalStore); ok {
-		a.RegisterWithdrawalRoutes(r, ws)
+	if pool, ok := a.deps.Pool.(*pgxpool.Pool); ok {
+		a.RegisterWithdrawalRoutes(r, NewPGCatalogStore(pool))
 	}
 	return nil
 }
@@ -427,18 +432,51 @@ func honeypotTriggered(r *http.Request) bool { return strings.TrimSpace(r.FormVa
 
 func (a *App) requireFriction(w http.ResponseWriter, r *http.Request, purpose string) (ok bool) {
 	ctx := r.Context()
-	token := a.sessionTokenForRequest(r)
 	userID := CurrentUserID(ctx, a.sm)
+	sensitive := frictionSensitive(purpose)
+	if !sensitive && userID != "" {
+		if until := a.sm.GetInt64(ctx, frictionGrantKey); until > time.Now().Unix() {
+			return true
+		}
+	}
+	token := a.sessionTokenForRequest(r)
 	id := r.FormValue("captcha_id")
 	ans := r.FormValue("captcha_answer")
-	if err := a.captcha.Verify(ctx, r.FormValue("captcha_token"), id, ans, token, userID); err != nil { return false }
-	_ = purpose
+	if err := a.captcha.Verify(ctx, r.FormValue("captcha_token"), id, ans, token, userID); err != nil {
+		return false
+	}
 	a.captcha.Burn(ctx, id)
 	a.sm.PopString(ctx, pendingTokenKey)
+	if !sensitive && userID != "" {
+		a.sm.Put(ctx, frictionGrantKey, time.Now().Add(frictionGrantTTL).Unix())
+	}
 	return true
 }
 
 const pendingTokenKey = "pending_token"
+
+// frictionGrantKey records how long a successful human verification stays
+// valid for this session. Privileged actions never reach this path (they use
+// CSRF + honeypot + audit); credential, key and payout changes always
+// re-challenge regardless of the grant.
+const frictionGrantKey = "friction_grant_until"
+
+const frictionGrantTTL = 30 * time.Minute
+
+// frictionSensitive reports purposes that must ALWAYS present a fresh
+// challenge: authentication, account secrets/keys, and payouts.
+func frictionSensitive(purpose string) bool {
+	switch purpose {
+	case "register", "login", "login2fa", "account", "withdraw":
+		return true
+	}
+	for _, k := range []string{"login", "register", "account", "withdraw", "2fa", "password"} {
+		if strings.Contains(purpose, k) {
+			return true
+		}
+	}
+	return false
+}
 func (a *App) sessionTokenForRequest(r *http.Request) string {
 	ctx := r.Context()
 	pending := a.sm.GetString(ctx, pendingTokenKey)
@@ -967,9 +1005,13 @@ var templateFuncs = template.FuncMap{
 	"split": strings.Split,
 	"mul": func(a, b int64) int64 { return a * b },
 	"statusBadge": func(s string) string {
+		// Status color grammar (P1): amber = awaiting action, green = settled money,
+		// red = alert/dispute, muted = terminal-neutral. See web/static/shop.css.
 		switch s {
-		case "in_escrow", "shipped", "released": return "badge-success"
-		default: return "badge-muted"
+		case "awaiting_payment", "open", "pending": return "badge-warning"
+		case "in_escrow", "shipped", "released", "approved", "active", "yes": return "badge-success"
+		case "disputed", "removed": return "badge-danger"
+		default: return "badge-muted" // refunded, cancelled, closed, draft, ...
 		}
 	},
 }
@@ -1036,6 +1078,11 @@ func (a *App) baseData(r *http.Request) AuthData {
 		IsAuthenticated: uidStr != "",
 		IsAdmin:         role == "admin",
 		IsVendor:        role == "vendor",
+		CaptchaTextAlt: captchaTextAlt(),
+		CsrfToken:       CSRFToken(r.Context(), a.sm),
+		IsAuthenticated: CurrentUserID(r.Context(), a.sm) != "",
+		IsAdmin:         CurrentRole(r.Context(), a.sm) == "admin",
+		IsVendor:        CurrentRole(r.Context(), a.sm) == "vendor",
 	}
 	d.HoneypotHidden = true
 	curr := a.sm.GetString(ctx, "sess_currency")
