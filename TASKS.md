@@ -225,3 +225,26 @@ Computed from the working tree, not asserted:
 
 See [PRODUCTION_READINESS.md](PRODUCTION_READINESS.md); a running local stack is not
 production clearance.
+
+
+## Doc reconciliation snapshot (2026-11-27, computed from the working tree)
+- [x] Honeypot randomization closed: `HONEYPOT_FIELD` env -> validated in
+      `internal/server/auth_handlers.go` -> `HoneypotField` template func.
+- [x] Two-step personal-phrase login shipped (`AuthPhraseByUsername`,
+      `sess.login_phrase`; SECURITY_AND_OPSEC.md section 4.2).
+- [x] Ledger hardening migration 0023 shipped, incl. `DROP VIEW IF EXISTS
+      account_balances` fix for the 0009 `balance_sat` -> `balance_piconero`
+      view-column drift (a plain recreate fails with "cannot change name of
+      view column").
+- [x] FTS: tsvector+GIN shipped (0001 index `products_search_idx`,
+      `plainto_tsquery` in catalog_store.go / qProductsSearch); `pg_trgm`
+      typo tolerance remains open.
+- [x] Redis `CONFIG` renamed (docker-compose.yml); Tor PoW enabled
+      (deploy/torrc); NET_RAW absent from the app service.
+- [ ] Still open: least-privilege `onionshop_app` DB role bootstrap (+ REVOKE),
+      TOTP enrollment UX (otpauth URI/QR), text CAPTCHA alternative,
+      register-path enumeration review, catalog tests, CI smoke gate, and the
+      Phase 9 items above.
+- Note: ARCHITECTURE.md, AGENTS.md, UI.md and INSTALL.md are referenced by older
+      documents but are not tracked in this repo; their content lives in README,
+      SECURITY_AND_OPSEC and CONTRIBUTING. Do not re-add links to missing files.

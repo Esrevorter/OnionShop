@@ -17,7 +17,7 @@ The repository's certificate generator creates the required self-signed ECDSA P-
 3. Provision unique application/database/Redis/Monero-RPC secrets. Generate an age identity offline; only its public recipient belongs on the backup host. Keep DB and application data on encrypted storage.
 4. Create the Tor v3 onion service and record its hostname. Generate the self-signed cert with that exact DNS SAN using `scripts/gen-certs.sh '<hostname>.onion'`. Verify SAN, key match, dates, and nginx-readable permissions. Then test the HTTPS site in the exact supported Tor Browser build on a clean profile. Do not proceed if it warns.
 5. Review and verify every external image digest and platform, including tag-only images, against upstream registry metadata. Independently review the Monero node/wallet posture (view-only vs hot), RPC exposure, and credentials.
-6. Confirm host loopback port 8080 redirects to HTTPS and 8443 serves TLS; Tor maps onion port 80 to 8080 and 443 to 8443. nginx proxies to the app through the shared UNIX socket. Test health and request flow end-to-end.
+6. Confirm host loopback port 8080 redirects to HTTPS and 8443 serves TLS; Tor maps onion port 80 to 8080 and 443 to 8443. nginx proxies to the app over the internal Docker network (the compose reality; see AUDIT.md §1). Test health and request flow end-to-end against /healthz — the only health route registered in internal/server/router.go (/health returns 404); the nginx health location already proxies to it.
 7. Test network routes and egress by service; Docker internal networks do not by themselves prove host firewall safety, DNS policy, or Tor-only node connectivity.
 8. Run migrations and Go/sqlc tests on disposable data; exercise auth, checkout, invoice polling, escrow, withdrawals, messaging friction, and audit behavior.
 9. Create an encrypted backup, move it off-host, and restore it with the offline age identity into an isolated environment. Verify migration state, representative records, ledger balance, and audit continuity.
@@ -43,4 +43,4 @@ sudo ./install/install.sh --dev                  # bootstrap Docker, secrets, de
 sudo ./install/install.sh --onion <host>.onion   # real onion SAN certificate
 ./install/install.sh --check-only                # preflight, no side effects
 ```
-The installer is idempotent and applies db/migrations/*.up.sql in order with a schema_migrations ledger. Where /tmp is noexec (Whonix), export GOTMPDIR=$HOME/.gotmp before go test. A green preview stack is not production clearance.
+The installer is idempotent and applies db/migrations/*.up.sql in order with a schema_migrations ledger. Migration 0023 begins with DROP VIEW IF EXISTS account_balances; so it applies cleanly on databases whose view still carries the pre-0009 balance_sat column name. Where /tmp is noexec (Whonix), export GOTMPDIR=$HOME/.gotmp before go test. A green preview stack is not production clearance.

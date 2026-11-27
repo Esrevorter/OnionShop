@@ -45,6 +45,12 @@ The installer applies `db/migrations/*.up.sql` idempotently. `make migrate` need
 `DATABASE_URL` from your environment because the installer generates a random
 DB password.
 
+Alternatively `python3 deploy.py` automates pull → build/test → postgres up →
+migrations (same psql + `schema_migrations` ledger as install.sh) → restart →
+`/healthz` verification. It needs no local psql (runs SQL via
+`docker compose exec`). The app exposes exactly one health route, `/healthz`;
+do not write checks or docs against `/health`.
+
 ## Migrations
 Add `NNNN_name.up.sql` **and** `NNNN_name.down.sql`. Never edit an applied
 migration. Money columns are integer minor units; no float conversions, ever.
