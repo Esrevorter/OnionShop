@@ -67,6 +67,7 @@ ensure DB_NAME "printf onionshop"
 ensure DB_PASSWORD gen64
 ensure REDIS_PASSWORD gen64
 ensure SESSION_HASH_KEY gen64
+ensure HONEYPOT_FIELD "openssl rand -hex 6"
 if [[ $WHONIX -eq 1 ]]; then
   ensure NGINX_BIND_IP "printf 0.0.0.0"
   warn "WHONIX: firewall 8080/8443 to the Gateway IP only (SECURITY_AND_OPSEC.md section 3)"

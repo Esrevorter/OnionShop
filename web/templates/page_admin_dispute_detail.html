@@ -23,14 +23,14 @@
   <div class="kv-grid">
     <form method="post" action="/admin/disputes/{{.Dispute.IDStr}}/release" class="auth-card" autocomplete="off">
       <input type="hidden" name="csrf_token" value="{{$.CsrfToken}}">
-{{if $.HoneypotHidden}}<div class="hp" aria-hidden="true"><label>Leave this field empty<input type="text" name="sta" tabindex="-1" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"></label></div>{{end}}
+{{if $.HoneypotHidden}}<div class="hp" aria-hidden="true"><label>Leave this field empty<input type="text" name="{{HoneypotField}}" tabindex="-1" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"></label></div>{{end}}
       <label for="r1">Release to vendor — reason (required)</label>
       <textarea id="r1" name="reason" rows="3" maxlength="4000" required></textarea>
       <div class="form-actions"><button type="submit">Release Funds</button></div>
     </form>
     <form method="post" action="/admin/disputes/{{.Dispute.IDStr}}/refund" class="auth-card" autocomplete="off">
       <input type="hidden" name="csrf_token" value="{{$.CsrfToken}}">
-{{if $.HoneypotHidden}}<div class="hp" aria-hidden="true"><label>Leave this field empty<input type="text" name="sta" tabindex="-1" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"></label></div>{{end}}
+{{if $.HoneypotHidden}}<div class="hp" aria-hidden="true"><label>Leave this field empty<input type="text" name="{{HoneypotField}}" tabindex="-1" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"></label></div>{{end}}
       <label for="r2">Refund to customer — reason (required)</label>
       <textarea id="r2" name="reason" rows="3" maxlength="4000" required></textarea>
       <div class="form-actions"><button type="submit" class="btn-danger">Refund</button></div>

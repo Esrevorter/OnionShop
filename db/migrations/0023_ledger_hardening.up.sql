@@ -1,0 +1,62 @@
+-- 0023_ledger_hardening — AUDIT.md §2: fix the account_balances view drift and
+-- enforce the double-entry invariant + append-only guarantee at the DB layer.
+--
+-- Drift: 0003 created account_balances over amount_sat/balance_sat; 0009 renamed
+-- ledger_entries.amount_sat -> amount_piconero without recreating the view, so on
+-- migrated databases the view either fails to resolve or reports stale column
+-- names. No Go code reads the view today (balances are computed inline with
+-- amount_piconero), so this recreation is safe in both states.
+BEGIN;
+
+CREATE OR REPLACE VIEW account_balances AS
+    SELECT account_id,
+           COALESCE(SUM(amount_piconero) FILTER (WHERE direction = 'debit'),  0)
+         - COALESCE(SUM(amount_piconero) FILTER (WHERE direction = 'credit'), 0) AS balance_piconero
+    FROM ledger_entries
+    GROUP BY account_id;
+
+-- Double-entry invariant: every logical movement (tx_ref) nets to zero.
+-- Deferred constraint trigger fires at COMMIT so paired debit/credit rows posted
+-- in one transaction validate correctly.
+CREATE OR REPLACE FUNCTION assert_ledger_balanced() RETURNS trigger AS $$
+DECLARE
+    net BIGINT;
+BEGIN
+    SELECT COALESCE(SUM(amount_piconero) FILTER (WHERE direction = 'debit'), 0)
+         - COALESCE(SUM(amount_piconero) FILTER (WHERE direction = 'credit'), 0)
+      INTO net FROM ledger_entries WHERE tx_ref = NEW.tx_ref;
+    IF net <> 0 THEN
+        RAISE EXCEPTION 'ledger tx_ref % is unbalanced (net % piconero)', NEW.tx_ref, net;
+    END IF;
+    RETURN NULL;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE CONSTRAINT TRIGGER ledger_double_entry
+    AFTER INSERT ON ledger_entries
+    DEFERRABLE INITIALLY DEFERRED
+    FOR EACH ROW EXECUTE FUNCTION assert_ledger_balanced();
+
+-- Re-assert the append-only guard from 0003 (idempotent; protects against a
+-- dropped/replaced trigger during manual surgery).
+CREATE OR REPLACE FUNCTION forbid_ledger_mutation() RETURNS trigger AS $$
+BEGIN
+    RAISE EXCEPTION 'ledger_entries is append-only (%) is forbidden', TG_OP;
+END;
+$$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS ledger_append_only ON ledger_entries;
+CREATE TRIGGER ledger_append_only
+    BEFORE UPDATE OR DELETE ON ledger_entries
+    FOR EACH ROW EXECUTE FUNCTION forbid_ledger_mutation();
+
+COMMIT;
+
+-- NOTE (AUDIT.md §2 REVOKE item, intentionally not done here): there is no
+-- separate application role anywhere in db/ or install/ — the app connects as
+-- the schema owner (DB_USER created by docker-postgres), so
+-- `REVOKE UPDATE, DELETE ON ledger_entries FROM onionshop_app` would be a no-op
+-- against a non-existent role while silently *appearing* hardened. Introducing a
+-- least-privilege app role requires a roles bootstrap (schema owner vs. DML-only
+-- grantee) tracked separately; until then the two triggers above are the binding
+-- immutability mechanism.
