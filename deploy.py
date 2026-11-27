@@ -159,8 +159,13 @@ def step_build_test(skip_tests):
     print("  OK")
 
 
-def psql(sql):
-    """Run SQL inside the postgres container as ${DB_USER}/${DB_NAME}."""
+def psql(sql, want_stderr=False):
+    """Run SQL inside the postgres container as ${DB_USER}/${DB_NAME}.
+
+    Returns stdout on success. On failure: dies with the psql error unless
+    want_stderr=True, in which case it returns (stdout, stderr) so the caller
+    can decide how to handle it.
+    """
     user = os.environ.get("DB_USER") or die("DB_USER missing from .env")
     name = os.environ.get("DB_NAME") or die("DB_NAME missing from .env")
     proc = subprocess.run(
@@ -169,9 +174,87 @@ def psql(sql):
         shell=True, cwd=ROOT, input=sql, text=True, capture_output=True,
     )
     if proc.returncode != 0:
+        if want_stderr:
+            return proc.stdout, proc.stderr
         print(proc.stdout)
         die(f"psql failed: {proc.stderr.strip()}")
+    if want_stderr:
+        return proc.stdout, ""
     return proc.stdout
+
+
+def psql_val(sql, default=""):
+    """Run a scalar query via the postgres container and return just the value.
+
+    Uses `psql -t -A` (tuples-only, unaligned) so stdout is exactly the value.
+    On failure returns `default` and notes the error on stderr; callers decide
+    whether absence matters.
+    """
+    user = os.environ.get("DB_USER") or die("DB_USER missing from .env")
+    name = os.environ.get("DB_NAME") or die("DB_NAME missing from .env")
+    proc = subprocess.run(
+        f'{compose_cmd()} exec -T postgres psql -v ON_ERROR_STOP=1 -t -A '
+        f'-U {user} -d {name}',
+        shell=True, cwd=ROOT, input=sql, text=True, capture_output=True,
+    )
+    if proc.returncode != 0:
+        print(f"  note: query failed ({proc.stderr.strip()[:200]})",
+              file=sys.stderr)
+        return default
+    out = proc.stdout.strip()
+    return out if out else default
+
+
+def repair_account_balances_view():
+    """Idempotent self-heal for the account_balances view drift (AUDIT.md §2).
+
+    On databases where 0009 renamed ledger_entries.amount_sat ->
+    amount_piconero but left the old view in place, the live view still
+    exposes column "balance_sat". PostgreSQL refuses to rename a view column
+    via CREATE OR REPLACE VIEW ("cannot change name of view column ..."), so
+    migration 0023 must DROP the view first -- which the committed 0023 does.
+
+    But if an OLDER copy of 0023 (without the DROP) ran here already, its
+    explicit BEGIN/COMMIT block got committed while deploy.py's bookkeeping
+    INSERT rolled back: version 23 is unrecorded, every retry fails with the
+    same error, and re-running even the fixed 0023 would abort at the CREATE
+    because psql replays the stale BEGIN...COMMIT verbatim. So before applying
+    any migration we drop + recreate the view ourselves, as plain autocommit
+    statements (no transaction that could half-apply). This is safe because no
+    Go code reads the view (verified: zero references under internal/ and
+    cmd/), and it makes fresh, drifted, and half-applied databases all
+    converge to the correct definition.
+    """
+    exists = psql_val(
+        "SELECT count(*) FROM information_schema.views "
+        "WHERE table_name = 'account_balances';", default="0")
+    if exists.strip() != "1":
+        return  # view absent (fresh DB pre-schema.sql): nothing to repair
+    cols = psql_val(
+        "SELECT COALESCE(string_agg(column_name, ','), '') "
+        "FROM information_schema.columns "
+        "WHERE table_name = 'account_balances';")
+    if "balance_piconero" in cols:
+        return  # already correct, nothing to repair
+    print(f"  repairing stale account_balances view (columns: {cols or '?'})")
+    user = os.environ.get("DB_USER")
+    name = os.environ.get("DB_NAME")
+    proc = subprocess.run(
+        f'{compose_cmd()} exec -T postgres psql -v ON_ERROR_STOP=1 '
+        f'-U {user} -d {name}',
+        shell=True, cwd=ROOT, text=True, capture_output=True,
+        input="DROP VIEW IF EXISTS account_balances;\n")
+    if proc.returncode != 0:
+        die(f"could not drop stale view account_balances "
+            f"(dependent objects? run manually): {proc.stderr.strip()}")
+    psql(
+        "CREATE OR REPLACE VIEW account_balances AS "
+        "SELECT account_id, "
+        "COALESCE(SUM(amount_piconero) FILTER (WHERE direction = 'debit'),  0) "
+        "- COALESCE(SUM(amount_piconero) FILTER (WHERE direction = 'credit'), 0) "
+        "AS balance_piconero "
+        "FROM ledger_entries GROUP BY account_id;")
+    print("  view repaired.")
 
 
 def step_db_ready():
@@ -205,14 +288,16 @@ def step_migrations():
     files = sorted((ROOT / "db" / "migrations").glob("*.up.sql"))
     if not files:
         die("No migration files found under db/migrations/.")
+    # Self-heal the known view drift BEFORE running anything, so a half-applied
+    # older 0023 (body committed, version row rolled back) cannot wedge retries.
+    repair_account_balances_view()
     applied = 0
     for f in files:
         version = int(f.name.split("_", 1)[0])
         if version <= maxv:
             continue  # already recorded as applied
         print(f"  applying {f.name}")
-        sql = f.read_text()
-        psql(sql)
+        psql(f.read_text())
         psql(f"INSERT INTO schema_migrations(version) VALUES ({version}) "
              "ON CONFLICT DO NOTHING;")
         applied += 1
