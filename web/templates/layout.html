@@ -98,7 +98,7 @@
         <button type="submit" name="currency" value="AUD" class="currency-btn {{if eq .PreferredCurrency "AUD"}}currency-active{{end}}">AUD</button>
       </form>
         {{if .IsSignedIn}}
-        <a href="/messages" class="currency-btn messages-link{{if .MessagesUnread}} unread{{end}}">Messages{{if .MessagesUnread}} <span class="badge badge-danger">{{.MessagesUnread}} new</span>{{end}}</a>
+        <a href="/messages" class="currency-btn messages-link{{if .MessagesUnread}} unread{{end}}" aria-label="Messages{{if .MessagesUnread}}, {{.MessagesUnread}} unread{{end}}">Messages{{if .MessagesUnread}} <span class="badge badge-count">{{.MessagesUnread}} new</span>{{end}}</a>
       
         <form method="post" action="/logout" class="nav-form">
           <input type="hidden" name="csrf_token" value="{{.CsrfToken}}">

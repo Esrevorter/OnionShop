@@ -211,8 +211,11 @@ button[type="submit"]:hover,input[type="submit"]:hover,.btn-primary:hover{
   border-radius:var(--r-pill);background:transparent;color:var(--text-dim);border:1px solid var(--line);cursor:pointer;
   display:inline-flex;align-items:center;text-decoration:none}
 .currency-btn:hover{background:var(--ink-3);color:var(--text);border-color:var(--line-strong)}
-.currency-active,.currency-active:hover{background:var(--onion);color:var(--onion-ink);border-color:var(--onion)}
-.messages-link.unread{color:var(--danger-bright);border-color:var(--danger);font-weight:800}
+/* selected currency: payment orange (--xmr) — the accent used for money UI */
+.currency-active,.currency-active:hover{background:var(--xmr);color:#160b02;border-color:var(--xmr)}
+/* unread messages: same orange attention treatment + count badge */
+.messages-link.unread,.messages-link.unread:hover{background:var(--xmr);color:#160b02;border-color:var(--xmr);font-weight:800}
+.messages-link .badge-count{background:rgba(22,11,2,.18);color:#160b02;border-color:rgba(22,11,2,.35);font-weight:800}
 .anti-phish{font-size:.72rem;color:var(--text-dim);font-style:italic;letter-spacing:.02em}
 .breadcrumbs{display:flex;flex-wrap:wrap;align-items:center;gap:.45rem;color:var(--text-dim);font-size:.9rem;margin-bottom:var(--s5)}
 .breadcrumbs a{text-decoration:none;color:var(--onion)}
