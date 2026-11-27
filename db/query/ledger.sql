@@ -16,7 +16,7 @@ INSERT INTO ledger_entries (tx_ref, idempotency_key, account_id, amount_piconero
 VALUES ($1, $2, $3, $4, $5, $6, $7);
 
 -- name: AccountBalance :one
-SELECT balance_sat FROM account_balances WHERE account_id = $1;
+SELECT balance_piconero FROM account_balances WHERE account_id = $1;
 
 -- name: ListLedgerEntriesForAccount :many
 SELECT * FROM ledger_entries
