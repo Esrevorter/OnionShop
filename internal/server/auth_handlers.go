@@ -101,6 +101,11 @@ type AuthStore interface {
 	AuthUserRole(ctx context.Context, id pgtype.UUID) (string, error)
 	AuthUserByID(ctx context.Context, id pgtype.UUID) (*UserRecord, error)
 	AuditAppend(ctx context.Context, actorID pgtype.UUID, actorKind, action, target, details string) error
+	// AuthPhraseByUsername supports the two-step login (AUDIT.md §2): it returns
+	// the stored anti-phishing phrase for a username WITHOUT revealing whether
+	// the account exists — the empty string is also the "no phrase / no user"
+	// answer, so the pre-auth form cannot be used to enumerate usernames.
+	AuthPhraseByUsername(ctx context.Context, username string) (string, error)
 }
 
 type SessionLinker interface {
