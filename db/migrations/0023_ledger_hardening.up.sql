@@ -29,6 +29,31 @@ CREATE OR REPLACE VIEW account_balances AS
 -- Double-entry invariant: every logical movement (tx_ref) nets to zero.
 -- Deferred constraint trigger fires at COMMIT so paired debit/credit rows posted
 -- in one transaction validate correctly.
+--
+-- Backfill BEFORE the constraint trigger is created: historical single-leg rows
+-- (pre-0023 escrow deposits debited against 'escrow' with no offsetting credit,
+-- and any orphaned legs from failed multi-row postings) would otherwise abort
+-- this migration at COMMIT time. 'platform_fee' is a real account seeded by
+-- 0003; the backfill credits are balanced pairs, so the trigger validates clean.
+--
+-- The append-only BEFORE trigger (from 0003/schema.sql) only blocks UPDATE and
+-- DELETE, so this INSERT runs unimpeded; we still drop/recreate the double-entry
+-- CONSTRAINT trigger around it because on schema.sql-bootstrapped databases that
+-- constraint already exists and fires at COMMIT for every tx_ref, including the
+-- pre-backfill state of partially-paired rows.
+DROP TRIGGER IF EXISTS ledger_double_entry ON ledger_entries;
+
+INSERT INTO ledger_entries (tx_ref, idempotency_key, account_id, amount_piconero, direction, order_id, memo)
+SELECT l.tx_ref,
+       '0023-backfill:' || l.id::text,
+       (SELECT id FROM accounts WHERE name = 'platform_fee'),
+       l.amount_piconero,
+       CASE l.direction WHEN 'debit' THEN 'credit' ELSE 'debit' END,
+       l.order_id,
+       'balance backfill for pre-0023 unbalanced entry (id=' || l.id::text || ')'
+FROM ledger_entries l
+WHERE NOT EXISTS (SELECT 1 FROM ledger_entries p WHERE p.tx_ref = l.tx_ref AND p.direction <> l.direction);
+
 CREATE OR REPLACE FUNCTION assert_ledger_balanced() RETURNS trigger AS $$
 DECLARE
     net BIGINT;
