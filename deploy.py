@@ -324,6 +324,14 @@ def step_migrations():
     psql("CREATE TABLE IF NOT EXISTS schema_migrations ("
          "version bigint PRIMARY KEY, dirty boolean NOT NULL DEFAULT false, "
          "applied_at timestamptz NOT NULL DEFAULT now());")
+    # Self-heal legacy bookkeeping tables: databases created before the
+    # dirty/applied_at columns existed have `dirty` as a NOT NULL column with
+    # NO default, so a plain INSERT INTO ... (version) VALUES (n) aborts with
+    # "null value in column \"dirty\" violates not-null constraint". Setting a
+    # default makes install.sh-style inserts work everywhere. Idempotent no-op
+    # on correctly-created tables.
+    psql("ALTER TABLE schema_migrations "
+         "ALTER COLUMN dirty SET DEFAULT false;")
     maxv_raw = psql("SELECT COALESCE(max(version),0) FROM schema_migrations;")
     maxv = int(re.search(r"\d+", maxv_raw).group())
     files = sorted((ROOT / "db" / "migrations").glob("*.up.sql"))
