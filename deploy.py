@@ -163,30 +163,31 @@ def step_build_test(skip_tests):
 def psql_script(text):
     """Execute a full SQL script inside the postgres container.
 
-    The script is written to a temp file and piped into psql via
-    `docker compose cp` + `psql -f`, mirroring install/install.sh's
-    `PSQL -q < "$f"` but avoiding any inline-string stdin quirks
-    (e.g. "invalid command \\n--" seen when piping heredoc-style SQL).
+    Method: pipe the script through psql's STDIN with `psql -f -`, exactly
+    like install/install.sh does (`PSQL -q < "$f"`). This works even when
+    the container root filesystem is marked read-only (which breaks
+    `docker compose cp`).
+
+    Why `-f -` instead of bare stdin: without an explicit `-f -`, psql
+    reads interactive-mode rules from the pipe and mis-parses some files,
+    producing e.g. `error: invalid command \n--`. We also normalize the
+    text here (strip CR, drop literal backslash-n sequences that can leak
+    in from JSON-quoted edits) so the bytes reaching psql are clean SQL.
     """
     user = os.environ.get("DB_USER") or die("DB_USER missing from .env")
     name = os.environ.get("DB_NAME") or die("DB_NAME missing from .env")
-    tmp_local = ROOT / ".deploy_tmp.sql"
-    tmp_local.write_text(text)
-    try:
-        r = subprocess.run(
-            f"{compose_cmd()} cp {tmp_local.name} postgres:/tmp/deploy.sql",
-            shell=True, cwd=ROOT, capture_output=True, text=True)
-        if r.returncode != 0:
-            die(f"docker compose cp failed: {r.stderr.strip()}")
-        proc = subprocess.run(
-            f'{compose_cmd()} exec -T postgres psql -v ON_ERROR_STOP=1 '
-            f'-U {user} -d {name} -f /tmp/deploy.sql',
-            shell=True, cwd=ROOT, capture_output=True, text=True)
-        subprocess.run(
-            f"{compose_cmd()} exec -T postgres rm -f /tmp/deploy.sql",
-            shell=True, cwd=ROOT, capture_output=True, text=True)
-    finally:
-        tmp_local.unlink(missing_ok=True)
+    # Normalize line endings and defend against corrupted content.
+    text = text.replace("\r\n", "\n").replace("\r", "\n")
+    if "\\n" in text:
+        # A literal two-character backslash-n sequence means the file was
+        # damaged (e.g. saved from a JSON-escaped string). Real SQL files
+        # never contain it outside string literals; migration files don't.
+        print("  note: normalizing literal \\n sequences found in SQL input")
+        text = text.replace("\\n", "\n")
+    proc = subprocess.run(
+        f'{compose_cmd()} exec -T postgres psql -v ON_ERROR_STOP=1 '
+        f'-U {user} -d {name} -f -',
+        shell=True, cwd=ROOT, input=text, text=True, capture_output=True)
     if proc.returncode != 0:
         print(proc.stdout)
         die(f"psql failed: {proc.stderr.strip()}")
