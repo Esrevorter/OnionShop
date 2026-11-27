@@ -9,7 +9,8 @@ No JavaScript, no email, no third-party assets, no client-IP logging.
 
 ## What works today
 
-**Buyers** — register (CAPTCHA + honeypot), optional TOTP 2FA, anti-phishing phrase,
+**Buyers** — register (CAPTCHA + honeypot), optional TOTP 2FA, two-step login that
+shows your personal phrase before the password field,
 browse/search in USD/EUR/AUD, per-vendor cart and shipping selection, checkout with
 PGP-encrypted delivery details and a required refund address, exact-amount XMR payment
 to a per-order subaddress, escrow, confirm receipt or dispute, one-time escrow extension,
@@ -106,16 +107,18 @@ is regtest-only, and wallet-rpc has no regtest mode).
 
 | File | Purpose |
 |---|---|
-| [INSTALL.md](INSTALL.md) | Debian 13 quick start and Whonix topology |
-| [ARCHITECTURE.md](ARCHITECTURE.md) | request flow, components, escrow timers |
-| [SECURITY_AND_OPSEC.md](SECURITY_AND_OPSEC.md) | threat model, TLS/network policy, Monero posture |
+| [SECURITY_AND_OPSEC.md](SECURITY_AND_OPSEC.md) | threat model, TLS/network policy, recovery SOP, image pipeline, Monero posture |
 | [PRODUCTION_READINESS.md](PRODUCTION_READINESS.md) | deployment gates and evidence required |
-| [UI.md](UI.md) | shipped UI state and UX decisions |
 | [TASKS.md](TASKS.md) | open engineering gates and settled decisions |
+| [STATUS.md](STATUS.md) | chronological session log (historical; may contain stale intermediate states) |
 | [AUDIT.md](AUDIT.md) | findings ledger with closure evidence |
-| [AGENTS.md](AGENTS.md) | contributor/agent working contract |
-| [CONTRIBUTING.md](CONTRIBUTING.md) | development workflow and gates |
+| [CONTRIBUTING.md](CONTRIBUTING.md) | development workflow and local gates |
+| [docs/DECISIONS.md](docs/DECISIONS.md) | authoritative settled decisions (ADR-001 TLS, ADR-002 settlement) |
 | [docs/archive/](docs/archive/) | superseded plans kept for rationale |
+
+Installation lives in this README's Quick start plus `install/install.sh`
+(`--dev`, `--onion`, `--whonix`, `--check-only`); there is no separate INSTALL.md.
+Deployment automation: `python3 deploy.py` at the repo root.
 
 ## License
 

@@ -11,6 +11,17 @@ BEGIN;
 -- name changes (balance_sat -> balance_piconero). View is unused by Go code.
 DROP VIEW IF EXISTS account_balances;
 
+-- DROP first, then CREATE: on databases where 0009 renamed the ledger column
+-- but left the old view in place, the live view still exposes column
+-- "balance_sat". PostgreSQL refuses to rename a view column via
+-- CREATE OR REPLACE VIEW ("cannot change name of view column ..."), so the
+-- replace-only form below would abort the whole migration. Dropping is safe:
+-- no Go code reads this view (verified: zero references under internal/ and
+-- cmd/), and the CREATE immediately following redefines it in the same
+-- transaction. On fresh installs (schema.sql already defines the view with
+-- balance_piconero) this is an idempotent no-op drop+recreate.
+DROP VIEW IF EXISTS account_balances;
+
 CREATE OR REPLACE VIEW account_balances AS
     SELECT account_id,
            COALESCE(SUM(amount_piconero) FILTER (WHERE direction = 'debit'),  0)
