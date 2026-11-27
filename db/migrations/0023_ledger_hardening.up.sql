@@ -7,6 +7,9 @@
 -- names. No Go code reads the view today (balances are computed inline with
 -- amount_piconero), so this recreation is safe in both states.
 BEGIN;
+\n-- DROP first: PG refuses CREATE OR REPLACE VIEW when a column
+-- name changes (balance_sat -> balance_piconero). View is unused by Go code.
+DROP VIEW IF EXISTS account_balances;
 
 CREATE OR REPLACE VIEW account_balances AS
     SELECT account_id,
