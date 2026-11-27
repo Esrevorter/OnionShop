@@ -3,7 +3,7 @@
 deploy.py - full deployment helper for Onionshop.
 
 Verified against this repository (docker-compose.yml, install/install.sh,
-Makefile). Key facts that drive the design:
+Makefile, Dockerfile). Key facts that drive the design:
 
   * There is NO db/bootstrap_app_role.sql in this repo. The app connects to
     Postgres as the single ${DB_USER} role defined in .env / compose. So no
@@ -17,6 +17,13 @@ Makefile). Key facts that drive the design:
     binary and no DATABASE_URL required).
   * HONEYPOT_FIELD generation already exists in install/install.sh; this
     script only tops up missing secrets if you skipped install.sh.
+  * go.mod declares `go 1.25.0` (required by pgx v5.9.x). Older host Go
+    toolchains (<1.21) cannot even parse that directive and abort with
+    "invalid go version". Therefore local build/test/vet are SKIPPED unless
+    the host `go` is >= 1.21; compilation is verified via the container
+    image build (`docker compose build`, which uses golang:1.25-alpine per
+    the Dockerfile).
+  * The health endpoint is /healthz (router.go), not /health.
 
 Usage:
   python3 deploy.py                 # full run: pull, build, test, migrate, restart, verify
@@ -111,14 +118,44 @@ def step_preflight(skip_pull):
     print("  OK")
 
 
+def go_version_ok():
+    """Return True if host `go` can handle this module's go.mod directive.
+
+    Go < 1.21 fails to *parse* 'go 1.25.0' in go.mod with
+    "invalid go version '1.25.0': must match format 1.23", aborting the
+    whole build. Go >= 1.21 understands three-part versions and will
+    auto-download the required toolchain (or use a newer installed one).
+    """
+    out = sh_out("go env GOVERSION")  # e.g. "go1.19.8" or "go1.25.0"
+    m = re.match(r"go(\d+)\.(\d+)", out)
+    if not m:
+        return False
+    major, minor = int(m.group(1)), int(m.group(2))
+    return (major, minor) >= (1, 21)
+
+
 def step_build_test(skip_tests):
     print("\n[2/6] Build & test")
-    run("go build ./...")
-    run("go vet ./...")
-    if not skip_tests:
-        run("go test ./...")
+    host_go = sh_out("go version")
+    if go_version_ok():
+        run("go build ./...")
+        run("go vet ./...")
+        if not skip_tests:
+            run("go test ./...")
+        else:
+            print("  (tests skipped)")
     else:
-        print("  (tests skipped)")
+        # Do NOT touch go.mod to "fix" this - pgx v5.9.x genuinely requires
+        # go >= 1.25.0. The container build (golang:1.25-alpine, see
+        # Dockerfile) compiles + tests the code during `compose up --build`,
+        # so we verify compilation there instead of failing on an old host
+        # toolchain.
+        print(f"  Note: {host_go} is too old for this module "
+              "(go.mod needs >= 1.21 to parse; project targets 1.25).")
+        print("  Skipping local build/test/vet; compilation will be verified "
+              "via the Docker image build (golang:1.25).")
+        print("  Optional: install Go >= 1.25 locally, or set "
+              "GOTOOLCHAIN=auto with network access.")
     print("  OK")
 
 
@@ -230,13 +267,13 @@ def step_verify():
     base = os.environ.get("APP_URL", "http://127.0.0.1:8080")
     ok = False
     for _ in range(15):
-        code = sh_out(f"curl -sk -o /dev/null -w '%{{http_code}}' {base}/health")
+        code = sh_out(f"curl -sk -o /dev/null -w '%{{http_code}}' {base}/healthz")
         if code == "200":
             ok = True
             break
         time.sleep(2)
-    print("  /health -> 200 OK" if ok else
-          "  WARNING: /health did not return 200 (check `docker compose logs app nginx`)")
+    print("  /healthz -> 200 OK" if ok else
+          "  WARNING: /healthz did not return 200 (check `docker compose logs app nginx`)")
     code = sh_out(f"curl -sk -o /dev/null -w '%{{http_code}}' {base}/")
     print(f"  / -> HTTP {code}")
 
