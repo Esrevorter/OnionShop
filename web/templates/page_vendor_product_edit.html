@@ -9,7 +9,7 @@
     <a href="/vendor/products" class="btn-secondary">← Back to Listings</a>
   </div>
 
-  <div class="auth-card" style="max-width: 600px;">
+  <div class="auth-card u-max-600">
     <form method="post" enctype="multipart/form-data" action="{{if .Editing}}/vendor/products/{{.Editing.ID}}/edit{{else}}/vendor/products/new{{end}}" autocomplete="off">
       {{template "friction" .}}
 

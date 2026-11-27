@@ -16,12 +16,12 @@
           <td><strong>{{.ShopName}}</strong></td>
           <td>{{.Username}}</td>
           <td>{{.CreatedAt}}</td>
-          <td style="display:flex; gap:.4rem;">
-            <form method="post" action="/admin/vendors/{{.VendorID}}/approve" style="display:inline;">
+          <td class="row">
+            <form method="post" action="/admin/vendors/{{.VendorID}}/approve" class="u-inline">
               <input type="hidden" name="csrf_token" value="{{$.CsrfToken}}">
               <button type="submit" class="button btn-sm">Approve</button>
             </form>
-            <form method="post" action="/admin/vendors/{{.VendorID}}/reject" style="display:inline;">
+            <form method="post" action="/admin/vendors/{{.VendorID}}/reject" class="u-inline">
               <input type="hidden" name="csrf_token" value="{{$.CsrfToken}}">
               <button type="submit" class="btn-danger btn-sm">Reject</button>
             </form>
@@ -29,7 +29,7 @@
         </tr>
         {{end}}
       {{else}}
-        <tr><td colspan="4" class="text-muted" style="text-align:center; padding:2rem;">No pending applications.</td></tr>
+        <tr><td class="text-muted u-center card-pad" colspan="4">No pending applications.</td></tr>
       {{end}}
       </tbody>
     </table>

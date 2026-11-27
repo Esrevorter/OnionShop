@@ -24,7 +24,7 @@
       <p>An error occurred while processing your request.</p>
     {{end}}
     
-    <div class="form-actions" style="margin-top: 1.5rem;">
+    <div class="form-actions u-mt-1-5">
       <a href="/" class="button">Return to Marketplace</a>
       {{if and .IsAuthenticated (ne .ErrorCode "403")}}
         <a href="/account" class="button secondary">My Account</a>

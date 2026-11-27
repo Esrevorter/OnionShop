@@ -8,7 +8,7 @@
   </div>
 
 
-  <div class="auth-card" style="max-width:520px; margin-bottom:2rem;">
+  <div class="auth-card u-max-520 u-mb-2">
     <h2>Create User</h2>
     <form method="post" action="/admin/users/create" autocomplete="off">
       <input type="hidden" name="csrf_token" value="{{$.CsrfToken}}">
@@ -42,19 +42,19 @@
         <td><span class="badge {{if eq .Status "active"}}badge-success{{else}}badge-muted{{end}}">{{.Status}}</span></td>
         <td>{{.CreatedAt.Format "2006-01-02"}}</td>
         <td>
-          <div style="display:flex; gap:.4rem; flex-wrap:wrap; align-items:center;">
-            <form method="post" action="/admin/users/ban" style="display:inline;">
+          <div class="row">
+            <form method="post" action="/admin/users/ban" class="u-inline">
               <input type="hidden" name="csrf_token" value="{{$.CsrfToken}}">
               <input type="hidden" name="user_id" value="{{.ID}}">
               <input type="hidden" name="action" value="{{if eq .Status "banned"}}unban{{else}}ban{{end}}">
               <button type="submit" class="btn-danger btn-sm">{{if eq .Status "banned"}}Unban{{else}}Ban{{end}}</button>
             </form>
-            <form method="post" action="/admin/users/{{.ID}}/reset-password" style="display:inline;">
+            <form method="post" action="/admin/users/{{.ID}}/reset-password" class="u-inline">
               <input type="hidden" name="csrf_token" value="{{$.CsrfToken}}">
               <button type="submit" class="button secondary btn-sm">Reset PW</button>
             </form>
             <a href="/admin/users/{{.ID}}/sessions" class="btn-secondary btn-sm">Sessions</a>
-            <form method="post" action="/admin/users/{{.ID}}/role" style="display:inline-flex; gap:.3rem; align-items:center;">
+            <form method="post" action="/admin/users/{{.ID}}/role" class="row">
               <input type="hidden" name="csrf_token" value="{{$.CsrfToken}}">
               <select name="role" aria-label="New role for {{.Username}}">
                 <option value="customer">customer</option>

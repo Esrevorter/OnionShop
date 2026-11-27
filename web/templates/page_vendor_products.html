@@ -45,9 +45,9 @@
           </td>
           <td>
             {{if ne .Status "removed"}}
-            <div style="display:flex; gap:0.5rem; flex-wrap:wrap;">
+            <div class="row">
               {{if eq .Status "draft"}}
-              <form method="post" action="/vendor/products/{{.ID}}/publish" style="display:inline;">
+              <form method="post" action="/vendor/products/{{.ID}}/publish" class="u-inline">
                 {{template "friction" $}}
                 <button type="submit" class="btn-success btn-sm">Publish</button>
               </form>

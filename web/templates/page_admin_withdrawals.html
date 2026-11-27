@@ -8,7 +8,7 @@
   </div>
 
 
-  <div class="table-container" style="margin-top: 1.5rem;">
+  <div class="table-container u-mt-1-5">
     <table class="data-table">
       <thead>
         <tr>
@@ -26,17 +26,17 @@
         <tr>
           <td><strong>{{.VendorName}}</strong></td>
           <td>{{fmtXMR .AmountPico}} XMR</td>
-          <td><code style="word-break:break-all;"><code class="crypto">{{.XmrAddress}}</code></code></td>
+          <td><code class="u-break"><code class="crypto">{{.XmrAddress}}</code></code></td>
           <td>{{.CreatedAt}}</td>
           <td><span class="badge {{if eq .Status "pending"}}badge-muted{{else if eq .Status "approved"}}badge-success{{else}}badge-danger{{end}}">{{.Status}}</span></td>
           <td>
             {{if eq .Status "pending"}}
-            <form method="post" action="/admin/withdrawals/{{.IDStr}}/review" style="display:inline;">
+            <form method="post" action="/admin/withdrawals/{{.IDStr}}/review" class="u-inline">
               <input type="hidden" name="csrf_token" value="{{$.CsrfToken}}">
               <input type="hidden" name="status" value="approved">
               <button type="submit" class="button btn-sm">Approve</button>
             </form>
-            <form method="post" action="/admin/withdrawals/{{.IDStr}}/review" style="display:inline;">
+            <form method="post" action="/admin/withdrawals/{{.IDStr}}/review" class="u-inline">
               <input type="hidden" name="csrf_token" value="{{$.CsrfToken}}">
               <input type="hidden" name="status" value="rejected">
               <button type="submit" class="btn-danger btn-sm">Reject</button>
@@ -48,7 +48,7 @@
         </tr>
         {{end}}
       {{else}}
-        <tr><td colspan="6" class="text-muted" style="text-align: center; padding: 2rem;">No withdrawal requests at this time.</td></tr>
+        <tr><td class="text-muted u-center card-pad" colspan="6">No withdrawal requests at this time.</td></tr>
       {{end}}
       </tbody>
     </table>

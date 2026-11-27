@@ -9,7 +9,7 @@
     <a href="/vendor/products" class="btn-secondary">← Back to Listings</a>
   </div>
 
-  <div class="admin-grid" style="grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 1rem;">
+  <div class="admin-grid" class="admin-grid admin-grid-dense">
     <div class="stat-card">
       <div class="stat-label">Total Orders</div>
       <div class="stat-value">{{.Stats.TotalOrders}}</div>
@@ -54,13 +54,13 @@
     </div>
   </div>
 
-  <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 2rem; margin-top: 2rem;">
+  <div class="grid-2 u-mt-2">
     <div class="auth-card">
       <h2>Orders by Status</h2>
       <table class="data-table">
         <tbody>
           {{range $status, $count := .Stats.OrdersByStatus}}
-          <tr><td>{{$status}}</td><td style="text-align: right;">{{$count}}</td></tr>
+          <tr><td>{{$status}}</td><td class="u-right">{{$count}}</td></tr>
           {{end}}
         </tbody>
       </table>
@@ -87,7 +87,7 @@
     </div>
   </div>
 
-  <div class="auth-card" style="margin-top: 2rem;">
+  <div class="auth-card u-mt-2">
     <h2>Recent Orders</h2>
     {{if .Stats.RecentOrders}}
     <table class="data-table">
@@ -110,20 +110,20 @@
   </div>
 
   {{if .Stats.DailyViews}}
-  <div class="auth-card" style="margin-top: 2rem;">
+  <div class="auth-card u-mt-2">
     <h2>Daily Views (Last 30 Days)</h2>
-    <div style="display:flex; align-items:end; gap:2px; height:120px; margin-top:1rem;">
+    <div class="chart">
       {{range .Stats.DailyViews}}
-      <div style="flex:1; display:flex; flex-direction:column; align-items:center; gap:2px;">
-        <div style="background:var(--accent); width:100%; height:{{if .ShopViews}}{{.ShopViews}}{{else}}0{{end}}px; min-height:2px;"></div>
-        <div style="background:var(--accent-strong); width:100%; height:{{if .ProductView}}{{.ProductView}}{{else}}0{{end}}px; min-height:2px;"></div>
-        <span style="font-size:.6rem; color:var(--muted);">{{.Day}}</span>
+      <div class="chart-col">
+        <div class="bar bar-shop" style="height:{{barHeightPct .ShopViews $.Stats.MaxDailyViews}}%"></div>
+        <div class="bar bar-product" style="height:{{barHeightPct .ProductView $.Stats.MaxDailyViews}}%"></div>
+        <span class="chart-day">{{.Day}}</span>
       </div>
       {{end}}
     </div>
-    <p class="muted" style="margin-top:.5rem;">
-      <span style="display:inline-block; width:12px; height:12px; background:var(--accent);"></span> Shop views
-      <span style="display:inline-block; width:12px; height:12px; background:var(--accent-strong); margin-left:1rem;"></span> Product views
+    <p class="chart-legend">
+      <span><span class="dot dot-accent"></span> Shop views</span>
+      <span><span class="dot dot-success"></span> Product views</span>
     </p>
   </div>
   {{end}}

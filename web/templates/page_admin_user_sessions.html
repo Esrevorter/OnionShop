@@ -6,7 +6,7 @@
     <h1>Sessions for {{.Username}}</h1>
     <a href="/admin/users" class="btn-secondary">← Users</a>
   </div>
-  <form method="post" action="/admin/users/{{.UserID}}/sessions/kill" style="margin-bottom:1rem;">
+  <form method="post" action="/admin/users/{{.UserID}}/sessions/kill" class="u-mb-1">
     <input type="hidden" name="csrf_token" value="{{.CsrfToken}}">
     <button type="submit" class="btn-danger">Kill All Sessions</button>
   </form>
@@ -24,7 +24,7 @@
         </tr>
         {{end}}
       {{else}}
-        <tr><td colspan="4" class="text-muted" style="text-align:center;">No active sessions.</td></tr>
+        <tr><td class="text-muted u-center" colspan="4">No active sessions.</td></tr>
       {{end}}
       </tbody>
     </table>

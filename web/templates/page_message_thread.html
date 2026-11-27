@@ -7,17 +7,15 @@
     <a href="/messages" class="btn-secondary">← Inbox</a>
   </div>
   {{if .HasOrder}}<p class="muted">This conversation is linked to an order.</p>{{end}}
-  <div class="auth-card" style="margin-bottom:1rem;">
+  <div class="auth-card u-mb-1">
     {{range .Messages}}
-    <div style="margin:.6rem 0; padding:.6rem .8rem; border-radius:.6rem;
-                background: {{if .Mine}}var(--surface-raised){{else}}var(--surface){{end}};
-                border:1px solid var(--line);">
+    <div class="msg-bubble {{if .Mine}}msg-mine{{end}}">
       <p class="eyebrow">{{.Sender}} · {{.CreatedAt.Format "2006-01-02 15:04"}}</p>
-      <p style="margin:0; white-space:pre-wrap;">{{.Body}}</p>
+      <p class="u-pre">{{.Body}}</p>
       {{if .Mine}}
-      <form method="post" action="/messages/msg/{{.IDStr}}/delete" style="margin-top:.4rem;">
+      <form method="post" action="/messages/msg/{{.IDStr}}/delete" class="u-mt-half">
         <input type="hidden" name="csrf_token" value="{{$.CsrfToken}}">
-        <button type="submit" style="background:#c62828; color:#ffffff; border:1px solid #ff8a80; border-radius:.4rem; cursor:pointer; font-size:.75rem; padding:.35rem .7rem;">Delete</button>
+        <button type="submit" class="btn-danger btn-sm">Delete</button>
       </form>
       {{end}}
     </div>
@@ -25,9 +23,9 @@
     <p class="muted">No messages yet — say hello below.</p>
     {{end}}
   </div>
-  <div style="display:flex; gap:.5rem; margin-bottom:1rem;">
-    <form method="post" action="/messages/{{.ThreadID}}/hide"><input type="hidden" name="csrf_token" value="{{.CsrfToken}}"><button type="submit" style="background:#c62828; color:#ffffff; border:1px solid #ff8a80; border-radius:.4rem; cursor:pointer; font-size:.8rem; padding:.4rem .8rem;">Remove from inbox</button></form>
-    <form method="post" action="/messages/{{.ThreadID}}/unhide"><input type="hidden" name="csrf_token" value="{{.CsrfToken}}"><button type="submit" style="background:#c62828; color:#ffffff; border:1px solid #ff8a80; border-radius:.4rem; cursor:pointer; font-size:.8rem; padding:.4rem .8rem;">Restore to inbox</button></form>
+  <div class="row u-mb-1">
+    <form method="post" action="/messages/{{.ThreadID}}/hide"><input type="hidden" name="csrf_token" value="{{.CsrfToken}}"><button type="submit" class="btn-danger btn-sm">Remove from inbox</button></form>
+    <form method="post" action="/messages/{{.ThreadID}}/unhide"><input type="hidden" name="csrf_token" value="{{.CsrfToken}}"><button type="submit" class="btn-danger btn-sm">Restore to inbox</button></form>
   </div>
   <form method="post" action="/messages/{{.ThreadID}}/reply" class="auth-card" autocomplete="off">
     <input type="hidden" name="csrf_token" value="{{.CsrfToken}}">

@@ -19,7 +19,7 @@
     </div>
   </div>
 
-  <div class="auth-card" style="margin: 2rem 0;">
+  <div class="auth-card u-mt-2 u-mb-2">
     <h2>Ledger History</h2>
     {{if .History}}
     <table class="data-table">
@@ -35,9 +35,9 @@
     {{end}}
   </div>
 
-  <div class="auth-card" style="max-width:600px;">
+  <div class="auth-card u-max-600">
     <h2>Request Withdrawal</h2>
-    <p class="lede" style="font-size:.9rem; margin-bottom:1rem;">
+    <p class="lede">
       Withdrawals are subject to a 24–48 hour mandatory delay and admin review.
     </p>
     <form method="post" action="/wallet/withdraw" autocomplete="off">
@@ -51,7 +51,7 @@
     </form>
   </div>
   {{else}}
-  <div class="notice" style="margin-top:2rem;">
+  <div class="notice u-mt-2">
     <strong>Note:</strong> Vendor earnings appear here once your shop is approved and orders release from escrow.
     {{if not .IsVendor}}<a href="/vendor/apply">Apply to become a vendor</a>{{end}} to access this feature.
   </div>

@@ -8,7 +8,7 @@
   </div>
   <p class="lede">Define the shipping methods buyers can select at checkout. Prices are entered in USD (base); buyers see them in their preferred currency. Estimated delivery (days) drives escrow auto-release.</p>
 
-  <div class="auth-card" style="max-width:600px;">
+  <div class="auth-card u-max-600">
     <h2>Add Shipping Option</h2>
     <form method="post" action="/vendor/shipping" autocomplete="off">
       <input type="hidden" name="csrf_token" value="{{.CsrfToken}}">
@@ -49,11 +49,11 @@
           <td>{{fmtFiat .PriceUSDCents $.PreferredCurrency}}</td>
           <td>{{if .Active}}<span class="badge badge-success">Active</span>{{else}}<span class="badge badge-muted">Disabled</span>{{end}}</td>
           <td>
-            <form method="post" action="/vendor/shipping/{{.ID}}/toggle" style="display:inline;">
+            <form method="post" action="/vendor/shipping/{{.ID}}/toggle" class="u-inline">
               <input type="hidden" name="csrf_token" value="{{$.CsrfToken}}">
               <button type="submit" class="button secondary btn-sm">{{if .Active}}Disable{{else}}Enable{{end}}</button>
             </form>
-            <form method="post" action="/vendor/shipping/{{.ID}}/delete" style="display:inline;">
+            <form method="post" action="/vendor/shipping/{{.ID}}/delete" class="u-inline">
               <input type="hidden" name="csrf_token" value="{{$.CsrfToken}}">
               <button type="submit" class="btn-danger btn-sm">Delete</button>
             </form>

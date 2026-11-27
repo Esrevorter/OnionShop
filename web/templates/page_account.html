@@ -12,7 +12,7 @@
 
   <div class="auth-card">
     <h2>Quick Links</h2>
-    <div class="form-actions" style="justify-content: flex-start; gap: 1rem;">
+    <div class="form-actions row-start">
       <a href="/account/reviews" class="button">Manage Reviews</a>
       {{if not .IsVendor}}<a href="/vendor/apply" class="button">Apply as Vendor</a>{{end}}
     </div>
@@ -32,13 +32,13 @@
   <div class="auth-card">
     <h2>Two-Factor Authentication (2FA)</h2>
     {{if .TOTPEnabled}}
-      <div class="notice" style="border-color: var(--accent-strong); color: var(--accent);">
+      <div class="notice notice-info">
         <strong>Enabled</strong><br>
         Your account is protected by two-factor authentication.
       </div>
-      <details style="margin-top: 1rem;">
-        <summary style="cursor: pointer; color: var(--accent);">View Backup Codes</summary>
-        <div style="margin-top: 0.5rem; padding: 1rem; background: var(--surface-raised); border-radius: 4px; font-family: monospace; display: grid; grid-template-columns: 1fr 1fr; gap: 0.5rem;">
+      <details class="u-mt-1">
+        <summary class="summary-link">View Backup Codes</summary>
+        <div class="kv-grid">
           {{range .BackupCodes}}
             {{if .}}<span>{{.}}</span>{{end}}
           {{end}}
@@ -46,7 +46,7 @@
       </details>
       <details class="confirm-discard">
         <summary class="button danger">Disable 2FA</summary>
-        <form method="post" action="/account/2fa/disable" style="margin-top: 1rem;">
+        <form method="post" action="/account/2fa/disable" class="u-mt-1">
           {{template "friction" .}}
           <p class="notice error"><strong>Warning:</strong> disabling 2FA weakens your account security. This cannot be undone until you re-enroll.</p>
           <label for="disable_password">Enter current password to confirm</label>
@@ -57,7 +57,7 @@
         </form>
       </details>
     {{else}}
-      <p class="lede" style="font-size: 0.9rem; margin-bottom: 1rem;">
+      <p class="lede">
         Protect your account with an authenticator app (e.g., Aegis, Raivo). 
         You will need to enter a 6-digit code from the app every time you log in.
       </p>
@@ -70,7 +70,7 @@
     <p>Only <strong>public</strong> keys are accepted. See the <a href="/pgp">PGP tool page</a> for details.</p>
     {{if .PGPPublicKey}}
       <p>Stored key fingerprint: <code>{{if .PGPFingerprint}}{{.PGPFingerprint}}{{else}}(unparseable){{end}}</code></p>
-      <pre style="background: #222; padding: 1rem; border-radius: 4px; overflow-x: auto;"><code class="crypto">{{.PGPPublicKey}}</code></pre>
+      <pre class="crypto-frame"><code class="crypto">{{.PGPPublicKey}}</code></pre>
       <form method="post" action="/account/pgp/clear" autocomplete="off">
         {{template "friction" .}}
         <input type="hidden" name="csrf_token" value="{{.CsrfToken}}">
