@@ -4,23 +4,23 @@
 <section class="admin-layout">
   <div class="admin-header"><h1>Dispute {{.Dispute.IDStr}}</h1><a href="/admin/disputes" class="btn-secondary">← All Disputes</a></div>
   <p class="muted">Order: <code>{{.Dispute.OrderID}}</code> (status: {{.OrderStatus}}) · opened by {{.Dispute.OpenedBy}} · {{.Dispute.CreatedAt}}</p>
-  <div class="auth-card" style="margin-bottom:1rem;">
+  <div class="auth-card u-mb-1">
     <h2>Original complaint</h2>
-    <p style="white-space:pre-wrap;">{{.Dispute.Reason}}</p>
+    <p class="u-pre">{{.Dispute.Reason}}</p>
   </div>
   {{if .Messages}}
-  <div class="auth-card" style="margin-bottom:1rem;">
+  <div class="auth-card u-mb-1">
     <h2>Discussion</h2>
     {{range .Messages}}
-    <div style="margin:.6rem 0; padding:.6rem .8rem; border-radius:.6rem; background:var(--surface); border:1px solid var(--line);">
+    <div class="card-pad">
       <p class="eyebrow">{{.Author}} · {{.CreatedAt}}</p>
-      <p style="margin:0; white-space:pre-wrap;">{{.Body}}</p>
+      <p class="u-pre">{{.Body}}</p>
     </div>
     {{end}}
   </div>
   {{end}}
   {{if eq .Dispute.Status "open"}}
-  <div style="display:grid; grid-template-columns:1fr 1fr; gap:1rem;">
+  <div class="kv-grid">
     <form method="post" action="/admin/disputes/{{.Dispute.IDStr}}/release" class="auth-card" autocomplete="off">
       <input type="hidden" name="csrf_token" value="{{$.CsrfToken}}">
 {{if $.HoneypotHidden}}<div class="hp" aria-hidden="true"><label>Leave this field empty<input type="text" name="sta" tabindex="-1" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"></label></div>{{end}}

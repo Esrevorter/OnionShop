@@ -7,11 +7,11 @@
     <a href="/tickets" class="btn-secondary">← All Tickets</a>
   </div>
   <p class="muted">{{.Ticket.Category}} · status: <strong>{{.Ticket.Status}}</strong> · updated {{.Ticket.UpdatedAt}}</p>
-  <div class="auth-card" style="margin-bottom:1rem;">
+  <div class="auth-card u-mb-1">
     {{range .Messages}}
-    <div style="margin:.6rem 0; padding:.6rem .8rem; border-radius:.6rem; background:var(--surface); border:1px solid var(--line);">
+    <div class="card-pad">
       <p class="eyebrow">{{.Author}}{{if .IsStaff}} · staff{{end}} · {{.CreatedAt}}</p>
-      <p style="margin:0; white-space:pre-wrap;">{{.Body}}</p>
+      <p class="u-pre">{{.Body}}</p>
     </div>
     {{end}}
   </div>
@@ -22,7 +22,7 @@
     <textarea id="body" name="body" rows="4" maxlength="10000" required></textarea>
     <div class="form-actions"><button type="submit">Send Reply</button></div>
   </form>
-  <form method="post" action="/tickets/{{.Ticket.IDStr}}/close" style="margin-top:.75rem;">
+  <form method="post" action="/tickets/{{.Ticket.IDStr}}/close" class="u-mt-1">
     <input type="hidden" name="csrf_token" value="{{.CsrfToken}}">
     <button type="submit" class="btn-danger btn-sm">Close Ticket</button>
   </form>

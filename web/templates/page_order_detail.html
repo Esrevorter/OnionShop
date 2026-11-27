@@ -8,61 +8,61 @@
   </div>
   
   <div class="auth-card">
-    <div style="display:flex; justify-content:space-between; flex-wrap:wrap; gap:.5rem; margin-bottom:1rem;">
-      <h2 style="margin:0;">Order #{{.Order.IDStr}}</h2>
+    <div class="split-row u-mb-1">
+      <h2>Order #{{.Order.IDStr}}</h2>
       <span class="badge {{statusBadge .Order.Status}}">{{.Order.Status}}</span>
     </div>
     
     <p class="muted">{{if .IsVendor}}Buyer: {{.Order.BuyerName}}{{else}}Vendor: {{.Order.ShopName}}{{end}}{{if .Order.ShippingTitle}} · Shipping: {{.Order.ShippingTitle}}{{end}}</p>
     <p class="muted">Placed: {{.Order.CreatedAt}}</p>
 
-    <table class="data-table" style="margin: 1rem 0;">
-      <thead><tr><th>Item</th><th style="text-align:right;">Amount</th></tr></thead>
+    <table class="data-table u-mt-1 u-mb-1">
+      <thead><tr><th>Item</th><th class="u-right">Amount</th></tr></thead>
       <tbody>
         {{range .Order.Items}}
-        <tr><td>{{.Title}} <span class="text-muted">(x{{.Qty}})</span></td><td style="text-align: right;">{{fmtFiat (mul .PriceUSDCents .Qty) $.PreferredCurrency}}</td></tr>
+        <tr><td>{{.Title}} <span class="text-muted">(x{{.Qty}})</span></td><td class="u-right">{{fmtFiat (mul .PriceUSDCents .Qty) $.PreferredCurrency}}</td></tr>
         {{end}}
-        <tr><td>Shipping</td><td style="text-align: right;">{{fmtFiat .Order.ShippingUSDCents $.PreferredCurrency}}</td></tr>
-        <tr style="font-weight: bold;"><td>Total</td><td style="text-align: right;">{{fmtFiat .Order.TotalUSDCents $.PreferredCurrency}}</td></tr>
+        <tr><td>Shipping</td><td class="u-right">{{fmtFiat .Order.ShippingUSDCents $.PreferredCurrency}}</td></tr>
+        <tr><td>Total</td><td class="u-right">{{fmtFiat .Order.TotalUSDCents $.PreferredCurrency}}</td></tr>
       </tbody>
     </table>
 
     {{if eq .Order.Status "awaiting_payment"}}
-      <details class="notice" style="margin-top: 1rem;">
-        <summary class="button" style="cursor:pointer; display:inline-block;">Pay {{fmtXMR .Order.XmrPiconero}} XMR</summary>
-        <div style="margin-top:.75rem;">
-          Send exactly <strong style="font-size:1.15rem;">{{fmtXMR .Order.XmrPiconero}} XMR</strong> <span class="muted">(≈ {{fmtFiat .Order.TotalUSDCents $.PreferredCurrency}})</span> to:<br>
-          <code style="word-break:break-all; display:block; margin:.5rem 0; padding:.6rem .8rem; background:var(--surface); border:1px solid var(--line); border-radius:.5rem; font-family:ui-monospace,Menlo,Consolas,monospace; user-select:all; cursor:copy;" title="Click to select, then copy">{{.Order.XmrAddress}}</code>
-          <span class="muted" style="font-size:.8rem;">Click the address to select it, then copy. Send exactly the amount above.</span>
+      <details class="notice u-mt-1">
+        <summary class="button summary-button">Pay {{fmtXMR .Order.XmrPiconero}} XMR</summary>
+        <div class="u-mt-1">
+          Send exactly <strong>{{fmtXMR .Order.XmrPiconero}} XMR</strong> <span class="muted">(≈ {{fmtFiat .Order.TotalUSDCents $.PreferredCurrency}})</span> to:<br>
+          <code class="crypto" title="Click to select, then copy">{{.Order.XmrAddress}}</code>
+          <span class="muted">Click the address to select it, then copy. Send exactly the amount above.</span>
           {{if .Order.XmrPaymentID}}<span class="muted">Payment reference: {{.Order.XmrPaymentID}}</span><br>{{end}}
           <span class="muted">Detected automatically after 3 confirmations. Unpaid orders expire 12h after placement.</span><br>
-          <a href="/messages/start?order={{.Order.IDStr}}" class="button secondary" style="margin-top:.5rem; display:inline-block;">Message vendor about this order</a>
+          <a class="button secondary u-mt-half" href="/messages/start?order={{.Order.IDStr}}">Message vendor about this order</a>
         </div>
       </details>
     {{end}}
 
-    {{if eq .Order.Status "shipped"}}<div class="notice" style="margin-top:1rem;"><strong>Shipped.</strong> Confirm receipt to release funds to the vendor, or open a dispute if there is a problem. Auto-release applies after the inspection window.</div>{{end}}
-    {{if eq .Order.Status "released"}}<div class="notice" style="margin-top:1rem;"><strong>Completed.</strong> Funds were released to the vendor.</div>{{end}}
-    {{if eq .Order.Status "refunded"}}<div class="notice" style="margin-top:1rem;"><strong>Refunded.</strong> The XMR was returned to the buyer.</div>{{end}}
-    {{if eq .Order.Status "disputed"}}<div class="notice" style="margin-top:1rem;"><strong>Disputed.</strong> A moderator is reviewing this order.</div>{{end}}
-    {{if eq .Order.Status "cancelled"}}<div class="notice" style="margin-top:1rem;"><strong>Cancelled.</strong> This order was cancelled.</div>{{end}}
+    {{if eq .Order.Status "shipped"}}<div class="notice u-mt-1"><strong>Shipped.</strong> Confirm receipt to release funds to the vendor, or open a dispute if there is a problem. Auto-release applies after the inspection window.</div>{{end}}
+    {{if eq .Order.Status "released"}}<div class="notice u-mt-1"><strong>Completed.</strong> Funds were released to the vendor.</div>{{end}}
+    {{if eq .Order.Status "refunded"}}<div class="notice u-mt-1"><strong>Refunded.</strong> The XMR was returned to the buyer.</div>{{end}}
+    {{if eq .Order.Status "disputed"}}<div class="notice u-mt-1"><strong>Disputed.</strong> A moderator is reviewing this order.</div>{{end}}
+    {{if eq .Order.Status "cancelled"}}<div class="notice u-mt-1"><strong>Cancelled.</strong> This order was cancelled.</div>{{end}}
     {{if and (not .IsVendor) (eq .Order.Status "in_escrow")}}
-    <form method="post" action="/orders/{{.Order.IDStr}}/cancel" style="margin-top:1rem;">
+    <form method="post" action="/orders/{{.Order.IDStr}}/cancel" class="u-mt-1">
       {{template "friction" .}}<input type="hidden" name="csrf_token" value="{{.CsrfToken}}">
       <div class="form-actions"><button type="submit" class="btn-secondary">Cancel order &amp; refund</button></div>
     </form>
     {{end}}
     {{if and .IsVendor .Order.ShippingCiphertext}}
-    <div class="notice" style="margin-top:1rem;">
+    <div class="notice u-mt-1">
       <strong>Delivery address (PGP-encrypted to your key).</strong> Decrypt offline with your private key; the server never decrypts.
-      <code style="display:block; white-space:pre-wrap; word-break:break-all; margin:.5rem 0; padding:.6rem; background:var(--surface); border:1px solid var(--line); border-radius:.5rem; font-family:ui-monospace,Menlo,Consolas,monospace; user-select:all;">{{.Order.ShippingCiphertext}}</code>
+      <code class="crypto">{{.Order.ShippingCiphertext}}</code>
     </div>
     {{end}}
     {{if or .CanShip .CanExtend .CanRelease}}
-    <div style="margin-top:2rem; border-top: 1px solid var(--line); padding-top: 1.5rem;">
+    <div class="divider">
       <h3>Actions</h3>
       {{if .CanShip}}
-        <form method="post" action="/orders/{{.Order.IDStr}}/ship" autocomplete="off" style="margin-bottom:1rem;">
+        <form method="post" action="/orders/{{.Order.IDStr}}/ship" autocomplete="off" class="u-mb-1">
           {{template "friction" .}}
           <input type="hidden" name="csrf_token" value="{{.CsrfToken}}">
           <label for="shipping_note">Shipping note (optional)</label>
@@ -72,7 +72,7 @@
       {{end}}
       
       {{if .CanExtend}}
-        <form method="post" action="/orders/{{.Order.IDStr}}/extend" style="margin-bottom:1rem;" autocomplete="off">
+        <form method="post" action="/orders/{{.Order.IDStr}}/extend" class="u-mb-1" autocomplete="off">
           {{template "friction" .}}
           <input type="hidden" name="csrf_token" value="{{.CsrfToken}}">
           <p class="muted">Extend escrow by 7 days (one-time only).</p>
@@ -92,7 +92,7 @@
     {{end}}
   </div>
   
-  <div class="form-actions" style="justify-content: flex-start; margin-top: 1rem;">
+  <div class="form-actions row-start u-mt-1">
     <a href="/orders" class="button secondary">Back to Orders</a>
   </div>
 </section>

@@ -15,11 +15,11 @@
           <td>{{if .Actor}}{{.Actor}}{{else}}<span class="muted">system</span>{{end}} ({{.ActorKind}})</td>
           <td><code>{{.Action}}</code></td>
           <td><code>{{.Target}}</code></td>
-          <td style="max-width:400px; overflow:hidden; text-overflow:ellipsis;">{{.Details}}</td>
+          <td class="u-truncate">{{.Details}}</td>
         </tr>
         {{end}}
       {{else}}
-        <tr><td colspan="5" class="text-muted" style="text-align:center;">No audit entries.</td></tr>
+        <tr><td class="text-muted u-center" colspan="5">No audit entries.</td></tr>
       {{end}}
       </tbody>
     </table>

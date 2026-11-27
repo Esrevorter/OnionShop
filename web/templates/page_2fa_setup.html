@@ -13,21 +13,21 @@
   <div class="auth-card">
     <h2>1. Scan the QR Code</h2>
     {{if .TOTPQRCode}}
-      <p style="text-align:center;">
+      <p class="u-center">
         <img src="{{.TOTPQRCode}}" alt="TOTP provisioning QR code" width="200" height="200"
-             style="background:#fff; padding:8px; border-radius:8px;">
+             class="qr-frame">
       </p>
     {{else}}
       <p class="error">The QR code could not be generated. Use the manual secret below or restart setup.</p>
     {{end}}
     <p class="form-help">Or enter this secret manually in your app:
-      <code style="user-select:all;">{{.TOTPSecret}}</code></p>
+      <code>{{.TOTPSecret}}</code></p>
   </div>
 
   <div class="auth-card">
     <h2>2. Save Your Backup Codes</h2>
-    <p class="lede" style="font-size:0.9rem;">Each code works once if you lose your authenticator. Store them offline — they will not be shown again the same way after enabling.</p>
-    <div style="padding:1rem; background:var(--surface-raised); border-radius:8px; font-family:monospace; display:grid; grid-template-columns:1fr 1fr; gap:0.5rem;">
+    <p class="lede">Each code works once if you lose your authenticator. Store them offline — they will not be shown again the same way after enabling.</p>
+    <div class="kv-grid">
       {{range .BackupCodes}}<span>{{.}}</span>{{end}}
     </div>
   </div>
@@ -42,7 +42,7 @@
       <input id="enable_password" type="password" name="password" required autocomplete="current-password">
       <div class="form-actions">
         <button type="submit">Verify &amp; Enable 2FA</button>
-        <a href="/account" class="button secondary" style="text-decoration:none;">Cancel</a>
+        <a href="/account" class="button secondary">Cancel</a>
       </div>
     </form>
   </div>

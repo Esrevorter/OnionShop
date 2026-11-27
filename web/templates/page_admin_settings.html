@@ -7,9 +7,9 @@
     <a href="/admin" class="btn-secondary">← Back to Dashboard</a>
   </div>
 
-  <div class="auth-card" style="max-width:600px;">
+  <div class="auth-card u-max-600">
     <h2>Vendor Registration Fee</h2>
-    <p class="lede" style="font-size:.9rem;">One-time XMR fee (entered in USD) a vendor must pay before their shop can operate. Approval in the vendor queue is still required. Set 0 to disable.</p>
+    <p class="lede">One-time XMR fee (entered in USD) a vendor must pay before their shop can operate. Approval in the vendor queue is still required. Set 0 to disable.</p>
     <form method="post" action="/admin/settings" autocomplete="off">
       <input type="hidden" name="csrf_token" value="{{.CsrfToken}}">
       <label for="fee_usd">Fee (USD, 0 = disabled)</label>
@@ -18,7 +18,7 @@
     </form>
   </div>
 
-  <div class="table-container" style="margin-top:2rem;">
+  <div class="table-container u-mt-2">
     <table class="data-table">
       <thead><tr><th>Applicant</th><th>Shop</th><th>Approved</th><th>Fee status</th></tr></thead>
       <tbody>
@@ -32,7 +32,7 @@
         </tr>
         {{end}}
       {{else}}
-        <tr><td colspan="4" class="text-muted" style="text-align:center; padding:2rem;">No vendor applications yet.</td></tr>
+        <tr><td class="text-muted u-center card-pad" colspan="4">No vendor applications yet.</td></tr>
       {{end}}
       </tbody>
     </table>

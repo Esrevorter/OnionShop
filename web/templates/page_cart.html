@@ -15,26 +15,26 @@
       <a href="/" class="button">Browse the marketplace</a>
     </div>
   {{else}}
-  <div style="display: grid; grid-template-columns: 2fr 1fr; gap: 2rem;">
+  <div class="grid-2-wide">
     <div>
       {{range $g := .VendorGroups}}
-      <div class="auth-card" style="margin-bottom: 1.25rem;">
+      <div class="auth-card u-mb-1-5">
         <p class="eyebrow">Ships from {{if $g.ShopHandle}}<a href="/u/{{$g.ShopHandle}}"><strong>{{$g.ShopName}}</strong></a>{{else if $g.ShopName}}<strong>{{$g.ShopName}}</strong>{{else}}vendor {{$g.VendorID}}{{end}}</p>
         {{range $g.Items}}
-        <form method="post" action="/cart/action" style="display:flex; gap:.75rem; align-items:center; margin:.6rem 0; flex-wrap:wrap;">
+        <form method="post" action="/cart/action" class="meta-line">
           <input type="hidden" name="csrf_token" value="{{$.CsrfToken}}">
           <input type="hidden" name="product_id" value="{{.ProductID}}">
-          <div style="flex:1; min-width:10rem;">
+          <div class="u-flex1">
             <strong>{{.Title}}</strong>
             <div class="muted">{{fmtFiat .PriceUSDCents $.PreferredCurrency}} each</div>
           </div>
-          <input type="number" name="qty" value="{{.Qty}}" min="1" max="99" style="width:4.5rem;" aria-label="Quantity">
+          <input type="number" name="qty" value="{{.Qty}}" min="1" max="99" class="u-w4-5" aria-label="Quantity">
           <button type="submit" name="action" value="update" class="button secondary btn-sm">Update</button>
           <button type="submit" name="action" value="remove" class="btn-danger btn-sm">Remove</button>
-          <div style="width:6rem; text-align:right;">{{fmtFiat (mul .PriceUSDCents .Qty) $.PreferredCurrency}}</div>
+          <div class="u-w6 u-right">{{fmtFiat (mul .PriceUSDCents .Qty) $.PreferredCurrency}}</div>
         </form>
         {{end}}
-        <p style="display:flex; justify-content:space-between; border-top:1px solid var(--line); padding-top:.5rem; margin-top:.5rem;">
+        <p class="total-row">
           <span>Items subtotal</span><strong>{{fmtFiat $g.ItemsTotal $.PreferredCurrency}}</strong>
         </p>
         {{if $g.Options}}
@@ -48,11 +48,11 @@
 
     <div class="auth-card">
       <h2>Summary</h2>
-      <p style="display:flex; justify-content:space-between;">
+      <p class="split-top">
         <span>Items total</span><strong>{{fmtFiat .TotalSat $.PreferredCurrency}}</strong>
       </p>
       <p class="muted">Shipping is selected per vendor at checkout and included in the locked XMR amount.</p>
-      <a href="/checkout" class="button" style="width:100%; text-align:center;">Proceed to Checkout</a>
+      <a class="button u-full u-center" href="/checkout">Proceed to Checkout</a>
     </div>
   </div>
   {{end}}

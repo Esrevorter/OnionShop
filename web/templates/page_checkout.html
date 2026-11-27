@@ -10,10 +10,10 @@
   </div>
 
   {{if .OrderPlaced}}
-    <div class="flash" role="status" style="border-color: var(--accent-strong); color: var(--accent); padding: 2rem; text-align: center;">
-      <h2 style="margin-top: 0;">Order Placed Successfully!</h2>
+    <div class="flash flash-large" role="status">
+      <h2 class="u-mt-0">Order Placed Successfully!</h2>
       <p>Your order has been received. View its status on your <a href="/orders">Orders</a> page.</p>
-      <a href="/" class="button" style="margin-top: 1rem;">Return to Marketplace</a>
+      <a class="button u-mt-1" href="/">Return to Marketplace</a>
     </div>
   {{else}}
   <form method="post" action="/checkout" autocomplete="off">
@@ -21,41 +21,41 @@
       <input id="refund_address" name="refund_address" type="text" required minlength="10" maxlength="200" placeholder="your Monero refund address">
             {{if .Errors}}{{with index .Errors "refund_address"}}<p class="field-error">{{.}}</p>{{end}}{{end}}
       {{template "friction" .}}
-    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 2rem;">
+    <div class="grid-2">
       <div class="auth-card">
         <h2>Order Summary</h2>
         {{range $g := .VendorGroups}}
-        <div style="margin-bottom: 1.5rem;">
+        <div class="u-mb-1-5">
           <p class="eyebrow">Ships from {{if $g.ShopHandle}}<a href="/u/{{$g.ShopHandle}}"><strong>{{$g.ShopName}}</strong></a>{{else if $g.ShopName}}<strong>{{$g.ShopName}}</strong>{{else}}vendor {{$g.VendorID}}{{end}}</p>
-          <table class="data-table" style="font-size: 0.9rem;">
-            <thead><tr><th>Item</th><th style="text-align:right;">Amount</th></tr></thead>
+          <table class="data-table">
+            <thead><tr><th>Item</th><th class="u-right">Amount</th></tr></thead>
       <tbody>
               {{range $g.Items}}
               <tr>
                 <td>{{.Title}} <span class="text-muted">(x{{.Qty}})</span></td>
-                <td style="text-align: right;">{{fmtFiat (mul .PriceUSDCents .Qty) $.PreferredCurrency}}</td>
+                <td class="u-right">{{fmtFiat (mul .PriceUSDCents .Qty) $.PreferredCurrency}}</td>
               </tr>
               {{end}}
               <tr>
                 <td>Items subtotal</td>
-                <td style="text-align: right;">{{fmtFiat $g.ItemsTotal $.PreferredCurrency}}</td>
+                <td class="u-right">{{fmtFiat $g.ItemsTotal $.PreferredCurrency}}</td>
               </tr>
             </tbody>
           </table>
           {{if $g.Options}}
-          <p class="eyebrow" style="margin-top: 0.75rem;">Choose shipping</p>
+          <p class="eyebrow u-mt-1">Choose shipping</p>
           {{range $g.Options}}
-          <label style="display:flex; gap:0.5rem; align-items:center; margin:0.4rem 0; font-size:0.9rem; cursor:pointer;">
+          <label class="label-check">
             <input type="radio" name="shipping_{{$g.VendorID}}" value="{{.IDStr}}" required>
             <span><strong>{{.Title}}</strong> · {{.Eta}} · {{fmtFiat .PriceUSDCents $.PreferredCurrency}}</span>
           </label>
           {{end}}
           {{else}}
-          <p class="muted" style="margin-top:0.5rem;">No shipping options offered; digital delivery or pickup only.</p>
+          <p class="muted u-mt-half">No shipping options offered; digital delivery or pickup only.</p>
           {{end}}
         </div>
         {{end}}
-        <p style="border-top: 2px solid var(--line); padding-top: 0.75rem; font-weight: bold; display:flex; justify-content:space-between;">
+        <p class="total-row">
           <span>Items total</span><span>{{fmtFiat .TotalSat $.PreferredCurrency}}</span>
         </p>
         <p class="muted">Selected shipping is added per vendor when you place the order. The exact XMR amount is then locked for payment.</p>
@@ -63,13 +63,13 @@
 
       <div class="auth-card">
         <h2>Delivery Instructions</h2>
-        <p class="lede" style="font-size: 0.9rem; margin-bottom: 1rem;">
+        <p class="lede">
           Provide any necessary details for the vendor (e.g., PGP public key for digital goods).
           <strong>Do not include personal identifying information.</strong>
         </p>
         <label for="delivery_instructions">Instructions (Max 2000 characters)</label>
         <textarea id="delivery_instructions" name="delivery_instructions" rows="6" maxlength="2000" placeholder="Enter delivery details here..."></textarea>
-        <div class="form-actions" style="margin-top: 1.5rem;">
+        <div class="form-actions u-mt-1-5">
           <button type="submit" class="button">Place Order</button>
         </div>
       </div>

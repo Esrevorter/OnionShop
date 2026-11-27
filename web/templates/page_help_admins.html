@@ -23,7 +23,7 @@
     </table>
   </div>
 
-  <div class="auth-card" style="margin-top:1rem;">
+  <div class="auth-card u-mt-1">
     <h2>Automated timers (hourly cron)</h2>
     <ul class="help-list">
       <li><strong>12 h</strong> — unpaid orders are cancelled; the buyer is notified.</li>
@@ -33,7 +33,7 @@
     <p class="muted">Payment detection is polling only — never inbound webhooks. The hidden service is unreachable inbound by design.</p>
   </div>
 
-  <div class="auth-card" style="margin-top:1rem;">
+  <div class="auth-card u-mt-1">
     <h2>Money invariants</h2>
     <ul class="help-list">
       <li>Escrow transitions go through the pure state machine; the database CHECK enforces the same graph.</li>
@@ -43,7 +43,7 @@
     </ul>
   </div>
 
-  <div class="auth-card" style="margin-top:1rem;">
+  <div class="auth-card u-mt-1">
     <h2>OpSec rules that must not drift</h2>
     <ul class="help-list">
       <li>Hidden service terminates on the <strong>Whonix-Gateway</strong>; the app runs on the Workstation. Never Tor-over-Tor.</li>

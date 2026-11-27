@@ -1057,6 +1057,17 @@ var templateFuncs = template.FuncMap{
 	},
 	"split": strings.Split,
 	"mul": func(a, b int64) int64 { return a * b },
+	// barHeightPct scales a raw count to a 0-100 percentage for the CSS-only
+	// stats charts in web/static/shop.css (no JavaScript). max<=0 collapses bars.
+	"barHeightPct": func(v, max int64) int64 {
+		if max <= 0 || v <= 0 {
+			return 0
+		}
+		if v > max {
+			return 100
+		}
+		return v * 100 / max
+	},
 	"statusBadge": func(s string) string {
 		// Status color grammar (P1): amber = awaiting action, green = settled money,
 		// red = alert/dispute, muted = terminal-neutral. See web/static/shop.css.

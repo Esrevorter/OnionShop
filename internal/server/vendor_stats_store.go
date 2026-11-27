@@ -26,6 +26,7 @@ type VendorStats struct {
 	TopProducts          []VendorTopProduct
 	RecentOrders         []VendorRecentOrder
 	DailyViews           []VendorDailyView
+	MaxDailyViews        int64 // tallest single-day count; scales the CSS bar chart
 }
 
 type VendorTopProduct struct {
@@ -192,6 +193,16 @@ func ComputeVendorStats(ctx context.Context, pool *pgxpool.Pool, vendorID pgtype
 		}
 	}
 	rows.Close()
+
+	// Chart scaling factor for the template's CSS-only bar chart.
+	for _, dv := range s.DailyViews {
+		if dv.ShopViews > s.MaxDailyViews {
+			s.MaxDailyViews = dv.ShopViews
+		}
+		if dv.ProductView > s.MaxDailyViews {
+			s.MaxDailyViews = dv.ProductView
+		}
+	}
 
 	return s, nil
 }

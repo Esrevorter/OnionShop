@@ -7,19 +7,19 @@
     <div class="empty-state"><p>No conversations yet. Order-related messages appear here.</p></div>
   {{else}}
     {{range .Threads}}
-    <div class="auth-card" style="margin-bottom:.75rem;">
-      <a href="/messages/{{.IDStr}}" style="display:block; text-decoration:none;">
-        <div style="display:flex; justify-content:space-between; gap:.5rem; flex-wrap:wrap;">
+    <div class="auth-card u-mb-1">
+      <a href="/messages/{{.IDStr}}" class="link-plain">
+        <div class="split-top">
           <strong>{{.OtherName}}</strong>
           <span class="muted">{{.LastAt.Format "2006-01-02 15:04"}}</span>
         </div>
-        <p class="muted" style="margin:.35rem 0 0;">{{.LastBody}}</p>
+        <p class="muted">{{.LastBody}}</p>
         {{if .Unread}}<span class="badge badge-danger">{{.Unread}} new</span>{{end}}
         {{if .HasOrder}}<span class="badge badge-muted">order</span>{{end}}
       </a>
-      <form method="post" action="/messages/{{.IDStr}}/hide" style="margin-top:.5rem;">
+      <form method="post" action="/messages/{{.IDStr}}/hide" class="u-mt-half">
         <input type="hidden" name="csrf_token" value="{{$.CsrfToken}}">
-        <button type="submit" style="background:#c62828; color:#ffffff; border:1px solid #ff8a80; border-radius:.4rem; cursor:pointer; font-size:.8rem; padding:.4rem .8rem;">Remove from inbox</button>
+        <button type="submit" class="btn-danger btn-sm">Remove from inbox</button>
       </form>
     </div>
     {{end}}

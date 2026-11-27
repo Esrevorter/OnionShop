@@ -9,7 +9,7 @@
     <a href="/admin" class="btn-secondary">← Back to Dashboard</a>
   </div>
 
-  <div class="auth-card" style="max-width: 600px; margin-bottom: 2rem;">
+  <div class="auth-card u-max-600 u-mb-2">
     <h2>Add New Category</h2>
     <form method="post" action="/admin/categories" autocomplete="off">
       <input type="hidden" name="csrf_token" value="{{$.CsrfToken}}">
@@ -40,7 +40,7 @@
       <tbody>
         {{if not .Categories}}
         <tr>
-          <td colspan="3" class="text-muted" style="text-align: center; padding: 2rem;">
+          <td class="text-muted u-center card-pad" colspan="3">
             No categories defined yet.
           </td>
         </tr>
