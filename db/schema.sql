@@ -187,10 +187,45 @@ CREATE INDEX ledger_tx_idx      ON ledger_entries (tx_ref);
 
 CREATE VIEW account_balances AS
     SELECT account_id,
-           COALESCE(SUM(amount_sat) FILTER (WHERE direction = 'debit'),  0)
-         - COALESCE(SUM(amount_sat) FILTER (WHERE direction = 'credit'), 0) AS balance_sat
+           COALESCE(SUM(amount_piconero) FILTER (WHERE direction = 'debit'),  0)
+         - COALESCE(SUM(amount_piconero) FILTER (WHERE direction = 'credit'), 0) AS balance_piconero
     FROM ledger_entries
     GROUP BY account_id;
+
+-- Ledger hardening (AUDIT.md §2), applied at schema level so fresh installs and
+-- migrated databases converge (see 0023_ledger_hardening for the migration path):
+-- double-entry invariant: every logical movement (tx_ref) must balance to zero.
+CREATE OR REPLACE FUNCTION assert_ledger_balanced() RETURNS trigger AS $$
+DECLARE
+    net BIGINT;
+BEGIN
+    SELECT COALESCE(SUM(amount_piconero) FILTER (WHERE direction = 'debit'), 0)
+         - COALESCE(SUM(amount_piconero) FILTER (WHERE direction = 'credit'), 0)
+      INTO net FROM ledger_entries WHERE tx_ref = NEW.tx_ref;
+    IF net <> 0 THEN
+        RAISE EXCEPTION 'ledger tx_ref % is unbalanced (net % piconero)', NEW.tx_ref, net;
+    END IF;
+    RETURN NULL;
+END;
+$$ LANGUAGE plpgsql;
+
+-- Deferred: fires at COMMIT, allowing multi-row postings within one transaction.
+CREATE CONSTRAINT TRIGGER ledger_double_entry
+    AFTER INSERT ON ledger_entries
+    DEFERRABLE INITIALLY DEFERRED
+    FOR EACH ROW EXECUTE FUNCTION assert_ledger_balanced();
+
+-- Append-only guard (mirrors 0003; idempotent here for converged installs).
+CREATE OR REPLACE FUNCTION forbid_ledger_mutation() RETURNS trigger AS $$
+BEGIN
+    RAISE EXCEPTION 'ledger_entries is append-only (%) is forbidden', TG_OP;
+END;
+$$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS ledger_append_only ON ledger_entries;
+CREATE TRIGGER ledger_append_only
+    BEFORE UPDATE OR DELETE ON ledger_entries
+    FOR EACH ROW EXECUTE FUNCTION forbid_ledger_mutation();
 
 CREATE TABLE withdrawals (
     id           UUID PRIMARY KEY DEFAULT gen_random_uuid(),

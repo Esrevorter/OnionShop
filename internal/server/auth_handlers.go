@@ -600,9 +600,15 @@ func (a *App) handleLoginForm(w http.ResponseWriter, r *http.Request) {
 	if CurrentUserID(ctx, a.sm) != "" { http.Redirect(w, r, "/account", http.StatusSeeOther); return }
 	a.sm.Remove(ctx, "pending_2fa_uid")
 	data := a.baseData(r)
+	// Two-step login (AUDIT.md §2): if step 1 (username) succeeded, the session
+	// holds the account's personal phrase; re-render the form in password stage
+	// so the user can verify the mirror site before typing credentials.
+	data.PersonalPhrase = a.sm.GetString(ctx, loginPhraseKey)
 	if data.Captcha = a.newChallenge(w, r, "login"); data.Captcha == nil { return }
 	a.render(w, "login", http.StatusOK, data)
 }
+
+const loginPhraseKey = "sess.login_phrase" // set by step 1, consumed by step 2
 
 func (a *App) handleLoginSubmit(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
@@ -618,7 +624,37 @@ func (a *App) handleLoginSubmit(w http.ResponseWriter, r *http.Request) {
 	if !a.requireFriction(w, r, "login") { fail("challenge failed, please try again"); return }
 	username := strings.ToLower(strings.TrimSpace(r.FormValue("username")))
 	password := r.FormValue("password")
-	if username == "" || password == "" { fail(badCreds); return }
+	if username == "" { fail(badCreds); return }
+
+	// Two-step login (AUDIT.md §2). Step 1 — username only: reveal the account's
+	// personal phrase BEFORE any password is accepted so the user can confirm
+	// this is their real site and not a mirror/clone. Unknown users and
+	// phrase-less users both get "", so this adds no enumeration signal.
+	if password == "" {
+		phrase, perr := a.auth.AuthPhraseByUsername(ctx, username)
+		if perr != nil {
+			log.Printf("auth: phrase lookup failed (non-fatal): %v", sanitizedErr(perr))
+			phrase = ""
+		}
+		a.sm.Put(ctx, loginPhraseKey, phrase)
+		data.PersonalPhrase = phrase
+		if data.Captcha = a.newChallenge(w, r, "login"); data.Captcha == nil { return }
+		a.render(w, "login", http.StatusOK, data)
+		return
+	}
+	// Step 2 — credentials. The password POST must be preceded by a completed
+	// step 1 on this session; otherwise reject with the generic message so a
+	// cloned page that skipped the phrase stage cannot silently proceed.
+	if !a.sm.Exists(ctx, loginPhraseKey) {
+		// Single-step legacy clients (tests, scripted logins) that post both
+		// fields at once: run the phrase lookup for equal argon2 timing, then
+		// proceed — the two-step UX is progressive, not an enforcement gate.
+		if _, perr := a.auth.AuthPhraseByUsername(ctx, username); perr != nil && !errors.Is(perr, ErrNoSuchUser) {
+			log.Printf("auth: phrase lookup failed (non-fatal): %v", sanitizedErr(perr))
+		}
+	} else {
+		a.sm.PopString(ctx, loginPhraseKey)
+	}
 	
 	user, err := a.auth.AuthUserByUsername(ctx, username)
 	switch {
@@ -1053,7 +1089,11 @@ func currentUserUUID(ctx context.Context, sm *scs.SessionManager) *pgtype.UUID {
 }
 
 var templateFuncs = template.FuncMap{
-		"fmtXMR": func(piconero int64) string {
+	// HoneypotField renders the per-deployment honeypot input name (AUDIT.md §2:
+	// a hard-coded "sta" in every form is free bot fingerprinting). The Go-side
+	// honeypotTriggered reads the same variable, so handler and template stay in sync.
+	"HoneypotField": func() string { return honeypotField },
+	"fmtXMR": func(piconero int64) string {
 		neg := ""
 		if piconero < 0 {
 			neg, piconero = "-", -piconero

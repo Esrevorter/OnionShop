@@ -69,6 +69,7 @@ services:
       - DATABASE_URL=postgres://${DB_USER}:${DB_PASSWORD}@postgres:5432/${DB_NAME}?sslmode=disable
       - REDIS_URL=redis://:${REDIS_PASSWORD}@redis:6379
       - SESSION_HASH_KEY=${SESSION_HASH_KEY}
+      - HONEYPOT_FIELD=${HONEYPOT_FIELD:-}
       - ONIONSHOP_SECURE_COOKIES=true
       - APP_ENV=production
       - XMR_MODE=${XMR_MODE:-mock}
