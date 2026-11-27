@@ -37,6 +37,7 @@ import argparse
 import os
 import re
 import secrets
+import shlex
 import subprocess
 import sys
 import time
@@ -159,19 +160,58 @@ def step_build_test(skip_tests):
     print("  OK")
 
 
+def psql_script(text):
+    """Execute a full SQL script inside the postgres container.
+
+    The script is written to a temp file and piped into psql via
+    `docker compose cp` + `psql -f`, mirroring install/install.sh's
+    `PSQL -q < "$f"` but avoiding any inline-string stdin quirks
+    (e.g. "invalid command \\n--" seen when piping heredoc-style SQL).
+    """
+    user = os.environ.get("DB_USER") or die("DB_USER missing from .env")
+    name = os.environ.get("DB_NAME") or die("DB_NAME missing from .env")
+    tmp_local = ROOT / ".deploy_tmp.sql"
+    tmp_local.write_text(text)
+    try:
+        r = subprocess.run(
+            f"{compose_cmd()} cp {tmp_local.name} postgres:/tmp/deploy.sql",
+            shell=True, cwd=ROOT, capture_output=True, text=True)
+        if r.returncode != 0:
+            die(f"docker compose cp failed: {r.stderr.strip()}")
+        proc = subprocess.run(
+            f'{compose_cmd()} exec -T postgres psql -v ON_ERROR_STOP=1 '
+            f'-U {user} -d {name} -f /tmp/deploy.sql',
+            shell=True, cwd=ROOT, capture_output=True, text=True)
+        subprocess.run(
+            f"{compose_cmd()} exec -T postgres rm -f /tmp/deploy.sql",
+            shell=True, cwd=ROOT, capture_output=True, text=True)
+    finally:
+        tmp_local.unlink(missing_ok=True)
+    if proc.returncode != 0:
+        print(proc.stdout)
+        die(f"psql failed: {proc.stderr.strip()}")
+    return proc.stdout
+
+
 def psql(sql, want_stderr=False):
     """Run SQL inside the postgres container as ${DB_USER}/${DB_NAME}.
 
+    Uses `-c` for single statements (install.sh style) and falls back to
+    `psql_script` (-f via temp file) for multi-line scripts.
     Returns stdout on success. On failure: dies with the psql error unless
     want_stderr=True, in which case it returns (stdout, stderr) so the caller
     can decide how to handle it.
     """
     user = os.environ.get("DB_USER") or die("DB_USER missing from .env")
     name = os.environ.get("DB_NAME") or die("DB_NAME missing from .env")
+    if "\n" in sql.strip():
+        # Multi-line script: use file-based execution to avoid stdin issues.
+        out = psql_script(sql)
+        return (out, "") if want_stderr else out
     proc = subprocess.run(
         f'{compose_cmd()} exec -T postgres psql -v ON_ERROR_STOP=1 '
-        f'-U {user} -d {name}',
-        shell=True, cwd=ROOT, input=sql, text=True, capture_output=True,
+        f'-U {user} -d {name} -c {shlex.quote(sql)}',
+        shell=True, cwd=ROOT, capture_output=True, text=True,
     )
     if proc.returncode != 0:
         if want_stderr:
@@ -297,7 +337,7 @@ def step_migrations():
         if version <= maxv:
             continue  # already recorded as applied
         print(f"  applying {f.name}")
-        psql(f.read_text())
+        psql_script(f.read_text())
         psql(f"INSERT INTO schema_migrations(version) VALUES ({version}) "
              "ON CONFLICT DO NOTHING;")
         applied += 1
