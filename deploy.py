@@ -387,10 +387,20 @@ def step_env_hygiene():
 
 def step_restart(restart_only):
     print("\n[6/6] Restart services")
+    # check=False so we can surface docker's own stdout/stderr (the real
+    # build error) instead of dying with a bare Python traceback.
     if restart_only:
-        compose("restart")
+        proc = compose("restart", check=False)
     else:
-        compose("up", "-d", "--build")
+        proc = compose("up", "-d", "--build", check=False)
+    if proc.returncode != 0:
+        out = (proc.stdout or "") + "\n" + (proc.stderr or "")
+        print(out, file=sys.stderr)
+        print("\n--- app container logs (last 40 lines) ---", file=sys.stderr)
+        logs = compose("logs", "--tail", "40", "app", check=False)
+        print((logs.stdout or "") + (logs.stderr or ""), file=sys.stderr)
+        die(f"docker compose failed (exit {proc.returncode}). "
+            "The build/startup errors are shown above.")
     print("  Services started.")
 
 
