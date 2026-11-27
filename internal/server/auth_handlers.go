@@ -66,6 +66,7 @@ type AuthData struct {
 	HoneypotHidden  bool
 	Error           string
 	Flash           string
+	LoginUsername   string // step-1 username echoed into the step-2 password form
 	PersonalPhrase  string
 	PGPPublicKey    string
 	PGPFingerprint  string
@@ -604,11 +605,15 @@ func (a *App) handleLoginForm(w http.ResponseWriter, r *http.Request) {
 	// holds the account's personal phrase; re-render the form in password stage
 	// so the user can verify the mirror site before typing credentials.
 	data.PersonalPhrase = a.sm.GetString(ctx, loginPhraseKey)
+	data.LoginUsername = a.sm.GetString(ctx, loginUserKey)
 	if data.Captcha = a.newChallenge(w, r, "login"); data.Captcha == nil { return }
 	a.render(w, "login", http.StatusOK, data)
 }
 
-const loginPhraseKey = "sess.login_phrase" // set by step 1, consumed by step 2
+const (
+	loginPhraseKey = "sess.login_phrase" // set by step 1, consumed by step 2
+	loginUserKey   = "sess.login_user"   // step-1 username, echoed into step-2 form
+)
 
 func (a *App) handleLoginSubmit(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
@@ -637,7 +642,9 @@ func (a *App) handleLoginSubmit(w http.ResponseWriter, r *http.Request) {
 			phrase = ""
 		}
 		a.sm.Put(ctx, loginPhraseKey, phrase)
+		a.sm.Put(ctx, loginUserKey, username)
 		data.PersonalPhrase = phrase
+		data.LoginUsername = username
 		if data.Captcha = a.newChallenge(w, r, "login"); data.Captcha == nil { return }
 		a.render(w, "login", http.StatusOK, data)
 		return
@@ -654,6 +661,7 @@ func (a *App) handleLoginSubmit(w http.ResponseWriter, r *http.Request) {
 		}
 	} else {
 		a.sm.PopString(ctx, loginPhraseKey)
+		a.sm.Remove(ctx, loginUserKey)
 	}
 	
 	user, err := a.auth.AuthUserByUsername(ctx, username)

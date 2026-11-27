@@ -4,14 +4,20 @@
 
 {{define "body"}}
 <section class="auth-layout">
-  <div class="auth-intro"><p class="eyebrow">Welcome back</p><h1>Sign in securely.</h1><p class="lede">Use OnionShop only through Tor Browser. Check the onion address and your personal phrase before entering credentials.</p><div class="notice"><strong>Safety reminder</strong><br>Never follow links to a mirror from messages or listings. Your phrase appears after authentication.</div></div>
+  <div class="auth-intro"><p class="eyebrow">Welcome back</p><h1>Sign in securely.</h1><p class="lede">Use OnionShop only through Tor Browser. Check the onion address and your personal phrase before entering credentials.</p><div class="notice"><strong>Safety reminder</strong><br>Never follow links to a mirror from messages or listings. Enter your username first — your personal phrase appears before the password field so you can verify this is the real site.</div></div>
   <form method="post" action="/login" autocomplete="off" class="auth-card">
     <h2>Account access</h2>
     {{template "friction" .}}
     <input type="hidden" name="csrf_token" value="{{.CsrfToken}}">
-    <label for="login-username">Username</label><input id="login-username" type="text" name="username" maxlength="32" autocomplete="username" required>
-    <label for="login-password">Password</label><input id="login-password" type="password" name="password" maxlength="128" autocomplete="current-password" required>
-    <div class="form-actions"><button type="submit">Sign in</button><a href="/register">Create account</a></div>
+    {{if .PersonalPhrase}}
+    <div class="notice"><strong>Your personal phrase</strong><br>{{.PersonalPhrase}}<br>If this is not your phrase, do not enter your password — leave and report the address.</div>
+    <label for="login-username">Username</label><input id="login-username" type="text" name="username" maxlength="32" autocomplete="username" value="{{.LoginUsername}}" readonly>
+    <label for="login-password">Password</label><input id="login-password" type="password" name="password" maxlength="128" autocomplete="current-password" required autofocus>
+    <div class="form-actions"><button type="submit">Sign in</button><a href="/login">Start over</a></div>
+    {{else}}
+    <label for="login-username">Username</label><input id="login-username" type="text" name="username" maxlength="32" autocomplete="username" required autofocus>
+    <div class="form-actions"><button type="submit">Continue</button><a href="/register">Create account</a></div>
+    {{end}}
   </form>
 </section>
 {{end}}
