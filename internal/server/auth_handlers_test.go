@@ -57,6 +57,10 @@ type fakeAuthStore struct {
 	// captured audit rows, so the fake satisfies the full AuthStore surface.
 	vendors map[string]*VendorRecord
 	audits  []auditEntry
+
+	// phrases is the in-memory analogue of users.personal_phrase, keyed by
+	// lowercase username, backing the two-step-login AuthPhraseByUsername fake.
+	phrases map[string]string
 }
 
 // auditEntry mirrors one AuditAppend call for assertions.
@@ -70,7 +74,7 @@ type auditEntry struct {
 
 func newFakeAuthStore(t *testing.T) *fakeAuthStore {
 	t.Helper()
-	return &fakeAuthStore{users: map[string]*UserRecord{}, pgpKeys: map[string]string{}, vendors: map[string]*VendorRecord{}, nextID: 1}
+	return &fakeAuthStore{users: map[string]*UserRecord{}, pgpKeys: map[string]string{}, vendors: map[string]*VendorRecord{}, phrases: map[string]string{}, nextID: 1}
 }
 
 // seedUser installs an already-hashed user under name (lower-cased like the
@@ -199,10 +203,19 @@ func (f *fakeAuthStore) AuthSetPersonalPhrase(_ context.Context, id pgtype.UUID,
 	}
 	for _, u := range f.users {
 		if u.ID == id {
+			f.phrases[u.Username] = phrase
 			return nil
 		}
 	}
 	return errors.New("store: set personal phrase: no such user")
+}
+
+// AuthPhraseByUsername mirrors the production contract for the two-step login:
+// unknown usernames and unset phrases both return "" (no enumeration signal).
+func (f *fakeAuthStore) AuthPhraseByUsername(_ context.Context, username string) (string, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.phrases[strings.ToLower(username)], nil
 }
 
 // ---- Phase 3 PGP store methods ---------------------------------------------

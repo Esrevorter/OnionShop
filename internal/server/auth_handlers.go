@@ -28,7 +28,27 @@ import (
 	"github.com/pquerna/otp/totp"
 )
 
-const honeypotField = "sta"
+// Honeypot field name (AUDIT.md §2): the repo default is "sta", but operators
+// should randomize it per deployment via HONEYPOT_FIELD in .env so scrapers of
+// the open-source code cannot hard-code the bot trap. Only simple identifier
+// values are accepted; anything else falls back to the default.
+var honeypotField = func() string {
+	if v := os.Getenv("HONEYPOT_FIELD"); v != "" {
+		safe := true
+		for i := 0; i < len(v); i++ {
+			c := v[i]
+			if !(c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' || c >= '0' && c <= '9' || c == '_') {
+				safe = false
+				break
+			}
+		}
+		if safe {
+			return v
+		}
+		log.Printf("server: ignoring invalid HONEYPOT_FIELD value (must be [A-Za-z0-9_]+)")
+	}
+	return "sta"
+}()
 
 type AuthData struct {
 	CaptchaTextAlt bool
@@ -101,6 +121,11 @@ type AuthStore interface {
 	AuthUserRole(ctx context.Context, id pgtype.UUID) (string, error)
 	AuthUserByID(ctx context.Context, id pgtype.UUID) (*UserRecord, error)
 	AuditAppend(ctx context.Context, actorID pgtype.UUID, actorKind, action, target, details string) error
+	// AuthPhraseByUsername supports the two-step login (AUDIT.md §2): it returns
+	// the stored anti-phishing phrase for a username WITHOUT revealing whether
+	// the account exists — the empty string is also the "no phrase / no user"
+	// answer, so the pre-auth form cannot be used to enumerate usernames.
+	AuthPhraseByUsername(ctx context.Context, username string) (string, error)
 }
 
 type SessionLinker interface {
@@ -119,6 +144,10 @@ const (
 	qAuthGetPGPKey          = `SELECT COALESCE(pgp_public_key, '') FROM public.users WHERE id = $1`
 	qAuthSetPGPKey          = `UPDATE public.users SET pgp_public_key = $2, updated_at = now() WHERE id = $1`
 	qAuthClearPGPKey        = `UPDATE public.users SET pgp_public_key = NULL, updated_at = now() WHERE id = $1`
+	// Two-step login lookup (AUDIT.md §2). COALESCE collapses both "unknown
+	// user" and "no phrase set" to '' so the pre-auth form cannot enumerate
+	// usernames; the empty-string result is indistinguishable either way.
+	qAuthPhraseByUsername = `SELECT COALESCE(CASE WHEN personal_phrase <> '' THEN personal_phrase ELSE anti_phishing_phrase END, '') FROM public.users WHERE username = $1`
 )
 
 type PGAuthStore struct{ pool *pgxpool.Pool }
@@ -163,6 +192,18 @@ func (s *PGAuthStore) AuthSetPersonalPhrase(ctx context.Context, id pgtype.UUID,
 		return fmt.Errorf("store: set personal phrase: %w", err)
 	}
 	return nil
+}
+
+// AuthPhraseByUsername implements the two-step-login store contract: it returns
+// the stored anti-phishing phrase for a username without revealing whether the
+// account exists (unknown users and phrase-less users both yield "").
+func (s *PGAuthStore) AuthPhraseByUsername(ctx context.Context, username string) (string, error) {
+	var phrase string
+	if err := s.pool.QueryRow(ctx, qAuthPhraseByUsername, username).Scan(&phrase); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) { return "", nil } // uniform answer: no enumeration signal
+		return "", fmt.Errorf("store: get phrase: %w", err)
+	}
+	return phrase, nil
 }
 
 func (s *PGAuthStore) AuthRecordLogin(ctx context.Context, userID pgtype.UUID, at time.Time, host string) error {
