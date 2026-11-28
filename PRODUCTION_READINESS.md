@@ -43,4 +43,15 @@ sudo ./install/install.sh --dev                  # bootstrap Docker, secrets, de
 sudo ./install/install.sh --onion <host>.onion   # real onion SAN certificate
 ./install/install.sh --check-only                # preflight, no side effects
 ```
-The installer is idempotent and applies db/migrations/*.up.sql in order with a schema_migrations ledger. Migration 0023 begins with DROP VIEW IF EXISTS account_balances; so it applies cleanly on databases whose view still carries the pre-0009 balance_sat column name. Where /tmp is noexec (Whonix), export GOTMPDIR=$HOME/.gotmp before go test. A green preview stack is not production clearance.
+The installer is idempotent and applies db/migrations/*.up.sql in order with a schema_migrations ledger. Migration 0023 begins with DROP VIEW IF EXISTS account_balances; so it applies cleanly on databases whose view still carries the pre-0009 balance_sat column name (Postgres refuses CREATE OR REPLACE VIEW when a column name changes); it also backfills unbalanced historical ledger rows before installing the double-entry constraint trigger. Where /tmp is noexec (Whonix), export GOTMPDIR=$HOME/.gotmp before go test. A green preview stack is not production clearance.
+
+## Deploying updates with deploy.py
+
+`python3 deploy.py` automates the full update cycle: git pull, build/vet/test, Postgres
+readiness, idempotent migration application (psql + schema_migrations ledger, mirroring
+install.sh — no local psql required; SQL runs via `docker compose exec -T postgres`, which
+works with the container's read-only rootfs), `.env` hygiene (generates HONEYPOT_FIELD if
+absent), `docker compose up -d --build`, and health verification against `/healthz`. Flags:
+`--no-pull`, `--skip-tests`, `--restart-only`, `--db-only`. Hosts with Go < 1.21 cannot parse
+the three-part `go 1.25.0` directive in go.mod; there the script skips local build/test and
+compilation is verified by the golang:1.25 image build instead.

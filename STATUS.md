@@ -1,3 +1,51 @@
+# STATUS.md
+
+Working log for the current phase. Authoritative status lives in `TASKS.md` (roadmap),
+`AUDIT.md` (open findings) and `PRODUCTION_READINESS.md` (deployment gates).
+
+## 2026-11-27 — Deployment hardening & sqlc build fix (current state)
+
+**Build/test:** `go build ./...`, `go vet ./...` and `go test ./...` are green on `main`
+(verified on a dev server with Go ≥ 1.21; hosts running Go < 1.21 cannot parse the
+three-part `go 1.25.0` directive in `go.mod` and must use the container toolchain instead).
+The earlier `.Role` template failures in the vendor-nav guard and the five CAPTCHA-marker
+failures listed below are **fixed**; those entries are kept only as history.
+
+**sqlc/Docker build:** the app image build previously failed at `sqlc generate` because
+`db/query/ledger.sql` referenced the non-existent column `balance_sat`; corrected to
+`balance_piconero` (commit `d019aa7`). Bindings regenerated.
+
+**Migration 0023 (`db/migrations/0023_ledger_hardening.up.sql`):** applies cleanly now.
+It begins with `DROP VIEW IF EXISTS account_balances;` before recreating the view (PG
+refuses `CREATE OR REPLACE VIEW` when a column name changes, which broke half-applied
+dev databases), backfills unbalanced historical ledger rows before installing the
+double-entry constraint trigger, and records versions as integers with an explicit
+`dirty` value (`schema_migrations.dirty` is NOT NULL). Verified applied through version 23
+on the dev server.
+
+**deploy.py:** single-command deployment (`python3 deploy.py`) — preflight, build/test,
+DB readiness via `docker compose exec -T postgres psql` (no local psql needed; works with
+the read-only container rootfs), idempotent psql+`schema_migrations` migration loop
+mirroring `install/install.sh`, `.env` hygiene (generates `HONEYPOT_FIELD`), compose
+rebuild/restart with surfaced build errors, and `/healthz` health polling.
+
+**Docs reconciliation:** all markdown files reviewed against code evidence; stale health
+endpoint references corrected (`/healthz` is the registered route; nginx's `/health`
+location proxies to it).
+
+## Nav guard field repair
+Vendor nav guard now uses the role field actually present on AuthData (taken from the pre-edit guard in HEAD), restoring /account rendering and keeping vendor links vendor-only.
+
+## Compact UI pass
+Ground truth read from origin/main before edits; captcha on one flex row at 150px, inputs 440px/7px, textarea 84px, tighter rhythm; stylesheet content-hashed.
+
+## Captcha core remediation
+Local tree reconciled against origin/main (aborted-run leftovers removed). Prompt sr-only + env-gated (CAPTCHA_TEXT_ALT=0 in production removes it from the DOM); image-left compact row with 96px answer. Follow-up deferred: spoken audio alternative for production screen-reader users.
+
+## Historical note (superseded)
+The "gate vendor nav" session record below predates the fixes above; its FAIL block was
+resolved by the nav-guard field repair and friction-contract work.
+
 =========== gate vendor nav + graceful handlers ===========
    role field: .Role
 

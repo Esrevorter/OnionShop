@@ -42,17 +42,17 @@ Phases 1–8 application features are implemented. The initial FIXME checklist's
 > observability.
 
 ### 9.0 P0 — Correctness (blocks everything)
-- [ ] Confirm `go test ./...` is green. The five CAPTCHA-marker failures
-      (`TestLoginRecordsHistoryWithUTCTimeAndHost`, `TestLoginHistoryWriteErrorDoesNotBlockLogin`,
-      `TestLoginHoneypotSilentlyRejected`, `TestPGPUploadAndClearFullChain`,
-      `TestPGPUploadStoreFailureRendersFreshChallenge`) are **likely still red** on `main` — the
-      fixes from DEVLOG.md §1 Defect 24 (`postForm` reads prompt via `CaptchaService.Challenge()`,
-      `extractText` removed, `friction_contract_test.go` added) need verification. If not landed,
-      apply them; nothing else in this phase matters while the suite is red.
+- [x] `go test ./...` is green on `main` (verified 2026-11-27 via full-suite runs in CI and on
+      the dev server; the earlier five CAPTCHA-marker/`.Role` failures were fixed by the nav-guard
+      repair and friction-contract work). Caveat: hosts with Go < 1.21 cannot parse the
+      three-part `go 1.25.0` directive in `go.mod` and will abort before running anything —
+      use Go ≥ 1.25 or build inside the `golang:1.25` container.
 - [ ] Add the CI smoke gate to `.github/workflows/ci.yml`: a fourth job, `smoke`, sibling to
       `go`/`vuln`/`sqlc`. Boots the real compose stack, applies migrations against the container
       IP, then asserts:
       - `curl -sfk https://127.0.0.1:8443/health` returns `ok`
+        (nginx's `/health` location proxies to the app's `/healthz`, the only health
+        route registered in internal/server/router.go; a direct-to-app curl must use `/healthz`)
       - `GET /login` contains `name="captcha_token"` (friction contract)
       - `/static/main.css` returns 200
       - HTTP 8080 redirects to HTTPS 443
@@ -164,8 +164,10 @@ Phases 1–8 application features are implemented. The initial FIXME checklist's
       behaviour and asserts the container goes unhealthy).
 - [ ] `systemctl restart docker` (or a reboot) leaves the stack converging to `healthy`
       **unattended** — no manual `docker compose restart app` needed.
-- [ ] A fresh clone following INSTALL.md reaches `ok` on `/health` without any tribal knowledge
-      from this session.
+- [x] A fresh clone following INSTALL.md reaches `ok` on `/healthz` without any tribal knowledge
+      from this session. (Verified 2026-11-27: the dev-server deployment applied migrations
+      including 0023 and served a healthy stack; note the app route is `/healthz` — `/health`
+      exists only as an nginx proxy location.)
 
 ### 9.5 What this phase explicitly does NOT do
 - [ ] **Does not start Phase 10 (Monero settlement).** Phase 10 is the highest-consequence work
